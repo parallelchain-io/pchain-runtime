@@ -1,0 +1,42 @@
+[package]
+name = "pchain-runtime"
+version = "0.4.0"
+authors = ["ParallelChain Lab <info@parallelchain.io>"]
+edition = "2021"
+description = "parallelchain-runtime: ParallelChain F Runtime for state transition in ParallelChain Mainnet"
+license = "Apache-2.0"
+repository = "https://github.com/parallelchain-io/pchain-runtime"
+
+[lib]
+doctest = false
+
+[dependencies]
+anyhow = "1.0"
+blake2 = "0.10"
+ed25519-dalek = "1.0.1"
+keccak-hasher = "0.15.3"
+loupe = "0.1"
+pchain-types = { path = "../types/rust" }
+pchain-world-state = { path = "../worldstate" }
+ripemd = "0.1.1"
+sha2 = "0.10.0"
+tiny-keccak = "2.0.2"
+thiserror = "1.0"
+wasmer = "=2.3.0"
+wasmer-cache = "=2.3.0"
+wasmer-compiler-singlepass = "=2.3.0"
+wasmer-engine-universal = "=2.3.0"
+wasmer-middlewares = "=2.3.0"
+wasmer-vm = "=2.3.0"
+wasmer-wasi = "=2.3.0"
+wat = "1.0.43"
+
+[dev-dependencies]
+borsh = "=0.10.2"
+rand = "0.7"
+rand_chacha = "0.2"
+ed25519-dalek = "1.0.1"
+hotstuff_rs = { git = "https://github.com/parallelchain-io/hotstuff_rs" }
+
+[profile.release]
+overflow-checks = true
