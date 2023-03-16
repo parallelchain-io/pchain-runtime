@@ -16,8 +16,8 @@ blake2 = "0.10"
 ed25519-dalek = "1.0.1"
 keccak-hasher = "0.15.3"
 loupe = "0.1"
-pchain-types = { path = "../types/rust" }
-pchain-world-state = { path = "../worldstate" }
+pchain-types = { git = "https://github.com/parallelchain-io/pchain-types" }
+pchain-world-state = { git = "https://github.com/parallelchain-io/pchain-world-state" }
 ripemd = "0.1.1"
 sha2 = "0.10.0"
 tiny-keccak = "2.0.2"
@@ -36,7 +36,7 @@ borsh = "=0.10.2"
 rand = "0.7"
 rand_chacha = "0.2"
 ed25519-dalek = "1.0.1"
-hotstuff_rs = { git = "https://github.com/parallelchain-io/hotstuff_rs" }
+hotstuff_rs = { git = "https://github.com/parallelchain-io/hotstuff_rs", rev = "26b1e9e8b43fe8992045dd471344eba0b20347a7" }
 
 [profile.release]
 overflow-checks = true
