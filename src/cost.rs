@@ -13,32 +13,70 @@ use wasmer::wasmparser::Operator;
 /// Return: The latency of the x86-64 Instructions each opcode is translated into by the Wasmer compiler 
 pub(crate) fn wasm_cost_function(operator: &Operator) -> u64 {
     match operator {
-        // Bulk memory operations, reference types and exception handling
-        Operator::Nop | Operator::Unreachable | Operator::Loop{..} | Operator::Else | Operator::If {..} | Operator::I32Const {..} | Operator::I64Const {..} => 0,
-        Operator::Br{..} | Operator::BrTable{..} | Operator::Return | Operator::Call{..} | Operator::CallIndirect{..} |
-        Operator::ReturnCall{..} | Operator::ReturnCallIndirect{..} | Operator::Drop | Operator::Throw{..} | Operator::Rethrow{..} | Operator::Delegate{..} |
-        Operator::CatchAll | Operator::TableInit{..} | Operator::RefNull{..} | Operator::RefIsNull | Operator::RefFunc{..} => 2,         
-        Operator::Select | Operator::BrIf {..} | Operator::GlobalGet {..} | Operator::GlobalSet {..} |
-        Operator::MemoryCopy{..} | Operator::MemoryFill{..} | Operator::TableCopy{..} | Operator::TableFill{..}  => 3, 
+        // Constants
+        Operator::I32Const {..} | Operator::I64Const {..} => 0,
 
-        // Integer Memory Operations 
-        Operator::I32Load8S{..} | Operator::I32Load8U{..} | Operator::I32Load16S{..} | Operator::I32Load16U{..} | Operator::I32Load{..} |
-        Operator::I64Load8S{..} | Operator::I64Load8U{..} | Operator::I64Load16S{..} | Operator::I64Load16U{..} | 
-        Operator::I64Load32S{..} | Operator::I64Load32U{..} | Operator::I64Load{..} | Operator::I32Store{..} | Operator::I64Store{..} |  
-        Operator::I32Store8{..} | Operator::I32Store16{..} | Operator::I64Store8{..} | Operator::I64Store16{..} | Operator::I64Store32{..}  
+        // Type parameteric operators
+        Operator::Drop => 2,
+        Operator::Select => 3,
+
+        // Flow control
+        Operator::Nop | Operator::Unreachable | Operator::Loop{..} | Operator::Else | Operator::If {..} 
+        => 0,
+        Operator::Br{..} | Operator::BrTable{..} | Operator::Return | Operator::Call{..} | Operator::CallIndirect{..}
+        => 2,
+        Operator::BrIf {..}
+        => 3,
+
+        // Registers 
+        Operator::GlobalGet {..} | Operator::GlobalSet {..} | Operator::LocalGet {..} | Operator::LocalSet {..}
+        => 3,
+        
+        // Reference Types
+        Operator::RefIsNull | Operator::RefFunc {..} | Operator::RefNull{..} | Operator::ReturnCall{..} | Operator::ReturnCallIndirect{..}  
+        => 2, 
+
+        // Exception Handling
+        Operator::CatchAll | Operator::Throw{..} | Operator::Rethrow{..} | Operator::Delegate{..}
+        => 2, 
+        
+        // Bluk Memory Operations
+        Operator::ElemDrop {..} | Operator::DataDrop {..} 
+        => 1, 
+        Operator::TableInit{..} 
+        => 2,
+        Operator::MemoryCopy{..} | Operator::MemoryFill{..} | Operator::TableCopy{..} | Operator::TableFill{..} 
         => 3, 
 
-        // Integer Arithmetic Operations 
-        Operator::I32Shl | Operator::I32ShrU | Operator::I32ShrS | Operator::I32Rotl | Operator::I32Rotr | Operator::I64Shl | Operator::I64ShrU | Operator::I64ShrS | Operator::I64Rotl | 
-        Operator::I64Rotr => 2,
-        Operator::I32Mul | Operator::I64Mul  => 3,
+        // Memory Operations 
+        Operator::I32Load{..} | Operator::I64Load{..} | Operator::I32Store {..} | Operator::I64Store{..} | 
+        Operator::I32Store8{..} | Operator::I32Store16{..} |  Operator::I32Load8S{..} | Operator::I32Load8U{..} | Operator::I32Load16S{..} | Operator::I32Load16U{..} |
+        Operator::I64Load8S{..} | Operator::I64Load8U{..} | Operator::I64Load16S{..} | Operator::I64Load16U{..} | Operator::I64Load32S{..} | Operator::I64Load32U{..} |
+        Operator::I64Store8{..} | Operator::I64Store16{..} | Operator::I64Store32{..}  
+        => 3, 
 
-        Operator::I32DivS | Operator::I32DivU | Operator::I32RemS | Operator::I32RemU | Operator::I64DivS | Operator::I64DivU | Operator::I64RemS | Operator::I64RemU => 80,
-        Operator::I32Clz | Operator::I64Clz => 105,
+        // 32 and 64-bit Integer Arithmetic Operations
+        Operator::I32Add | Operator::I32Sub | Operator::I64Add | Operator::I64Sub | Operator::I64LtS | Operator::I64LtU |
+        Operator::I64GtS| Operator::I64GtU | Operator::I64LeS | Operator::I64LeU | Operator::I64GeS | Operator::I64GeU |
+        Operator::I32Eqz | Operator::I32Eq | Operator::I32Ne | Operator::I32LtS | Operator::I32LtU | Operator::I32GtS |
+        Operator::I32GtU | Operator::I32LeS | Operator::I32LeU | Operator::I32GeS | Operator::I32GeU | Operator::I64Eqz |
+        Operator::I64Eq | Operator::I64Ne | Operator::I32And | Operator::I32Or | Operator::I32Xor | Operator::I64And | 
+        Operator::I64Or | Operator::I64Xor
+        => 1,
+        Operator::I32Shl | Operator::I32ShrU | Operator::I32ShrS | Operator::I32Rotl | Operator::I32Rotr | Operator::I64Shl | 
+        Operator::I64ShrU | Operator::I64ShrS | Operator::I64Rotl | Operator::I64Rotr
+        => 2,
+        Operator::I32Mul | Operator::I64Mul  
+        => 3,
+        Operator::I32DivS | Operator::I32DivU | Operator::I32RemS | Operator::I32RemU | Operator::I64DivS | Operator::I64DivU | 
+        Operator::I64RemS | Operator::I64RemU
+        => 80,
+        Operator::I32Clz | Operator::I64Clz 
+        => 105,
 
-        // Integer Type Casting & Truncation Operations 
-        Operator::I32WrapI64 | Operator::I64ExtendI32S | Operator::I64ExtendI32U | 
-        Operator::I32Extend8S | Operator::I32Extend16S | Operator::I64Extend8S | Operator::I64Extend16S | Operator::I64Extend32S  
+        // Type Casting & Truncation Operations
+        Operator::I32WrapI64 | Operator::I64ExtendI32S | Operator::I64ExtendI32U | Operator::I32Extend8S | Operator::I32Extend16S | Operator::I64Extend8S | 
+        Operator::I64Extend16S | Operator::I64Extend32S  
         => 3,
 
         // Everything Else is 1 
@@ -73,8 +111,6 @@ pub mod gas {
     pub const TX_BASE_SIZE: u64 = 201;
     pub const RECEIPT_BASE_SIZE: u64 = 9;
     pub const ACCOUNT_STATE_KEY_LENGTH: u64 = 33;
-    /// LEAF_NODE_BASE_LENGTH (X) is the cost added to the key length in Write Gas Calculation
-    pub const LEAF_NODE_BASE_LENGTH: u64 = 150;
 
     /// TX_BASE_COST is thr base cost of executing the ’simplest’ possible Transaction that can be included in a block.
     pub fn tx_base_cost() -> u64 {
@@ -88,53 +124,57 @@ pub mod gas {
         )
     }
 
-    /// BLOCKCHAIN_DATA_BYTE is the cost of writes to the blockchain transaction data per byte.
+    /// BLOCKCHAIN_WRITE_PER_BYTE_COST (C_txdata) is the cost of writes to the blockchain transaction data per byte.
     pub const BLOCKCHAIN_WRITE_PER_BYTE_COST: u64 = 30;
 
-    /// MPT_TRAVERSE_PER_NIBBLE_COST (T) is the cost to compute the hash of the encoding of a nibble in the modified MPT. 
-    pub const MPT_TRAVERSE_PER_NIBBLE_COST: u64 = 10;
+    /// MPT_READ_PER_BYTE_COST (C_read) is the cost of reading a single byte from the world state.
+    pub const MPT_READ_PER_BYTE_COST: u64 = 50;
 
-    /// MPT_HASH_COMPUTE_PER_NIBBLE_COST (H) is the cost to traverse to next/previous nibble in the modified MPT 
-    pub const MPT_HASH_COMPUTE_PER_NIBBLE_COST: u64 = 55;
+    /// MPT_WRITE_PER_BYTE_COST (C_write) is the cost of writing a single byte into the world state.
+    pub const MPT_WRITE_PER_BYTE_COST: u64 = 2500;
 
-    /// MPT_READ_PER_BYTE_COST (R) is the cost of reading the World State *per byte*.
-    pub const MPT_READ_PER_BYTE_COST: u64 = 100;
+    /// MPT_TRAVERSE_PER_BYTE (C_traverse) is the cost of traversing 1 byte (2 nibbles) down a MPT.
+    pub const MPT_TRAVERSE_PER_BYTE_COST: u64 = 20;
 
-    /// MPT_WRITE_PER_BYTE_COST (W) is the cost of writing into the World State *per byte*.
-    pub const MPT_WRITE_PER_BYTE_COST: u64 = 1250;
+    /// MPT_REHASH_PER_BYTE (C_rehash) is the cost of traversing 1 byte up (2 nibbles) and recomputing 
+    /// the SHA256 hashes of 2 nodes in an MPT after it or one of its descendants is changed.
+    pub const MPT_REHASH_PER_BYTE_COST: u64 = 130;
 
-    /// MPT_WRITE_REFUND_PROPORTION (Z) is the refund proportion frees the storage.
+    /// MPT_WRITE_REFUND_PROPORTION (C_refund in percentage) is the proportion of the cost of writing 
+    /// a tuple into an MPT that is refunded when that tuple is re-set or deleted.
     pub const MPT_WRITE_REFUND_PROPORTION: u64 = 50;
 
-    // MPT_GET_CODE_DISCOUNT (D) is the discount for the reading cost of contract byte code from world state.
-    pub const MPT_GET_CODE_DISCOUNT: u64 = 50;
+    /// MPT_GET_CODE_DISCOUNT_PROPORTION (C_contractdisc in percentage) is the proportion of the cost of reading 
+    /// a tuple from the world state which is discounted if the tuple contains a contract.
+    pub const MPT_GET_CODE_DISCOUNT_PROPORTION: u64 = 50;
 
     /// WASM_MEMORY_WRITE_PER64_BITS_COST is the cost of writing into the WASM linear memory *per 64 bits*.
     pub const WASM_MEMORY_WRITE_PER64_BITS_COST: u64 = 3;
 
-    /// WASM_MEMORY_READ_PER64_BITS_COST is the cost of writing into the WASM linear memory *per 64 bits*.
+    /// WASM_MEMORY_READ_PER64_BITS_COST (C_I64Load) is the cost of writing into the WASM linear memory *per 64 bits*.
     pub const WASM_MEMORY_READ_PER64_BITS_COST: u64 = 3;
 
-    /// WASM_BYTE_CODE_PER_BYTE_COST is the cost of checking whether input byte code satisfy CBI.
-    pub const WASM_BYTE_CODE_PER_BYTE_COST: u64 = 100;
+    /// WASM_BYTE_CODE_PER_BYTE_COST (C_I64Store) is the cost of checking whether input byte code satisfy CBI.
+    pub const WASM_BYTE_CODE_PER_BYTE_COST: u64 = 3;
 
     // LOGICAL_OR_PER64_BITS_COST is the cost of calculating logical or between two variable *per 64 bits*.
     pub const LOGICAL_OR_PER64_BITS_COST: u64 = 1;
 
     /// contains_cost calculates the cost of checking key existence in the World State
     pub const fn contains_cost(key_len: usize) -> CostChange {
-        let key_len = key_len as u64;
-        CostChange::deduct(key_len.saturating_mul(2 * MPT_TRAVERSE_PER_NIBBLE_COST))
+        CostChange::deduct((key_len as u64).saturating_mul(MPT_TRAVERSE_PER_BYTE_COST))
     }
 
     /// read_code_cost calculates the cost of reading contract code from the World State
     pub const fn read_code_cost(code_len: usize) -> CostChange {
+        let key_len = ACCOUNT_STATE_KEY_LENGTH;
         let code_len = code_len as u64;
+        
         CostChange::deduct(
-            // Read Cost + Cost_contains
-            (code_len.saturating_mul(MPT_READ_PER_BYTE_COST).saturating_add(2 * ACCOUNT_STATE_KEY_LENGTH * MPT_TRAVERSE_PER_NIBBLE_COST)) 
+            // Read Cost
+            code_len.saturating_mul(MPT_READ_PER_BYTE_COST).saturating_add((key_len as u64).saturating_mul(MPT_TRAVERSE_PER_BYTE_COST))
             // Code Discount
-            .saturating_mul(MPT_GET_CODE_DISCOUNT).saturating_div(100)
+            .saturating_mul(MPT_GET_CODE_DISCOUNT_PROPORTION).saturating_div(100)
         )
     }
 
@@ -142,7 +182,7 @@ pub mod gas {
     pub const fn read_cost(key_len : usize, value_len: usize) -> CostChange {
         let key_len = key_len as u64;
         let value_len = value_len as u64;
-        CostChange::deduct(value_len.saturating_mul(MPT_READ_PER_BYTE_COST).saturating_add(key_len.saturating_mul( 2 * MPT_TRAVERSE_PER_NIBBLE_COST )))
+        CostChange::deduct(value_len.saturating_mul(MPT_READ_PER_BYTE_COST).saturating_add(key_len.saturating_mul(MPT_TRAVERSE_PER_BYTE_COST)))
     }
 
     /// write_cost calculates the cost of writing data into the World State
@@ -151,25 +191,29 @@ pub mod gas {
         let old_val_len = old_val_len as u64;
         let new_val_len = new_val_len as u64;
 
-        if old_val_len == 0 && new_val_len > 0 {
-            CostChange::deduct((key_len.saturating_add(new_val_len).saturating_add(LEAF_NODE_BASE_LENGTH)).saturating_mul(MPT_WRITE_PER_BYTE_COST)) + 
-            CostChange::deduct(key_len.saturating_mul( 2 * (MPT_TRAVERSE_PER_NIBBLE_COST + MPT_HASH_COMPUTE_PER_NIBBLE_COST)))
-        } else if old_val_len > 0 && new_val_len > 0 {
-            CostChange::deduct(new_val_len.saturating_mul(MPT_WRITE_PER_BYTE_COST)) +
-            CostChange::reward(old_val_len.saturating_mul(MPT_WRITE_REFUND_PROPORTION * MPT_WRITE_PER_BYTE_COST).saturating_div(100)) +
-            CostChange::deduct(key_len.saturating_mul( 2 * (MPT_TRAVERSE_PER_NIBBLE_COST + MPT_HASH_COMPUTE_PER_NIBBLE_COST)))
+        // (1) Get cost should be already charged.
+        // (2):
+        let cost =
+        if (old_val_len > 0 || old_val_len == 0) && new_val_len > 0 {
+            // a * C_write * C_refund 
+            CostChange::reward(old_val_len.saturating_mul(MPT_WRITE_PER_BYTE_COST * MPT_WRITE_REFUND_PROPORTION).saturating_div(100))
         } else if old_val_len > 0 && new_val_len == 0 {
-            CostChange::reward((key_len.saturating_add(old_val_len).saturating_add(LEAF_NODE_BASE_LENGTH)).saturating_mul(MPT_WRITE_PER_BYTE_COST * MPT_WRITE_REFUND_PROPORTION).saturating_div(100)) + 
-            CostChange::deduct(key_len.saturating_mul( 2 * (MPT_TRAVERSE_PER_NIBBLE_COST + MPT_HASH_COMPUTE_PER_NIBBLE_COST)))
-        } else {
-            CostChange::deduct(0)
-        }
+            // (k + a) * C_write * C_refund 
+            CostChange::reward((key_len.saturating_add(old_val_len)).saturating_mul(MPT_WRITE_PER_BYTE_COST * MPT_WRITE_REFUND_PROPORTION).saturating_div(100))    
+        } else { // old_val_len == 0 && new_val_len == 0
+            CostChange::reward(0)
+        };
+        cost +
+        // (3) b * C_write
+        CostChange::deduct(new_val_len.saturating_mul(MPT_WRITE_PER_BYTE_COST)) +
+        // (4) k * C_rehash
+        CostChange::deduct(key_len.saturating_mul(MPT_REHASH_PER_BYTE_COST))
     }
 
     /// blockchain_txreceipt_cost calculates the cost of writing blockchain data into the storage
     pub const fn blockchain_txreceipt_cost(data_len: usize) -> CostChange {
-        let data_len = data_len as u64;
-        CostChange::deduct(data_len.saturating_mul(BLOCKCHAIN_WRITE_PER_BYTE_COST))
+        // data_len * C_txdata
+        CostChange::deduct((data_len as u64).saturating_mul(BLOCKCHAIN_WRITE_PER_BYTE_COST))
     }
 
     /// blockchain_txlog_cost calculates the cost of writing log into the storage
@@ -178,9 +222,9 @@ pub mod gas {
         let val_len = val_len as u64;
         let log_len = topic_len.saturating_add(val_len);
         CostChange::deduct(
-            // Ceil(l/8) * W
-            (log_len.saturating_add(7).saturating_div(8).saturating_mul(WASM_MEMORY_READ_PER64_BITS_COST))
-            // t * X
+            // Ceil(l/8) * C_wasmread
+            (ceil_div_8(log_len).saturating_mul(WASM_MEMORY_READ_PER64_BITS_COST))
+            // t * C_sha256
             .saturating_add(topic_len.saturating_mul(crate::cost::CRYPTO_SHA256_PER_BYTE))
             // 256 * Y / 64
             .saturating_add(256 * LOGICAL_OR_PER64_BITS_COST / 64)
@@ -190,13 +234,20 @@ pub mod gas {
     }
 
     pub const fn wasm_memory_read_cost(val_len: usize) -> CostChange {
-        let val_len = val_len as u64;
-        CostChange::deduct( val_len.saturating_add(7).saturating_div(8).saturating_mul(WASM_MEMORY_READ_PER64_BITS_COST) ) 
+        let mut cost = ceil_div_8(val_len as u64).saturating_mul(WASM_MEMORY_READ_PER64_BITS_COST);
+        if cost == 0 { cost = 1; } // = max(cost, 1) to make sure charging for a non-zero cost 
+        CostChange::deduct(cost) 
     }
 
     pub const fn wasm_memory_write_cost(val_len: usize) -> CostChange {
-        let val_len = val_len as u64;
-        CostChange::deduct( val_len.saturating_add(7).saturating_div(8).saturating_mul(WASM_MEMORY_WRITE_PER64_BITS_COST) ) 
+        let mut cost = ceil_div_8(val_len as u64).saturating_mul(WASM_MEMORY_WRITE_PER64_BITS_COST);
+        if cost == 0 { cost = 1; } // = max(cost, 1) to make sure charging for a non-zero cost 
+        CostChange::deduct(cost) 
+    }
+
+    /// Ceiling of the value after dividing by 8 
+    pub const fn ceil_div_8(l: u64) -> u64 {
+        l.saturating_add(7).saturating_div(8)
     }
 
     /// CostChange defines gas cost change by adding or substrating value to the total gas.

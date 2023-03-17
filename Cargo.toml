@@ -36,7 +36,7 @@ borsh = "=0.10.2"
 rand = "0.7"
 rand_chacha = "0.2"
 ed25519-dalek = "1.0.1"
-hotstuff_rs = { git = "https://github.com/parallelchain-io/hotstuff_rs", rev = "26b1e9e8b43fe8992045dd471344eba0b20347a7" }
+hotstuff_rs = { git = "https://github.com/parallelchain-io/hotstuff_rs" }
 
 [profile.release]
 overflow-checks = true
