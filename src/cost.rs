@@ -157,9 +157,6 @@ pub mod gas {
     /// WASM_BYTE_CODE_PER_BYTE_COST (C_I64Store) is the cost of checking whether input byte code satisfy CBI.
     pub const WASM_BYTE_CODE_PER_BYTE_COST: u64 = 3;
 
-    // LOGICAL_OR_PER64_BITS_COST is the cost of calculating logical or between two variable *per 64 bits*.
-    pub const LOGICAL_OR_PER64_BITS_COST: u64 = 1;
-
     /// contains_cost calculates the cost of checking key existence in the World State
     pub const fn contains_cost(key_len: usize) -> CostChange {
         CostChange::deduct((key_len as u64).saturating_mul(MPT_TRAVERSE_PER_BYTE_COST))
@@ -226,8 +223,6 @@ pub mod gas {
             (ceil_div_8(log_len).saturating_mul(WASM_MEMORY_READ_PER64_BITS_COST))
             // t * C_sha256
             .saturating_add(topic_len.saturating_mul(crate::cost::CRYPTO_SHA256_PER_BYTE))
-            // 256 * Y / 64
-            .saturating_add(256 * LOGICAL_OR_PER64_BITS_COST / 64)
             // l X Z
             .saturating_add(log_len.saturating_mul(BLOCKCHAIN_WRITE_PER_BYTE_COST))
         )
