@@ -13,7 +13,7 @@ use pchain_world_state::{
 
 use crate::{
     transition::{StateChangesResult}, 
-    TransitionError
+    TransitionError, gas
 };
 
 use super::{
@@ -21,7 +21,10 @@ use super::{
 };
 
 /// Execution Logic for Network Commands. Err If the Command is not Network Command.
+/// It transits the state according to Metwork Command, on behalf of actor. Actor is expected 
+/// to be the signer of the transaction, or the contract that triggers deferred command.
 pub(crate) fn try_execute<S>(
+    actor: PublicAddress,
     state: StateInTransit<S>, 
     command: &Command
 ) -> TryExecuteResult<S> 
@@ -29,23 +32,23 @@ pub(crate) fn try_execute<S>(
 {
     let ret = match command {
         Command::CreatePool { commission_rate } => 
-            create_pool(state, *commission_rate),
+            create_pool(actor, state, *commission_rate),
         Command::SetPoolSettings { commission_rate } => 
-            set_pool_settings(state, *commission_rate),
+            set_pool_settings(actor, state, *commission_rate),
         Command::DeletePool => 
-            delete_pool(state),
+            delete_pool(actor, state),
         Command::CreateDeposit { operator, balance, auto_stake_rewards } => 
-            create_deposit(state, *operator, *balance, *auto_stake_rewards),
+            create_deposit(actor, state, *operator, *balance, *auto_stake_rewards),
         Command::SetDepositSettings { operator, auto_stake_rewards } => 
-            set_deposit_settings(state, *operator, *auto_stake_rewards),
+            set_deposit_settings(actor, state, *operator, *auto_stake_rewards),
         Command::TopUpDeposit { operator, amount } => 
-            topup_deposit(state, *operator, *amount),
+            topup_deposit(actor, state, *operator, *amount),
         Command::WithdrawDeposit { operator, max_amount } => 
-            withdraw_deposit(state, *operator, *max_amount),
+            withdraw_deposit(actor, state, *operator, *max_amount),
         Command::StakeDeposit { operator, max_amount } => 
-            stake_deposit(state, *operator, *max_amount),
+            stake_deposit(actor, state, *operator, *max_amount),
         Command::UnstakeDeposit { operator, max_amount } => 
-            unstake_deposit(state, *operator, *max_amount),
+            unstake_deposit(actor, state, *operator, *max_amount),
         _=> return TryExecuteResult::Err(state)
     };
 
@@ -54,12 +57,12 @@ pub(crate) fn try_execute<S>(
 
 /// Execution of Work step for [pchain_types::Command::CreatePool]
 pub(crate) fn create_pool<S>(
+    operator: PublicAddress,
     mut state: StateInTransit<S>,
     commission_rate: u8,
 ) -> Result<StateInTransit<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
-    let operator = state.tx.signer;
 
     if commission_rate > 100 {
         return Err(phase::abort(state, TransitionError::InvalidPoolPolicy))
@@ -83,12 +86,12 @@ pub(crate) fn create_pool<S>(
 
 /// Execution of Work step for [pchain_types::Command::SetPoolSettings]
 pub(crate) fn set_pool_settings<S>(
+    operator: PublicAddress,
     mut state: StateInTransit<S>,
     new_commission_rate: u8
 ) -> Result<StateInTransit<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
-    let operator = state.tx.signer;
 
     if new_commission_rate > 100 {
         return Err(phase::abort(state, TransitionError::InvalidPoolPolicy))
@@ -111,11 +114,11 @@ pub(crate) fn set_pool_settings<S>(
 
 /// Execution of Work step for [pchain_types::Command::DeletePool]
 pub(crate) fn delete_pool<S>(
+    operator: PublicAddress,
     mut state: StateInTransit<S>,
 ) -> Result<StateInTransit<S>, StateChangesResult<S>> 
     where S: WorldStateStorage + Send + Sync + Clone
 {
-    let operator = state.tx.signer;
     let pool = NetworkAccount::pools(&mut state, operator);
     if !pool.exists() {
         return Err(phase::abort(state, TransitionError::PoolNotExists))
@@ -130,6 +133,7 @@ pub(crate) fn delete_pool<S>(
 
 /// Execution of Work step for [pchain_types::Command::CreateDeposit]
 pub(crate) fn create_deposit<S>(
+    owner: PublicAddress,
     mut state: StateInTransit<S>, 
     operator: PublicAddress,
     balance: u64,
@@ -137,7 +141,6 @@ pub(crate) fn create_deposit<S>(
 ) -> Result<StateInTransit<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
-    let owner = state.tx.signer;
 
     if !NetworkAccount::pools(&mut state, operator).exists() {
         return Err(phase::abort(state, TransitionError::PoolNotExists))
@@ -162,13 +165,13 @@ pub(crate) fn create_deposit<S>(
 
 /// Execution of Work step for [pchain_types::Command::SetDepositSettings]
 pub(crate) fn set_deposit_settings<S>(
+    owner: PublicAddress,
     mut state: StateInTransit<S>, 
     operator: PublicAddress,
     new_auto_stake_rewards: bool,
 ) -> Result<StateInTransit<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
-    let owner = state.tx.signer;
 
     let mut deposits = NetworkAccount::deposits(&mut state, operator, owner);
     if !deposits.exists() {
@@ -186,13 +189,13 @@ pub(crate) fn set_deposit_settings<S>(
 
 /// Execution of Work step for [pchain_types::Command::TopUpDeposit]
 pub(crate) fn topup_deposit<S>(
+    owner: PublicAddress,
     mut state: StateInTransit<S>, 
     operator: PublicAddress,
     amount: u64
 ) -> Result<StateInTransit<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
-    let owner = state.tx.signer;
 
     if !NetworkAccount::deposits(&mut state, operator, owner).exists() {
         return Err(phase::abort(state, TransitionError::DepositsNotExists))
@@ -213,13 +216,13 @@ pub(crate) fn topup_deposit<S>(
 
 /// Execution of Work step for [pchain_types::Command::WithdrawDeposit]
 pub(crate) fn withdraw_deposit<S>(
+    owner: PublicAddress,
     mut state: StateInTransit<S>, 
     operator: PublicAddress,
     max_amount: u64,
 ) -> Result<StateInTransit<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
-    let owner = state.tx.signer;
 
     // 1. Check if there is any deposit to withdraw
     let deposits = NetworkAccount::deposits(&mut state, operator, owner);
@@ -228,7 +231,7 @@ pub(crate) fn withdraw_deposit<S>(
     }
     let deposit_balance = deposits.balance().unwrap();
 
-    // 2. Compute withdrawal Amount
+    // 2. Compute withdrawal amount
     let prev_epoch_locked_power = NetworkAccount::pvp(&mut state)
         .pool(operator).map_or(0, |mut pool|{
             if operator == owner {
@@ -248,7 +251,8 @@ pub(crate) fn withdraw_deposit<S>(
         }
     );
     let locked_power = std::cmp::max(prev_epoch_locked_power, cur_epoch_locked_power);
-    let new_deposit_balance = std::cmp::max(deposit_balance.saturating_sub(max_amount), locked_power);
+    let withdrawal_amount = std::cmp::min(max_amount, deposit_balance.saturating_sub(locked_power));
+    let new_deposit_balance = deposit_balance.saturating_sub(withdrawal_amount);
 
     // 3. Abort if there is no amount currently available to withdraw.
     if new_deposit_balance == deposit_balance { // e.g. max_amount = 0  or deposit_balance == locked_power
@@ -256,12 +260,16 @@ pub(crate) fn withdraw_deposit<S>(
     }
 
     // 4. Update the deposit's balance to reflect the withdrawal.
-    NetworkAccount::deposits(&mut state, operator, owner).set_balance(new_deposit_balance);
+    if new_deposit_balance == 0 {
+        NetworkAccount::deposits(&mut state, operator, owner).delete();
+    } else {
+        NetworkAccount::deposits(&mut state, operator, owner).set_balance(new_deposit_balance);
+    }
     let (owner_balance, _) = state.balance(owner);
     state.set_balance(owner, owner_balance + deposit_balance - new_deposit_balance);
 
-    // 5. If the deposit's new balance is now to small to support its Stake in the next Epoch, cap the Stake's power at the new balance.
-    if let Ok(stake_power) = stake_of_pool(&mut state, operator, owner) {
+    // 5. If the deposit's new balance is now too small to support its Stake in the next Epoch, cap the Stake's power at the new balance.
+    if let Some(stake_power) = stake_of_pool(&mut state, operator, owner) {
         if new_deposit_balance < stake_power {
             if let Some(prev_pool_power) = NetworkAccount::pools(&mut state, operator).power(){
                 reduce_stake_power(&mut state, operator, prev_pool_power, owner, stake_power, stake_power - new_deposit_balance);
@@ -269,18 +277,26 @@ pub(crate) fn withdraw_deposit<S>(
         }
     }
 
+    // 5. Set the withdrawal amount to return_value
+    let return_value = withdrawal_amount.to_le_bytes().to_vec();
+    state.receipt_write_gas += gas::blockchain_return_value_cost(return_value.len());
+    if state.tx.gas_limit < state.total_gas_to_be_consumed() {
+        return Err(phase::abort(state, TransitionError::ExecutionProperGasExhausted))
+    }
+    state.return_value = Some(return_value);
+
     phase::finalize_gas_consumption(state)
 }
 
 /// Execution of Work step for [pchain_types::Command::StakeDeposit]
 pub(crate) fn stake_deposit<S>(
+    owner: PublicAddress,
     mut state: StateInTransit<S>, 
     operator: PublicAddress,
     max_amount: u64,
 ) -> Result<StateInTransit<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
-    let owner = state.tx.signer;
 
     // 1. Check if there is a Deposit to stake
     if !NetworkAccount::deposits(&mut state, operator, owner).exists() {
@@ -296,41 +312,41 @@ pub(crate) fn stake_deposit<S>(
     let prev_pool_power = pool.power().unwrap();
 
     // We use this to update the Pool's power after the power of one of its stakes get increased.
-    let stake_power =
-    if operator == owner {
-        match pool.operator_stake() {
-            Some(Some(operator_stake)) => Some(operator_stake.power),
-            _ => None
-        }
-    } else {
-        let mut pool = pool;
-        pool.delegated_stakes().get_by(&owner).map(|stake| stake.power )
-    };
-    let increase_amount = std::cmp::min(max_amount, deposit_balance.saturating_sub(stake_power.unwrap_or(0)));
-    if increase_amount == 0 {
+    let stake_power = stake_of_pool(&mut state, operator, owner);
+
+    let stake_power_to_increase = std::cmp::min(max_amount, deposit_balance.saturating_sub(stake_power.unwrap_or(0)));
+    if stake_power_to_increase == 0 {
         return Err(phase::abort(state, TransitionError::InvalidStakeAmount))
     }
 
     // Update Stakes and the Pool's power and its position in the Next Validator Set.
-    match increase_stake_power(&mut state, operator, prev_pool_power, owner, stake_power, increase_amount, true) {
+    match increase_stake_power(&mut state, operator, prev_pool_power, owner, stake_power, stake_power_to_increase, true) {
         Ok(_) => {},
         Err(_) => return Err(phase::abort(state, TransitionError::InvalidStakeAmount))
     };
+
+    // Set the staked amount to return_value
+    let return_value = stake_power_to_increase.to_le_bytes().to_vec();
+    state.receipt_write_gas += gas::blockchain_return_value_cost(return_value.len());
+    if state.tx.gas_limit < state.total_gas_to_be_consumed() {
+        return Err(phase::abort(state, TransitionError::ExecutionProperGasExhausted))
+    }
+    state.return_value = Some(return_value);
 
     phase::finalize_gas_consumption(state)
 }
 
 /// Execution of Work step for [pchain_types::Command::UnstakeDeposit]
 pub(crate) fn unstake_deposit<S>(
+    owner: PublicAddress,
     mut state: StateInTransit<S>, 
     operator: PublicAddress, 
     max_amount: u64
 ) -> Result<StateInTransit<S>, StateChangesResult<S>>
     where S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone
 {
-    let owner = state.tx.signer;
 
-    // 1. Check if there is a Deposit to unstake with.
+    // 1. Check if there is a Deposit to unstake.
     if !NetworkAccount::deposits(&mut state, operator, owner).exists() {
         return Err(phase::abort(state, TransitionError::DepositsNotExists))
     }
@@ -342,23 +358,21 @@ pub(crate) fn unstake_deposit<S>(
     }
     let prev_pool_power = pool.power().unwrap();
 
-    let stake_power =  {
-        if operator == owner {
-            match pool.operator_stake() {
-                Some(Some(stake)) => stake.power,
-                _ => return Err(phase::abort(state, TransitionError::PoolHasNoStakes))
-            }
-        } else {
-            let mut pool = pool;
-            match pool.delegated_stakes().get_by(&owner) {
-                Some(stake) => stake.power,
-                None => return Err(phase::abort(state, TransitionError::PoolHasNoStakes))
-            }
-        }
+    let stake_power = match stake_of_pool(&mut state, operator, owner) {
+        Some(stake_power) => stake_power,
+        None => return Err(phase::abort(state, TransitionError::PoolHasNoStakes))
     };
 
     // 3. Reduce the Stake's power.
-    reduce_stake_power(&mut state, operator, prev_pool_power, owner, stake_power, max_amount);
+    let amount_unstaked = reduce_stake_power(&mut state, operator, prev_pool_power, owner, stake_power, max_amount);
+
+    // 4. set the unstaked amount to return_value
+    let return_value = amount_unstaked.to_le_bytes().to_vec();
+    state.receipt_write_gas += gas::blockchain_return_value_cost(return_value.len());
+    if state.tx.gas_limit < state.total_gas_to_be_consumed() {
+        return Err(phase::abort(state, TransitionError::ExecutionProperGasExhausted))
+    }
+    state.return_value = Some(return_value);
 
     phase::finalize_gas_consumption(state)
 }
@@ -368,26 +382,21 @@ pub(crate) fn stake_of_pool<T>(
     state: &mut T,
     operator: PublicAddress,
     owner: PublicAddress
-) -> Result<u64, ()>
+) -> Option<u64>
     where T: NetworkAccountStorage
 {
-    let stake_power =  {
-        if operator == owner {
-            match NetworkAccount::pools(state, operator).operator_stake() {
-                Some(Some(stake)) => stake.power,
-                _ => return Err(())
-            }
-        } else {
-            match NetworkAccount::pools(state, operator).delegated_stakes().get_by(&owner) {
-                Some(stake) => stake.power,
-                None => return Err(())
-            }
+    if operator == owner {
+        match NetworkAccount::pools(state, operator).operator_stake() {
+            Some(Some(stake)) => Some(stake.power),
+            _ => None
         }
-    };
-    Ok(stake_power)
+    } else {
+        NetworkAccount::pools(state, operator).delegated_stakes().get_by(&owner)
+            .map(|stake| stake.power)
+    }
 }
 
-/// Reduce stake power and update Pool position in Next validator set.
+/// Reduce stake's power and update Pool position in Next validator set.
 pub(crate) fn reduce_stake_power<T>(
     state: &mut T, 
     operator: PublicAddress, 
@@ -395,11 +404,11 @@ pub(crate) fn reduce_stake_power<T>(
     owner: PublicAddress, 
     stake_power: u64,
     reduce_amount: u64
-)
+) -> u64 
     where T: NetworkAccountStorage
 {
     // Reduce the Stake's power.
-    let new_pool_power = 
+    let amount_unstaked = 
     if stake_power <= reduce_amount {
         // If the Stake's power is less than the amount to be reduced, remove the Stake.
         if operator == owner {
@@ -407,7 +416,7 @@ pub(crate) fn reduce_stake_power<T>(
         } else {
             NetworkAccount::pools(state, operator).delegated_stakes().remove_item(&owner);
         }
-        pool_power.saturating_sub(stake_power)
+        stake_power
     } else {
         // Otherwise, reduce the Stake's power.
         let new_state = Stake { owner, power: stake_power - reduce_amount};
@@ -416,8 +425,9 @@ pub(crate) fn reduce_stake_power<T>(
         } else {
             NetworkAccount::pools(state, operator).delegated_stakes().change_key(StakeValue::new(new_state));
         }
-        pool_power.saturating_sub(reduce_amount)
+        reduce_amount
     };
+    let new_pool_power = pool_power.saturating_sub(amount_unstaked);
 
     // Update the Pool's power and its position in the Next Validator Set.
     NetworkAccount::pools(state, operator).set_power(new_pool_power);
@@ -436,9 +446,10 @@ pub(crate) fn reduce_stake_power<T>(
             }
         }
     }
+    amount_unstaked
 }
 
-/// increase_stake_power increases stake power and also update the NVP.
+/// increase_stake_power increases stake's power and also update the NVP.
 // 1a. pool[i].delegated_stakes[j] .change_key or .insert_extract
 // 1b. pool[i].operator_stake += v
 // 2. pool[i].power += v
@@ -449,7 +460,7 @@ pub(crate) fn increase_stake_power<T>(
     pool_power: u64,
     owner: PublicAddress, 
     stake_power: Option<u64>,
-    increase_amount: u64,
+    stake_power_to_increase: u64,
     exit_on_insert_fail: bool
 ) -> Result<(), ()>
     where T: NetworkAccountStorage
@@ -459,22 +470,22 @@ pub(crate) fn increase_stake_power<T>(
     let power_to_add = 
     if operator == owner {
         let stake_power = stake_power.unwrap_or(0);
-        pool.set_operator_stake(Some(Stake { owner: operator, power: stake_power + increase_amount }));
-        increase_amount
+        pool.set_operator_stake(Some(Stake { owner: operator, power: stake_power + stake_power_to_increase }));
+        stake_power_to_increase
     } else {
         let mut delegated_stakes = pool.delegated_stakes();
         match stake_power {
             Some(stake_power) => {
-                delegated_stakes.change_key(StakeValue::new(Stake { owner, power: stake_power + increase_amount }));
-                increase_amount
+                delegated_stakes.change_key(StakeValue::new(Stake { owner, power: stake_power + stake_power_to_increase }));
+                stake_power_to_increase
             },
             None => {
-                match delegated_stakes.insert_extract(StakeValue::new(Stake { owner, power: increase_amount })) {
-                    Ok(Some(replaced_stake)) => increase_amount - replaced_stake.power,
-                    Ok(None) => increase_amount,
+                match delegated_stakes.insert_extract(StakeValue::new(Stake { owner, power: stake_power_to_increase })) {
+                    Ok(Some(replaced_stake)) => stake_power_to_increase - replaced_stake.power,
+                    Ok(None) => stake_power_to_increase,
                     Err(_) => {
                         if exit_on_insert_fail { return Err(()) }
-                        increase_amount
+                        stake_power_to_increase
                     }
                 }
             }

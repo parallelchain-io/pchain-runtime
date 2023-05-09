@@ -97,31 +97,44 @@ pub const fn crypto_verify_ed25519_signature_cost(msg_len: usize) -> u64 {
     1_400_000_u64.saturating_add((msg_len as u64).saturating_mul(16_u64))
 }
 
-/// All transactions pay (at least) a TX_BASE_GAS corresponding to two sets of storage operations:
-///
-/// 1. Reading and then writing of 4 world state keys (this happens in the course of every transaction):
-/// - nonce
-/// - from account balance
-/// - validator balance
-///
-/// 2. Writing of transaction data in a block:
+/// gas defines constants, formulas and functions for gas calculation.
 pub mod gas {
     use std::ops::{Add, AddAssign, Sub, SubAssign};
 
-    pub const TX_BASE_SIZE: u64 = 201;
-    pub const RECEIPT_BASE_SIZE: u64 = 9;
+    use pchain_types::{Transaction, Serializable};
+
+    pub const MIN_RECP_SIZE: u64 = 4;
+    pub const MIN_CMDRECP_SIZE: u64 = 17;
     pub const ACCOUNT_STATE_KEY_LENGTH: u64 = 33;
 
-    /// TX_BASE_COST is thr base cost of executing the ’simplest’ possible Transaction that can be included in a block.
-    pub fn tx_base_cost() -> u64 {
-        ((TX_BASE_SIZE + RECEIPT_BASE_SIZE) * BLOCKCHAIN_WRITE_PER_BYTE_COST )
-            .saturating_add( 
-            (
-                read_cost(ACCOUNT_STATE_KEY_LENGTH as usize, 8) 
-                + write_cost(ACCOUNT_STATE_KEY_LENGTH as usize, 8, 8)
-            )
-            .deduct.saturating_mul(4)
+    /// tx_inclusion_cost is the minimum cost for a transaction to be included in the blockchain.
+    /// It basically calls [tx_inclusion_cost_from] to calculate the cost by passing size of serialized
+    /// transaction and the lenght of its commands.
+    pub fn tx_inclusion_cost(tx: &Transaction) -> u64 {
+        tx_inclusion_cost_from(tx.serialize().len(), tx.commands.len())
+    }
+    
+    /// tx_inclusion_cost is the minimum cost for a transaction to be included in the blockchain.
+    /// It consists of:
+    /// 1. cost for storing transaction in a block
+    /// 2. cost for storing minimum-sized receipt(s) in a block
+    /// 3. cost for 5 read-write operations for 
+    ///     - signer's nonce
+    ///     - signer's balance during two phases
+    ///     - proposer's balance
+    ///     - treasury's balance
+    pub fn tx_inclusion_cost_from(tx_size: usize, commands_len: usize) -> u64 {
+        let tx_size = tx_size as u64 ;
+        let min_receipt_size = MIN_RECP_SIZE.saturating_add(
+            MIN_CMDRECP_SIZE.saturating_mul(commands_len as u64)
+        );
+        let rw_key_cost = (
+            read_cost(ACCOUNT_STATE_KEY_LENGTH as usize, 8) 
+            + write_cost(ACCOUNT_STATE_KEY_LENGTH as usize, 8, 8)
         )
+        .deduct.saturating_mul(5);
+
+        tx_size.saturating_add(min_receipt_size).saturating_mul(BLOCKCHAIN_WRITE_PER_BYTE_COST).saturating_add(rw_key_cost)
     }
 
     /// BLOCKCHAIN_WRITE_PER_BYTE_COST (C_txdata) is the cost of writes to the blockchain transaction data per byte.
@@ -169,7 +182,7 @@ pub mod gas {
         
         CostChange::deduct(
             // Read Cost
-            code_len.saturating_mul(MPT_READ_PER_BYTE_COST).saturating_add((key_len as u64).saturating_mul(MPT_TRAVERSE_PER_BYTE_COST))
+            code_len.saturating_mul(MPT_READ_PER_BYTE_COST).saturating_add((key_len).saturating_mul(MPT_TRAVERSE_PER_BYTE_COST))
             // Code Discount
             .saturating_mul(MPT_GET_CODE_DISCOUNT_PROPORTION).saturating_div(100)
         )
@@ -183,6 +196,7 @@ pub mod gas {
     }
 
     /// write_cost calculates the cost of writing data into the World State
+    #[allow(clippy::double_comparisons)]
     pub fn write_cost(key_len: usize, old_val_len: usize, new_val_len: usize) -> CostChange {
         let key_len = key_len as u64;
         let old_val_len = old_val_len as u64;
@@ -207,14 +221,14 @@ pub mod gas {
         CostChange::deduct(key_len.saturating_mul(MPT_REHASH_PER_BYTE_COST))
     }
 
-    /// blockchain_txreceipt_cost calculates the cost of writing blockchain data into the storage
-    pub const fn blockchain_txreceipt_cost(data_len: usize) -> CostChange {
+    /// blockchain_return_value_cost calculates the cost of writing return data into the receipt
+    pub const fn blockchain_return_value_cost(data_len: usize) -> CostChange {
         // data_len * C_txdata
         CostChange::deduct((data_len as u64).saturating_mul(BLOCKCHAIN_WRITE_PER_BYTE_COST))
     }
 
-    /// blockchain_txlog_cost calculates the cost of writing log into the storage
-    pub const fn blockchain_txlog_cost(topic_len: usize, val_len: usize) -> CostChange {
+    /// blockchain_log_cost calculates the cost of writing log into the receipt
+    pub const fn blockchain_log_cost(topic_len: usize, val_len: usize) -> CostChange {
         let topic_len = topic_len as u64;
         let val_len = val_len as u64;
         let log_len = topic_len.saturating_add(val_len);

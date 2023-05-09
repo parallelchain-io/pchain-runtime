@@ -97,9 +97,9 @@ pub enum TransitionError {
 impl From<MethodCallError> for TransitionError {
     fn from(call_error: MethodCallError) -> Self {
         match call_error {
-            MethodCallError::GasExhaustionError => TransitionError::ExecutionProperGasExhausted,
-            MethodCallError::NoExportedMethodError(_) => TransitionError::RuntimeError,
-            MethodCallError::RuntimeError(e) => {
+            MethodCallError::GasExhaustion => TransitionError::ExecutionProperGasExhausted,
+            MethodCallError::NoExportedMethod(_) => TransitionError::RuntimeError,
+            MethodCallError::Runtime(e) => {
                 // check for internal errors
                 match e.downcast::<FuncError>() {
                     Err(_) => TransitionError::RuntimeError,

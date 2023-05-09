@@ -16,7 +16,7 @@ use crate::{
     contract::{ContractBinaryInterface, FuncError}, 
     wasmer::{wasmer_env::Env}, 
     transactions::{self}, 
-    gas::{self},
+    gas::{self}, types::DeferredCommand,
 };
     
 
@@ -26,12 +26,10 @@ pub(crate) struct ContractBinaryFunctions {}
 impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: WorldStateStorage + Sync + Send + Clone {
     
     fn set(env: &Env<S>, key_ptr: u32, key_len: u32, val_ptr: u32, val_len: u32) -> Result<(), FuncError> {
-        let app_key = env.read_bytes(key_ptr, key_len)
-            .map_err(FuncError::Runtime)?;
+        let app_key = env.read_bytes(key_ptr, key_len)?;
         let app_key = AppKey::new(app_key);
 
-        let new_value = env.read_bytes(val_ptr, val_len)
-            .map_err(FuncError::Runtime)?;
+        let new_value = env.read_bytes(val_ptr, val_len)?;
 
         let target_address = env.call_tx.target;
 
@@ -44,37 +42,39 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
     }
 
     fn get(env: &Env<S>, key_ptr: u32, key_len: u32, val_ptr_ptr: u32) -> Result<i64, FuncError> {
-        let app_key = env.read_bytes(key_ptr, key_len)
-            .map_err(FuncError::Runtime)?;
+        let app_key = env.read_bytes(key_ptr, key_len)?;
         let app_key = AppKey::new(app_key);
 
         let tx_ctx_lock = env.context.lock().unwrap();
-        let (value, cost_change) = match tx_ctx_lock.app_data(env.call_tx.target, app_key) {
-            (Some(value), cost_change) => (value, cost_change),
-            (None, _) => return Ok(-1)
-        };
+        let (value, cost_change) = tx_ctx_lock.app_data(env.call_tx.target, app_key);
         drop(tx_ctx_lock);
 
-        env.consume_non_wasm_gas(cost_change);         
+        env.consume_non_wasm_gas(cost_change);
 
-        Ok(env.write_bytes(value, val_ptr_ptr)? as i64)
+        let ret_val = match value {
+            Some(value) => env.write_bytes(value, val_ptr_ptr)? as i64,
+            None => -1
+        };
+
+        Ok(ret_val)
     }
 
     fn get_network_storage(env: &Env<S>, key_ptr: u32, key_len: u32, val_ptr_ptr: u32) -> Result<i64, FuncError> {
-        let app_key = env.read_bytes(key_ptr, key_len)
-            .map_err(FuncError::Runtime)?;
+        let app_key = env.read_bytes(key_ptr, key_len)?;
         let app_key = AppKey::new(app_key);
 
         let tx_ctx_lock = env.context.lock().unwrap();
-        let (value, cost_change) = match tx_ctx_lock.app_data(pchain_types::NETWORK_ADDRESS, app_key) {
-            (Some(value), cost_change) => (value, cost_change),
-            (None, _) => return Ok(-1)
-        };
+        let (value, cost_change) = tx_ctx_lock.app_data(pchain_types::NETWORK_ADDRESS, app_key);
         drop(tx_ctx_lock);
 
-        env.consume_non_wasm_gas(cost_change);         
+        env.consume_non_wasm_gas(cost_change);
 
-        Ok(env.write_bytes(value, val_ptr_ptr)? as i64)
+        let ret_val = match value {
+            Some(value) => env.write_bytes(value, val_ptr_ptr)? as i64,
+            None => -1
+        };
+
+        Ok(ret_val)
     }
 
     fn balance(env: &Env<S>) -> Result<u64, FuncError> {
@@ -104,70 +104,76 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
     }
 
     fn method(env: &Env<S>, method_ptr_ptr: u32) -> Result<u32, FuncError> {
-        Ok(env.write_bytes(env.call_tx.method.as_bytes().to_vec(), method_ptr_ptr)?)
+        env.write_bytes(env.call_tx.method.as_bytes().to_vec(), method_ptr_ptr)
     }
 
     fn arguments(env: &Env<S>, arguments_ptr_ptr: u32) -> Result<u32, FuncError> {
         match &env.call_tx.arguments {
             Some(arguments) => {
                 let arguments = <Vec<Vec<u8>> as pchain_types::Serializable>::serialize(arguments);
-                Ok(env.write_bytes(arguments, arguments_ptr_ptr)?)
+                env.write_bytes(arguments, arguments_ptr_ptr)
             },
             None => Ok(0)
         }
     }
 
     fn amount(env: &Env<S>) -> Result<u64, FuncError> {
-        match env.call_tx.amount {
-            Some(amount) => Ok(amount),
-            None => Ok(0)
-        }
+        Ok(env.call_tx.amount.map_or(0, std::convert::identity))
     }
+
     fn is_internal_call(env: &Env<S>) -> Result<i32, FuncError> {
         Ok(i32::from(env.call_counter != 0))
     }
+
     fn transaction_hash(env: &Env<S>, hash_ptr_ptr: u32) -> Result<(), FuncError> {
         env.write_bytes(env.call_tx.hash.to_vec(), hash_ptr_ptr)?;
         Ok(())
     }
 
     fn log(env: &Env<S>, log_ptr: u32, log_len: u32) -> Result<(), FuncError> {
-        let serialized_log = env.read_bytes(log_ptr, log_len)
-            .map_err(FuncError::Runtime)?;
+        let serialized_log = env.read_bytes(log_ptr, log_len)?;
         let log = pchain_types::transaction::Log::deserialize(&serialized_log)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
-        let mut ctx = env.context.lock().unwrap();
-        let cost_change = gas::blockchain_txlog_cost(log.topic.len(), log.value.len());
-        ctx.receipt_write_gas += cost_change;
-        ctx.logs.push(log);
-        drop(ctx);
+        let cost_change = gas::blockchain_log_cost(log.topic.len(), log.value.len());
+        let mut tx_ctx_lock = env.context.lock().unwrap();
+        tx_ctx_lock.receipt_write_gas += cost_change;
+        drop(tx_ctx_lock);
 
+        // check exhaustion before writing receipt data to ensure 
+        // the data is not written to receipt after gas exhaustion
         env.consume_non_wasm_gas(cost_change);
+        if env.get_wasmer_remaining_points() == 0 {
+            return Err(FuncError::GasExhaustionError);
+        }
+
+        env.context.lock().unwrap().logs.push(log);
 
         Ok(())
     }
 
     fn return_value(env: &Env<S>, value_ptr: u32, value_len: u32) -> Result<(), FuncError> {
-        let value = env.read_bytes(value_ptr, value_len)
-            .map_err(FuncError::Runtime)?;
-        let value = if value.is_empty() { None } else { Some(value) };
+        let value = env.read_bytes(value_ptr, value_len)?;
 
-        let cost_change = gas::blockchain_txreceipt_cost(value.as_ref().map_or(0, |v| v.len()));
+        let cost_change = gas::blockchain_return_value_cost(value.len());
+        let mut tx_ctx_lock = env.context.lock().unwrap();
+        tx_ctx_lock.receipt_write_gas += cost_change;
+        drop(tx_ctx_lock);
 
-        let mut ctx = env.context.lock().unwrap();
-        ctx.receipt_write_gas += cost_change;
-        ctx.return_value = value;
-        drop(ctx);
-
+        // check exhaustion before writing receipt data to ensure 
+        // the data is not written to receipt after gas exhaustion
         env.consume_non_wasm_gas(cost_change);
+        if env.get_wasmer_remaining_points() == 0 {
+            return Err(FuncError::GasExhaustionError);
+        }
+
+        env.context.lock().unwrap().return_value = if value.is_empty() { None } else { Some(value) };
 
         Ok(())
     }
 
     fn call(env: &Env<S>, call_input_ptr: u32, call_input_len :u32, return_ptr_ptr: u32) -> Result<u32, FuncError>{
-        let call_command_bytes = env.read_bytes(call_input_ptr, call_input_len)
-            .map_err(FuncError::Runtime)?;
+        let call_command_bytes = env.read_bytes(call_input_ptr, call_input_len)?;
         let call_command = pchain_types::Command::deserialize(&call_command_bytes)
             .map_err(|e| FuncError::Runtime(e.into()))?;
         
@@ -179,6 +185,11 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
             ),
             _=> return Err(FuncError::Internal)
         };
+
+        // error if transfer amount is specified in view call.
+        if env.is_view && amount.is_some() {
+            return Err(FuncError::Internal)
+        }
 
         // obtain the signer address (this contract's address) from transaction execution context
         let signer = env.call_tx.target;
@@ -200,18 +211,21 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
             env.params_from_blockchain.clone(),
             env.context.clone(),
             env.call_counter.saturating_add(1),
+            env.is_view
         );
         env.consume_non_wasm_gas(result.non_wasmer_gas); 
         env.consume_wasm_gas(result.exec_gas); // subtract gas consumed from parent contract's environment
+
         match result.error {
             None => {
                 let mut tx_ctx_locked = env.context.lock().unwrap();
                 let res = tx_ctx_locked.return_value.clone();
                 
-                tx_ctx_locked.return_value = None; // clear child result in parent's execution context
+                // clear child result in parent's execution context. No cost because the return value is not written to block.
+                tx_ctx_locked.return_value = None;
                 
                 if let Some(res) = res {
-                    return Ok(env.write_bytes(res, return_ptr_ptr)?)
+                    return env.write_bytes(res, return_ptr_ptr)
                 }
             }
             Some(e) => {
@@ -226,8 +240,7 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
     }
 
     fn transfer(env: &Env<S>, transfer_input_ptr: u32) -> Result<(), FuncError> {
-        let transfer_bytes = env.read_bytes(transfer_input_ptr, std::mem::size_of::<[u8; 40]>() as u32)
-            .map_err(FuncError::Runtime)?;
+        let transfer_bytes = env.read_bytes(transfer_input_ptr, std::mem::size_of::<[u8; 40]>() as u32)?;
 
         let (recipient, amount_bytes) = transfer_bytes.split_at(32);
         let recipient = recipient.try_into().unwrap();
@@ -248,8 +261,7 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
     }
 
     fn defer_create_deposit(env: &Env<S>, create_deposit_input_ptr: u32, create_deposit_input_len: u32) -> Result<(), FuncError> {
-        let serialized_command = env.read_bytes(create_deposit_input_ptr, create_deposit_input_len)
-            .map_err(FuncError::Runtime)?;
+        let serialized_command = env.read_bytes(create_deposit_input_ptr, create_deposit_input_len)?;
         let command = pchain_types::Command::deserialize(&serialized_command)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
@@ -257,14 +269,13 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
             return Err(FuncError::Internal)
         }
 
-        env.context.lock().unwrap().commands.push(command);
+        env.context.lock().unwrap().commands.push(DeferredCommand { command, contract_address: env.call_tx.target });
 
         Ok(())
     }
 
     fn defer_set_deposit_settings(env: &Env<S>, set_deposit_settings_input_ptr: u32, set_deposit_settings_input_len: u32) -> Result<(), FuncError> {
-        let serialized_command = env.read_bytes(set_deposit_settings_input_ptr, set_deposit_settings_input_len)
-            .map_err(FuncError::Runtime)?;
+        let serialized_command = env.read_bytes(set_deposit_settings_input_ptr, set_deposit_settings_input_len)?;
         let command = pchain_types::Command::deserialize(&serialized_command)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
@@ -272,14 +283,13 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
             return Err(FuncError::Internal)
         }
         
-        env.context.lock().unwrap().commands.push(command);
+        env.context.lock().unwrap().commands.push(DeferredCommand { command, contract_address: env.call_tx.target });
 
         Ok(())
     }
 
     fn defer_topup_deposit(env: &Env<S>, top_up_deposit_input_ptr: u32, top_up_deposit_input_len: u32) -> Result<(), FuncError> {
-        let serialized_command = env.read_bytes(top_up_deposit_input_ptr, top_up_deposit_input_len)
-            .map_err(FuncError::Runtime)?;
+        let serialized_command = env.read_bytes(top_up_deposit_input_ptr, top_up_deposit_input_len)?;
         let command = pchain_types::Command::deserialize(&serialized_command)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
@@ -287,14 +297,13 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
             return Err(FuncError::Internal)
         }
         
-        env.context.lock().unwrap().commands.push(command);
+        env.context.lock().unwrap().commands.push(DeferredCommand { command, contract_address: env.call_tx.target });
 
         Ok(())
     }
 
     fn defer_withdraw_deposit(env: &Env<S>, withdraw_deposit_input_ptr: u32, withdraw_deposit_input_len: u32) -> Result<(), FuncError> {
-        let serialized_command = env.read_bytes(withdraw_deposit_input_ptr, withdraw_deposit_input_len)
-            .map_err(FuncError::Runtime)?;
+        let serialized_command = env.read_bytes(withdraw_deposit_input_ptr, withdraw_deposit_input_len)?;
         let command = pchain_types::Command::deserialize(&serialized_command)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
@@ -302,14 +311,13 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
             return Err(FuncError::Internal)
         }
         
-        env.context.lock().unwrap().commands.push(command);
+        env.context.lock().unwrap().commands.push(DeferredCommand { command, contract_address: env.call_tx.target });
 
         Ok(())
     }
 
     fn defer_stake_deposit(env: &Env<S>, stake_deposit_input_ptr: u32, stake_deposit_input_len: u32) -> Result<(), FuncError> {
-        let serialized_command = env.read_bytes(stake_deposit_input_ptr, stake_deposit_input_len)
-            .map_err(FuncError::Runtime)?;
+        let serialized_command = env.read_bytes(stake_deposit_input_ptr, stake_deposit_input_len)?;
         let command = pchain_types::Command::deserialize(&serialized_command)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
@@ -317,14 +325,13 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
             return Err(FuncError::Internal)
         }
         
-        env.context.lock().unwrap().commands.push(command);
+        env.context.lock().unwrap().commands.push(DeferredCommand { command, contract_address: env.call_tx.target });
 
         Ok(())
     }
 
     fn defer_unstake_deposit(env: &Env<S>, unstake_deposit_input_ptr: u32, unstake_deposit_input_len: u32) -> Result<(), FuncError> {
-        let serialized_command = env.read_bytes(unstake_deposit_input_ptr, unstake_deposit_input_len)
-            .map_err(FuncError::Runtime)?;
+        let serialized_command = env.read_bytes(unstake_deposit_input_ptr, unstake_deposit_input_len)?;
         let command = pchain_types::Command::deserialize(&serialized_command)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
@@ -332,14 +339,13 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
             return Err(FuncError::Internal)
         }
         
-        env.context.lock().unwrap().commands.push(command);
+        env.context.lock().unwrap().commands.push(DeferredCommand { command, contract_address: env.call_tx.target });
 
         Ok(())
     }
 
     fn sha256(env: &Env<S>, msg_ptr: u32, msg_len: u32, digest_ptr_ptr: u32) -> Result<(), FuncError> {
-        let input_bytes = env.read_bytes(msg_ptr, msg_len)
-            .map_err(FuncError::Runtime)?;
+        let input_bytes = env.read_bytes(msg_ptr, msg_len)?;
 
         env.consume_wasm_gas(crate::cost::CRYPTO_SHA256_PER_BYTE * input_bytes.len() as u64);
 
@@ -352,8 +358,7 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
     }
 
     fn keccak256(env: &Env<S>, msg_ptr: u32, msg_len: u32, digest_ptr_ptr: u32) -> Result<(), FuncError> {
-        let mut input_bytes = env.read_bytes(msg_ptr, msg_len)
-            .map_err(FuncError::Runtime)?;
+        let mut input_bytes = env.read_bytes(msg_ptr, msg_len)?;
 
         env.consume_wasm_gas(crate::cost::CRYPTO_KECCAK256_PER_BYTE * input_bytes.len() as u64);
 
@@ -367,8 +372,7 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
     }
 
     fn ripemd(env: &Env<S>, msg_ptr: u32, msg_len: u32, digest_ptr_ptr :u32) -> Result<(), FuncError>  {
-        let input_bytes = env.read_bytes(msg_ptr, msg_len)
-            .map_err(FuncError::Runtime)?;
+        let input_bytes = env.read_bytes(msg_ptr, msg_len)?;
 
         env.consume_wasm_gas(crate::cost::CRYPTO_RIPEMD160_PER_BYTE * input_bytes.len() as u64);
 
@@ -381,26 +385,19 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
     }
 
     fn verify_ed25519_signature(env: &Env<S>, msg_ptr: u32, msg_len: u32, signature_ptr: u32, address_ptr: u32) -> Result<i32, FuncError> {
-        let message = env.read_bytes(msg_ptr, msg_len)
-            .map_err(FuncError::Runtime)?;
+        let message = env.read_bytes(msg_ptr, msg_len)?;
 
-        let signature = env.read_bytes(signature_ptr, 64)
-            .map_err(FuncError::Runtime)?;
+        let signature = env.read_bytes(signature_ptr, 64)?;
 
-        let address = env.read_bytes(address_ptr, 32)
-            .map_err(FuncError::Runtime)?;
+        let address = env.read_bytes(address_ptr, 32)?;
 
         env.consume_wasm_gas(crate::cost::crypto_verify_ed25519_signature_cost(message.len()));
 
-        let public_key = match ed25519_dalek::PublicKey::from_bytes(&address) {
-            Ok(dalek_pk) => dalek_pk,
-            Err(_) => return Err(FuncError::Internal)
-        };
+        let public_key = ed25519_dalek::PublicKey::from_bytes(&address)
+            .map_err(|_| FuncError::Internal)?;
     
-        let dalek_signature = match ed25519_dalek::Signature::from_bytes(&signature) {
-            Ok(dalek_sig) => dalek_sig,
-            Err(_) => return Err(FuncError::Internal)
-        };
+        let dalek_signature = ed25519_dalek::Signature::from_bytes(&signature)
+            .map_err(|_| FuncError::Internal)?;
     
         let result = public_key.verify(&message, &dalek_signature).is_ok();
 

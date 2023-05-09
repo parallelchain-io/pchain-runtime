@@ -8,12 +8,12 @@
 //! 
 //! This mod includes unit test cases that are specific Network Commands. 
 
-use pchain_types::{ExitStatus, Command, CommandReceipt};
+use pchain_types::{ExitStatus, Command, CommandReceipt, PublicAddress};
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
     transition::StateChangesResult, 
-    TransitionResult, TransitionError
+    TransitionResult, TransitionError, types::DeferredCommand
 };
 
 use super::{
@@ -35,23 +35,29 @@ pub(crate) fn execute_commands<S>(mut state: StateInTransit<S>, commands: Vec<Co
     // Phase: Work(s)
     let mut command_task_results = CommandTaskResults::new();
     let mut command_tasks = CommandTasks::new();
-    command_tasks.append(commands, None);
+    command_tasks.append(commands.into_iter().map(CommandTaskItem::TransactionCommmand).collect(), None);
     while let Some(command_task) = command_tasks.next_task() {
         let task_id = command_task.task_id;
-        let command = command_task.command;
+        let (actor, command) = 
+        match command_task.command {
+            CommandTaskItem::TransactionCommmand(command) => 
+                (state.tx.signer, command),
+            CommandTaskItem::DeferredCommand(deferred_command) => 
+                (deferred_command.contract_address, deferred_command.command),
+        };
         
         // Work: Execute command triggered from the Transaction
         let ret = account::try_execute(state, &command)
-            .or_else(|state| network::try_execute(state, &command))
+            .or_else(|state| network::try_execute(actor, state, &command))
             .unwrap();
 
         // Work: Proceed execution result
         state = match ret {
-            // not yet finish. continue command execution with resulting state
+            // command execution is not completed, continue with resulting state
             Ok(mut state_of_success_execution) => {
                 // append command triggered from Call
                 if let Some(commands_from_call) = state_of_success_execution.ctx.pop_commands() {
-                    command_tasks.append(commands_from_call, Some(task_id));
+                    command_tasks.append(commands_from_call.into_iter().map(CommandTaskItem::DeferredCommand).collect(), Some(task_id));
                 }
                 // extract receipt from current execution result
                 let cmd_receipt = state_of_success_execution.extract(prev_gas_used, ExitStatus::Success);
@@ -73,16 +79,36 @@ pub(crate) fn execute_commands<S>(mut state: StateInTransit<S>, commands: Vec<Co
     phase::charge(state, None).finalize(command_task_results.command_receipts())
 }
 
-/// Execution flow for NextEpoch Command, which does not proceeds through a fixed sequence of Phases.
+pub(crate) fn execute_view<S>(
+    state: StateInTransit<S>,
+    target: PublicAddress,
+    method: String,
+    arguments: Option<Vec<Vec<u8>>>,
+) -> (CommandReceipt, Option<TransitionError>)
+    where S: WorldStateStorage + Send + Sync + Clone
+{
+    match account::call(state, true, target, method, arguments, None) {
+        // not yet finish. continue command execution with resulting state
+        Ok(mut state_of_success_execution) => {
+            let cmd_receipt = state_of_success_execution.extract(0, ExitStatus::Success);
+            (cmd_receipt, None)
+        },
+        Err(StateChangesResult { state: mut state_of_abort_result, error }) => {
+            let cmd_receipt = state_of_abort_result.extract(0, error.as_ref().unwrap().into());
+            (cmd_receipt, error)
+        }
+    }
+}
+
+/// Execution flow for NextEpoch Command, which does not proceed through the fixed sequence of Phases.
 pub(crate) fn execute_next_epoch_command<S>(state: StateInTransit<S>, commands: Vec<Command>) -> TransitionResult<S> 
     where S: WorldStateStorage + Send + Sync + Clone
 {
-    // There must be only one Next EpochCommand in a transaction.
+    // There can only be one NextEpoch Command in a transaction.
     if commands.len() != 1 || commands.first() != Some(&Command::NextEpoch) {
         return TransitionResult { new_state: state.ctx.rw_set.ws, receipt: None, error: Some(TransitionError::InvalidNextEpochCommand), validator_changes: None }
     }
 
-    // Nonce must be correct, which is a rule to all kind of transaction
     let signer = state.tx.signer;
     let origin_nonce = state.ws.nonce(signer);
     if state.tx.nonce != origin_nonce {
@@ -92,7 +118,7 @@ pub(crate) fn execute_next_epoch_command<S>(state: StateInTransit<S>, commands: 
     // State transition
     let (mut state, new_vs) = administration::next_epoch(state);
 
-    // Update Nonce for the transaction. This step ensures later epoch transaction produced 
+    // Update Nonce for the transaction. This step ensures future epoch transaction produced 
     // by the signer will have different transaction hash.
     let nonce = state.ws.nonce(signer).saturating_add(1);
     state.ws.with_commit().set_nonce(signer, nonce);
@@ -115,7 +141,7 @@ impl CommandTasks {
     fn new() -> Self { Self(Vec::new()) }
 
     /// append a sequence of Commands and store as CommandTask with assigned task ID.
-    fn append(&mut self, mut commands: Vec<Command>, same_task_id: Option<u32>) {
+    fn append(&mut self, mut commands: Vec<CommandTaskItem>, same_task_id: Option<u32>) {
         let mut task_id = match same_task_id {
             Some(id) => id,
             None => self.0.last().map_or(0, |t| t.task_id + 1)
@@ -137,11 +163,20 @@ impl CommandTasks {
 
 /// CommandTask encapsulates the task to execute a command. An ID number is assigned to a task.
 /// There may be multple command tasks sharing the same Task ID. In this case, the commands are
-/// considered as one command such that their results should conbine together as one receipt.
+/// considered as one command such that their results should be combined together as one receipt.
 #[derive(Debug)]
 pub(crate) struct CommandTask {
     task_id: TaskID,
-    command: Command,
+    command: CommandTaskItem,
+}
+
+/// CommandTaskItem defines types of command to be executed in a Command Task.
+#[derive(Debug)]
+pub(crate) enum CommandTaskItem {
+    /// The Command that is submitted from Transaction input
+    TransactionCommmand(Command),
+    /// The Command that is submitted (deferred) from a Contract Call
+    DeferredCommand(DeferredCommand)
 }
 
 /// CommandTaskResults is a sequence of CommandTaskResult, which follows the properties of CommandTaskResult.
@@ -151,7 +186,7 @@ impl CommandTaskResults {
     fn new() -> Self { Self(Vec::new()) }
     
     /// push the next Command Receipt into Results. Combine with the last
-    /// result if Task ID is as same as the last one.
+    /// receipt if Task ID is as same as the last one.
     fn push(&mut self, task_id: TaskID, command_receipt: CommandReceipt) {
         if let Some(last_result) = self.0.last_mut() {
             if last_result.task_id == task_id {
@@ -169,9 +204,9 @@ impl CommandTaskResults {
 
 /// CommandTaskResult is the result of execution of a CommandTask, which is used to combine
 /// the Command Receipt into one if the tasks are sharing same Task ID:
-/// - Gas used is the sum of ther command receipt
-/// - If the last command fails, the exit status should also be failed.
-/// - The fields gas_used and exit_status uses the results in first Command Receipt.
+/// - Gas used is added up by the later command receipt
+/// - Exit status is overwritten by the later command receipt (i.e. if the last command fails, the exit status should also be failed.)
+/// - Return value is overwritten by the later command receipt
 pub(crate) struct CommandTaskResult {
     task_id: TaskID,
     command_receipt: CommandReceipt
@@ -183,6 +218,7 @@ impl CommandTaskResult {
     fn combine(&mut self, next_command_receipt: CommandReceipt){
         self.command_receipt.gas_used = self.command_receipt.gas_used.saturating_add(next_command_receipt.gas_used);
         self.command_receipt.exit_status = next_command_receipt.exit_status;
+        self.command_receipt.return_values = next_command_receipt.return_values;
     }
 }
 
@@ -217,10 +253,10 @@ impl<S> TryExecuteResult<S>
 mod test {
     use std::{collections::HashMap};
 
-    use pchain_types::{MIN_BASE_FEE, Command, ExitStatus, PublicAddress, Stake, Pool};
+    use pchain_types::{MIN_BASE_FEE, Command, ExitStatus, PublicAddress, Stake, Pool, Transaction, Serializable};
     use pchain_world_state::{storage::{WorldStateStorage, Key, Value}, states::WorldState, network::{stake::StakeValue, pool::{PoolKey}, network_account::NetworkAccountSized}};
 
-    use crate::{transactions::{phase::{StateInTransit}, execute::{execute_commands, execute_next_epoch_command}}, transition::TransitionContext, types::BaseTx, TransitionError, BlockchainParams, ValidatorPerformance, BlockProposalStats, gas::tx_base_cost};
+    use crate::{transactions::{phase::{StateInTransit}, execute::{execute_commands, execute_next_epoch_command}}, transition::TransitionContext, types::BaseTx, TransitionError, BlockchainParams, ValidatorPerformance, BlockProposalStats, gas::{tx_inclusion_cost_from}};
 
     const TEST_MAX_VALIDATOR_SET_SIZE: u16 = pchain_types::MAX_VALIDATOR_SET_SIZE;
     const TEST_MAX_STAKES_PER_POOL: u16 = pchain_types::MAX_STAKES_PER_POOL;
@@ -247,8 +283,9 @@ mod test {
     /// Null test on empty transaction commands
     #[test]
     fn test_empty_commands() {
-        let state = create_state(None);
+        let mut state = create_state(None);
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_A);
+        let tx_base_cost = set_tx(&mut state, ACCOUNT_A, 0, &vec![]);
         let ret = execute_commands(state, vec![]);
         assert_eq!((&ret.error, &ret.receipt), (&None, &Some(vec![])));
         let gas_used = ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>();
@@ -256,7 +293,7 @@ mod test {
 
         let state = create_state(Some(ret.new_state));
         let owner_balance_after = state.ctx.rw_set.ws.balance(ACCOUNT_A);
-        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost());
+        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost);
     }
 
     // Commands: Create Pool
@@ -374,11 +411,11 @@ mod test {
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
 
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_B);
-
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::CreateDeposit { operator: ACCOUNT_A, balance: 500_000, auto_stake_rewards: false }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
@@ -397,19 +434,20 @@ mod test {
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_B);
-        state.tx.nonce = 1;
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::CreateDeposit { operator: ACCOUNT_A, balance: 500_000, auto_stake_rewards: false }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 1, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, Some(TransitionError::DepositsAlreadyExists));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_C);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::CreateDeposit { operator: ACCOUNT_A, balance: 500_000_000, auto_stake_rewards: false }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_C, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, Some(TransitionError::NotEnoughBalanceForTransfer));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
@@ -431,11 +469,12 @@ mod test {
         let ws = state.ctx.rw_set.commit_to_world_state();
         
         let mut state = create_state(Some(ws));
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::CreateDeposit { operator: ACCOUNT_A, balance: 500_000, auto_stake_rewards: false },
             Command::SetDepositSettings { operator: ACCOUNT_A, auto_stake_rewards: true }   
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
@@ -453,11 +492,11 @@ mod test {
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_B);
-        state.tx.nonce = 1;
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::SetDepositSettings { operator: ACCOUNT_A, auto_stake_rewards: true } // Same deposit plocy
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 1, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, Some(TransitionError::InvalidDepositPolicy));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
@@ -479,11 +518,12 @@ mod test {
         let ws = state.ctx.rw_set.commit_to_world_state();
         
         let mut state = create_state(Some(ws));
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::CreateDeposit { operator: ACCOUNT_A, balance: 500_000, auto_stake_rewards: false },
             Command::TopUpDeposit { operator: ACCOUNT_A, amount: 100 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
@@ -501,10 +541,11 @@ mod test {
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_C);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::CreateDeposit { operator: ACCOUNT_A, balance: 500_000_000, auto_stake_rewards: false }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_C, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, Some(TransitionError::NotEnoughBalanceForTransfer));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
@@ -532,11 +573,13 @@ mod test {
         let ws = state.ctx.rw_set.commit_to_world_state();
         
         let mut state = create_state(Some(ws));
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
-            Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 20_000 }
-        ]);
+        let commands = vec![
+            Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 20_000 + 1 } // stake more than deposit
+        ];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 20_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         let mut state = create_state(Some(ret.new_state));
@@ -549,35 +592,37 @@ mod test {
         ///// Exceptions: /////
         
         let mut state = create_state(Some(state.ws.to_owned()));
-        state.tx = create_tx(ACCOUNT_C);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 20_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_C, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, Some(TransitionError::DepositsNotExists));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_B);
-        state.tx.nonce = 1;
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 1 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 1, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, Some(TransitionError::InvalidStakeAmount));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         // Delete Pool first
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_A);
-        let ret = execute_commands(state, vec![Command::DeletePool]);
+        let commands = vec![Command::DeletePool];
+        set_tx(&mut state, ACCOUNT_A, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, None);
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         // and then stake deposit
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_B);
-        state.tx.nonce = 2;
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 20_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 2, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
@@ -599,11 +644,13 @@ mod test {
         let ws = state.ctx.rw_set.commit_to_world_state();
         
         let mut state = create_state(Some(ws));
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 6_300_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 6_300_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         let mut state = create_state(Some(ret.new_state));
@@ -638,11 +685,13 @@ mod test {
         let ws = state.ctx.rw_set.commit_to_world_state();
         
         let mut state = create_state(Some(ws));
-        state.tx = create_tx(ACCOUNT_C);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::StakeDeposit { operator: ACCOUNT_B, max_amount: 6_500_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_C, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 6_500_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         let mut state = create_state(Some(ret.new_state));
 
@@ -675,12 +724,13 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let prev_pool_power = NetworkAccount::pools(&mut state, ACCOUNT_A).power().unwrap();
-
-        state.tx = create_tx(ACCOUNT_C);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 250_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_C, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 250_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         let mut state = create_state(Some(ret.new_state));
@@ -695,19 +745,20 @@ mod test {
 
         let mut state = create_state(Some(state.ws.to_owned()));
         // create deposit first (too low to join deledated stake )
-        state.tx = create_tx(ACCOUNT_D);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::CreateDeposit { operator: ACCOUNT_A, balance: 100_000, auto_stake_rewards: false }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_D, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         // and then stake deposit
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_D);
-        state.tx.nonce = 1;
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 100_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_D, 1, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, Some(TransitionError::InvalidStakeAmount));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
     }
@@ -727,12 +778,13 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let prev_pool_power = NetworkAccount::pools(&mut state, ACCOUNT_C).power().unwrap();
-
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::StakeDeposit { operator: ACCOUNT_C, max_amount: 110_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 110_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         let mut state = create_state(Some(ret.new_state));
 
@@ -768,11 +820,13 @@ mod test {
         let ws = state.ctx.rw_set.commit_to_world_state();
         
         let mut state = create_state(Some(ws));
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 40_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 40_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
@@ -806,6 +860,7 @@ mod test {
             Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 20_000 }
         ]);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 20_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
@@ -834,11 +889,13 @@ mod test {
         let ws = state.ctx.rw_set.commit_to_world_state();
         
         let mut state = create_state(Some(ws));
-        state.tx = create_tx(ACCOUNT_A);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 110_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_A, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 110_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
@@ -876,11 +933,13 @@ mod test {
         let ws = state.ctx.rw_set.commit_to_world_state();
         
         let mut state = create_state(Some(ws));
-        state.tx = create_tx(ACCOUNT_C);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::StakeDeposit { operator: ACCOUNT_C, max_amount: 150_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_C, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 150_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
@@ -915,6 +974,7 @@ mod test {
             Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 10_000 }
         ]);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 10_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
@@ -950,11 +1010,13 @@ mod test {
         let ws = state.ctx.rw_set.commit_to_world_state();
         
         let mut state = create_state(Some(ws));
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::UnstakeDeposit { operator: ACCOUNT_A, max_amount: 40_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 40_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
@@ -968,37 +1030,38 @@ mod test {
         ///// Exceptions: /////
         
         let mut state = create_state(Some(state.ws.to_owned()));
-        state.tx = create_tx(ACCOUNT_B);
-        state.tx.nonce = 1;
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::UnstakeDeposit { operator: ACCOUNT_C, max_amount: 40_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 1, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, Some(TransitionError::DepositsNotExists));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         // create Pool and deposit first
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_C);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::CreatePool { commission_rate: 1 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_C, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_B);
-        state.tx.nonce = 2;
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::CreateDeposit { operator: ACCOUNT_C, balance: 10_000, auto_stake_rewards: false }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 2, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         // and then UnstakeDeposit
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_B);
-        state.tx.nonce = 3;
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::UnstakeDeposit { operator: ACCOUNT_C, max_amount: 10_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 3, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, Some(TransitionError::PoolHasNoStakes));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
@@ -1011,14 +1074,50 @@ mod test {
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         // then UnstakeDeposit
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_B);
-        state.tx.nonce = 4;
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::UnstakeDeposit { operator: ACCOUNT_A, max_amount: 10_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 4, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
+    }
+
+    // Prepare: pool (account a) in world state, with delegated stakes of account X, X has the biggest stake
+    // Prepare: deposits (account X) to pool (account a)
+    // Commands (account X): Unstake Deposit
+    #[test]
+    fn test_unstake_deposit_delegated_stakes_remove() {
+        let mut state = create_state(None);
+        create_full_deposits_in_pool(&mut state, ACCOUNT_A, false);
+        create_full_stakes_in_pool(&mut state, ACCOUNT_A);
+        let biggest = [129u8,2,2,2, 2,2,2,2, 2,2,2,2, 2,2,2,2, 2,2,2,2, 2,2,2,2, 2,2,2,2, 2,2,2,2];
+        state.set_balance(biggest, 500_000_000);
+        let origin_pool_power = NetworkAccount::pools(&mut state, ACCOUNT_A).power().unwrap();
+        let stake = NetworkAccount::pools(&mut state, ACCOUNT_A).delegated_stakes()
+            .get_by(&biggest).unwrap();
+
+        let ws = state.ctx.rw_set.commit_to_world_state();
+        
+        let mut state = create_state(Some(ws));
+        let commands = vec![
+            Command::UnstakeDeposit { operator: ACCOUNT_A, max_amount: stake.power }
+        ];
+        set_tx(&mut state, biggest, 0, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, stake.power.to_le_bytes().to_vec());
+        println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
+
+        let mut state = create_state(Some(ret.new_state));
+        
+        let new_pool_power = NetworkAccount::pools(&mut state, ACCOUNT_A).power().unwrap();
+        assert_eq!(origin_pool_power - new_pool_power, stake.power);
+        let stakers = NetworkAccount::pools(&mut state, ACCOUNT_A).delegated_stakes().unordered_values();
+        assert!(!stakers.iter().any(|v| v.owner == biggest));
+        assert!(NetworkAccount::pools(&mut state, ACCOUNT_A).delegated_stakes().get_by(&biggest).is_none());
+
     }
 
     // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with delegated stakes of account b
@@ -1039,11 +1138,13 @@ mod test {
         let ws = state.ctx.rw_set.commit_to_world_state();
         
         let mut state = create_state(Some(ws));
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
-            Command::UnstakeDeposit { operator: ACCOUNT_T, max_amount: 150_000 }
-        ]);
+        let commands = vec![
+            Command::UnstakeDeposit { operator: ACCOUNT_T, max_amount: 150_000 + 1 } // unstake more than staked
+        ];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 150_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
@@ -1073,11 +1174,13 @@ mod test {
         let ws = state.ctx.rw_set.commit_to_world_state();
         
         let mut state = create_state(Some(ws));
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::UnstakeDeposit { operator: ACCOUNT_T, max_amount: 200_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 200_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
@@ -1113,6 +1216,7 @@ mod test {
             Command::UnstakeDeposit { operator: ACCOUNT_A, max_amount: 100_000 }
         ]);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 100_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
@@ -1151,11 +1255,13 @@ mod test {
         let ws = state.ctx.rw_set.commit_to_world_state();
         
         let mut state = create_state(Some(ws));
-        state.tx = create_tx(ACCOUNT_T);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::UnstakeDeposit { operator: ACCOUNT_T, max_amount: 190_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_T, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 190_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
@@ -1186,11 +1292,13 @@ mod test {
         let ws = state.ctx.rw_set.commit_to_world_state();
         
         let mut state = create_state(Some(ws));
-        state.tx = create_tx(ACCOUNT_T);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::UnstakeDeposit { operator: ACCOUNT_T, max_amount: 200_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_T, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 200_000_u64.to_le_bytes().to_vec());
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
@@ -1229,11 +1337,13 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_B);
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 40_000 }
-        ]);
+        ];
+        let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 40_000_u64.to_le_bytes().to_vec());
         let gas_used = ret.receipt.clone().unwrap().iter().map(|g| g.gas_used).sum::<u64>();
         println!("gas_consumed {}", gas_used);
         
@@ -1245,7 +1355,7 @@ mod test {
         assert_eq!((stake.owner, stake.power), (ACCOUNT_B, 60_000));
         assert_eq!(NetworkAccount::pools(&mut state, ACCOUNT_A).power().unwrap(), 60_000);
         let owner_balance_after = state.ctx.rw_set.ws.balance(ACCOUNT_B);
-        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost() - 40_000);
+        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost - 40_000);
 
         ///// Exceptions: /////
         
@@ -1264,20 +1374,20 @@ mod test {
         println!("gas_consumed {}", ret.receipt.clone().unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         // Then unstake
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_B);
-        state.tx.nonce = 1;
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::UnstakeDeposit { operator: ACCOUNT_A, max_amount: 10_000 } // 60_000 - 10_000
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 1, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         println!("gas_consumed {}", ret.receipt.clone().unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         // pvp: 0, vp: 60_000, nvp: 50_000, deposit: 60_000, Try withdraw
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_B);
-        state.tx.nonce = 2;
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 10_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 2, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, Some(TransitionError::InvalidStakeAmount));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
@@ -1290,20 +1400,20 @@ mod test {
         println!("gas_consumed {}", ret.receipt.clone().unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         // pvp: 60_000, vp: 50_000, nvp: 50_000, deposit: 60_013, Deduce deposit to 60_000
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_B);
-        state.tx.nonce = 3;
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 13 } // reduce deposit to 60_000
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 3, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         // pvp: 60_000, vp: 50_000, nvp: 50_000, deposit: 60_000, Try Withdraw
         let mut state = create_state(Some(ret.new_state));
-        state.tx = create_tx(ACCOUNT_B);
-        state.tx.nonce = 4;
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 10_000 }
-        ]);
+        ];
+        set_tx(&mut state, ACCOUNT_B, 4, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!(ret.error, Some(TransitionError::InvalidStakeAmount));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
     }
@@ -1331,24 +1441,26 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_B);
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::WithdrawDeposit { operator: ACCOUNT_T, max_amount: 200_000 }
-        ]);
+        ];
+        let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 200_000_u64.to_le_bytes().to_vec());
         let gas_used = ret.receipt.as_ref().unwrap().iter().map(|g| g.gas_used).sum::<u64>();
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
 
-        assert_eq!(NetworkAccount::deposits(&mut state, ACCOUNT_T, ACCOUNT_B).balance().unwrap(), 0);
+        assert_eq!(NetworkAccount::deposits(&mut state, ACCOUNT_T, ACCOUNT_B).balance(), None);
         let stake = NetworkAccount::pools(&mut state, ACCOUNT_T)
             .delegated_stakes()
             .get_by(&ACCOUNT_B);
         assert!(stake.is_none());
         assert_eq!(NetworkAccount::pools(&mut state, ACCOUNT_T).power().unwrap(), 50_000);
         let owner_balance_after = state.ctx.rw_set.ws.balance(ACCOUNT_B);
-        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost() - 200_000);
+        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost - 200_000);
         assert_eq!(NetworkAccount::nvp(&mut state).length(), TEST_MAX_VALIDATOR_SET_SIZE as u32);
         assert_eq!(NetworkAccount::nvp(&mut state).get(0).unwrap().operator, ACCOUNT_T);
         assert_eq!(NetworkAccount::nvp(&mut state).get(0).unwrap().power, 50_000);
@@ -1377,24 +1489,26 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_A);
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::WithdrawDeposit { operator: ACCOUNT_T, max_amount: 300_000 }
-        ]);
+        ];
+        let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 300_000_u64.to_le_bytes().to_vec());
         let gas_used = ret.receipt.as_ref().unwrap().iter().map(|g| g.gas_used).sum::<u64>();
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
 
-        assert_eq!(NetworkAccount::deposits(&mut state, ACCOUNT_T, ACCOUNT_B).balance().unwrap(), 0);
+        assert_eq!(NetworkAccount::deposits(&mut state, ACCOUNT_T, ACCOUNT_B).balance(), None);
         let stake = NetworkAccount::pools(&mut state, ACCOUNT_T)
             .delegated_stakes()
             .get_by(&ACCOUNT_B);
         assert!(stake.is_none());
         assert_eq!(NetworkAccount::pools(&mut state, ACCOUNT_T).power().unwrap(), 0);
         let owner_balance_after = state.ctx.rw_set.ws.balance(ACCOUNT_B);
-        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost() - 300_000);
+        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost - 300_000);
         assert_eq!(NetworkAccount::nvp(&mut state).length(), TEST_MAX_VALIDATOR_SET_SIZE as u32 - 1);
         assert_eq!(NetworkAccount::nvp(&mut state).get(0).unwrap().operator, ACCOUNT_A);
         assert_eq!(NetworkAccount::nvp(&mut state).get(0).unwrap().power, 100_000);
@@ -1419,11 +1533,13 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_A);
-        state.tx = create_tx(ACCOUNT_A);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 45_000 }
-        ]);
+        ];
+        let tx_base_cost = set_tx(&mut state, ACCOUNT_A, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 45_000_u64.to_le_bytes().to_vec());
         let gas_used = ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>();
         println!("gas_consumed {}", gas_used);
         
@@ -1434,7 +1550,7 @@ mod test {
         assert_eq!((stake.owner, stake.power), (ACCOUNT_A, 55_000));
         assert_eq!(NetworkAccount::pools(&mut state, ACCOUNT_A).power().unwrap(), 55_000);
         let owner_balance_after = state.ctx.rw_set.ws.balance(ACCOUNT_A);
-        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost() - 45_000);
+        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost - 45_000);
     }
 
     // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with non-zero value of Operator Stake
@@ -1457,21 +1573,23 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_T);
-        state.tx = create_tx(ACCOUNT_T);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::WithdrawDeposit { operator: ACCOUNT_T, max_amount: 200_000 }
-        ]);
+        ];
+        let tx_base_cost = set_tx(&mut state, ACCOUNT_T, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 200_000_u64.to_le_bytes().to_vec());
         let gas_used = ret.receipt.as_ref().unwrap().iter().map(|g| g.gas_used).sum::<u64>();
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
 
-        assert_eq!(NetworkAccount::deposits(&mut state, ACCOUNT_T, ACCOUNT_T).balance().unwrap(), 0);
+        assert_eq!(NetworkAccount::deposits(&mut state, ACCOUNT_T, ACCOUNT_T).balance(), None);
         assert!(NetworkAccount::pools(&mut state, ACCOUNT_T).operator_stake().unwrap().is_none());
         assert_eq!(NetworkAccount::pools(&mut state, ACCOUNT_T).power().unwrap(), 50_000);
         let owner_balance_after = state.ctx.rw_set.ws.balance(ACCOUNT_T);
-        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost() - 200_000);
+        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost - 200_000);
         assert_eq!(NetworkAccount::nvp(&mut state).length(), TEST_MAX_VALIDATOR_SET_SIZE as u32);
         assert_eq!(NetworkAccount::nvp(&mut state).get(0).unwrap().operator, ACCOUNT_T);
         assert_eq!(NetworkAccount::nvp(&mut state).get(0).unwrap().power, 50_000);
@@ -1497,20 +1615,22 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_A);
-        state.tx = create_tx(ACCOUNT_T);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::WithdrawDeposit { operator: ACCOUNT_T, max_amount: 300_000 }
-        ]);
+        ];
+        let tx_base_cost = set_tx(&mut state, ACCOUNT_T, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 300_000_u64.to_le_bytes().to_vec());
         let gas_used = ret.receipt.as_ref().unwrap().iter().map(|g| g.gas_used).sum::<u64>();
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
 
-        assert_eq!(NetworkAccount::deposits(&mut state, ACCOUNT_T, ACCOUNT_T).balance().unwrap(), 0);
+        assert_eq!(NetworkAccount::deposits(&mut state, ACCOUNT_T, ACCOUNT_T).balance(), None);
         assert!(NetworkAccount::pools(&mut state, ACCOUNT_T).operator_stake().unwrap().is_none());
         let owner_balance_after = state.ctx.rw_set.ws.balance(ACCOUNT_T);
-        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost() - 300_000);
+        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost - 300_000);
         assert_eq!(NetworkAccount::nvp(&mut state).length(), TEST_MAX_VALIDATOR_SET_SIZE as u32 - 1);
         assert_eq!(NetworkAccount::nvp(&mut state).get(0).unwrap().operator, ACCOUNT_A);
         assert_eq!(NetworkAccount::nvp(&mut state).get(0).unwrap().power, 100_000);
@@ -1548,11 +1668,13 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_B);
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 40_000 }
-        ]);
+        ];
+        let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 20_000_u64.to_le_bytes().to_vec());
         let gas_used = ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>();
         println!("gas_consumed {}", gas_used);
         
@@ -1565,7 +1687,7 @@ mod test {
         assert_eq!((stake.owner, stake.power), (ACCOUNT_B, 80_000));
         assert_eq!(NetworkAccount::pools(&mut state, ACCOUNT_A).power().unwrap(), 80_000);
         let owner_balance_after = state.ctx.rw_set.ws.balance(ACCOUNT_B);
-        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost() - 20_000);
+        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost - 20_000);
     }
 
     // Prepare: pool (account a) in world state, with delegated stakes of account b
@@ -1600,11 +1722,13 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_B);
-        state.tx = create_tx(ACCOUNT_B);
-        let ret = execute_commands(state, vec![
+        let commands = vec![
             Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 40_000 }
-        ]);
+        ];
+        let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
+        assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 10_000_u64.to_le_bytes().to_vec());
         let gas_used = ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>();
         println!("gas_consumed {}", gas_used);
         
@@ -1617,7 +1741,7 @@ mod test {
         assert_eq!((stake.owner, stake.power), (ACCOUNT_B, 90_000));
         assert_eq!(NetworkAccount::pools(&mut state, ACCOUNT_A).power().unwrap(), 90_000);
         let owner_balance_after = state.ctx.rw_set.ws.balance(ACCOUNT_B);
-        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost() - 10_000);
+        assert_eq!(owner_balance_before, owner_balance_after + gas_used + tx_base_cost - 10_000);
     }
 
     // Prepare: no pool in world state
@@ -1846,7 +1970,7 @@ mod test {
 
         {
             // open account state for speed up read operations
-            let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS);
+            let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS).unwrap();
             let mut state = super::administration::NetworkAccountWorldState::new(&mut state, acc_state);
         
             // Pool power of vp and nvp are equal 
@@ -1900,7 +2024,7 @@ mod test {
 
         {
             // open account state for speed up read operations
-            let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS);
+            let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS).unwrap();
             let mut state = super::administration::NetworkAccountWorldState::new(&mut state, acc_state);
 
             // Pool power of pvp, vp and nvp are equal 
@@ -1975,7 +2099,7 @@ mod test {
 
         {
             // open account state for speed up read operations
-            let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS);
+            let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS).unwrap();
             let mut state = super::administration::NetworkAccountWorldState::new(&mut state, acc_state);
         
             // Pool power of vp and nvp are equal 
@@ -2031,7 +2155,7 @@ mod test {
 
         {
             // open account state for speed up read operations
-            let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS);
+            let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS).unwrap();
             let mut state = super::administration::NetworkAccountWorldState::new(&mut state, acc_state);
 
             // Pool power of vp and nvp are equal and greater than pool power of pvp
@@ -2127,17 +2251,29 @@ mod test {
             }
         };
         let ctx = TransitionContext::new(ws);
-        StateInTransit { bd: create_bd(), tx: create_tx(ACCOUNT_A), ctx }
+        let tx = create_tx(ACCOUNT_A);
+        let base_tx = BaseTx::from(&tx);
+        StateInTransit { bd: create_bd(), tx_size: tx.serialize().len(), commands_len: 0, tx: base_tx, ctx }
     }
 
-    fn create_tx(signer: PublicAddress) -> BaseTx {
-        BaseTx {        
+    fn set_tx(state: &mut StateInTransit<SimpleStore>, signer: PublicAddress, nonce: u64, commands: &Vec<Command>) -> u64 {
+        let mut tx = create_tx(signer);
+        tx.nonce = nonce;
+        state.tx_size = tx.serialize().len();
+        state.tx = BaseTx::from(&tx);
+        state.commands_len = commands.len();
+        tx_inclusion_cost_from(state.tx_size, state.commands_len)
+    }
+
+    fn create_tx(signer: PublicAddress) -> Transaction {
+        Transaction {
             signer,
             gas_limit: 10_000_000, 
             priority_fee_per_gas: 0,
             max_base_fee_per_gas: MIN_BASE_FEE,
             nonce: 0, 
-            hash: [0u8; 32], signature: [0u8; 64]  
+            hash: [0u8; 32], signature: [0u8; 64],
+            commands: Vec::new()
         }
     }
 

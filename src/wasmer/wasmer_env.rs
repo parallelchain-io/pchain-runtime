@@ -20,7 +20,7 @@ use crate::{
     transition::TransitionContext,
     wasmer::wasmer_memory::MemoryContext, 
     gas::{CostChange, self}, 
-    types::CallTx, BlockchainParams
+    types::CallTx, BlockchainParams, contract::FuncError
 };
 
 /// Env provides the functions in `exports` (which are in turn 'imported' by WASM smart contracts)
@@ -45,6 +45,9 @@ pub(crate) struct Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'sta
     /// Blockchain data as an input to state transition
     pub params_from_blockchain: BlockchainParams,
 
+    /// Indicator of whether this environment is used in view calls.
+    pub is_view: bool,
+
     #[wasmer(export)]
     pub memory: LazyInit<Memory>,
 
@@ -58,6 +61,7 @@ impl<S> Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'static {
     pub fn new(
         context: Arc<Mutex<TransitionContext<S>>>,
         call_counter: u32,
+        is_view: bool,
         call_tx: CallTx,
         params_from_blockchain: BlockchainParams
     ) -> Env<S> {
@@ -69,7 +73,8 @@ impl<S> Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'static {
             memory: LazyInit::default(),
             alloc: LazyInit::default(),
             call_tx,
-            params_from_blockchain
+            params_from_blockchain,
+            is_view
         }
     }
 
@@ -125,21 +130,21 @@ impl<S> Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'static {
     }
 
     /// write the data to memory, charge the write cost and return the length
-    pub fn write_bytes(&self, value :Vec<u8>, val_ptr_ptr :u32) -> Result<u32> {
+    pub fn write_bytes(&self, value :Vec<u8>, val_ptr_ptr :u32) -> Result<u32, FuncError> {
         let (deduct, _) = gas::wasm_memory_write_cost(value.len()).values();
         if deduct > 0 {
             self.consume_wasm_gas(deduct);
         }
-        MemoryContext::write_bytes_to_memory(self, value, val_ptr_ptr)
+        MemoryContext::write_bytes_to_memory(self, value, val_ptr_ptr).map_err(FuncError::Runtime)
     }
 
     /// read data from memory and charge the read cost
-    pub fn read_bytes(&self, offset: u32, len: u32) -> Result<Vec<u8>> {
+    pub fn read_bytes(&self, offset: u32, len: u32) -> Result<Vec<u8>, FuncError> {
         let (deduct, _) = gas::wasm_memory_read_cost(len as usize).values();
         if deduct > 0 {
             self.consume_wasm_gas(deduct);
         }
-        MemoryContext::read_bytes_from_memory(self, offset, len)
+        MemoryContext::read_bytes_from_memory(self, offset, len).map_err(FuncError::Runtime)
     }
 
 }

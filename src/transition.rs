@@ -9,7 +9,7 @@ use std::{
     collections::HashMap, 
     cell::RefCell, ops::{Deref, DerefMut}
 };
-use pchain_types::{PublicAddress, CommandReceipt, ExitStatus, Command};
+use pchain_types::{PublicAddress, CommandReceipt, ExitStatus, Command, Serializable};
 use pchain_world_state::{
     storage::WorldStateStorage, 
     states::{WorldState, AccountState}, 
@@ -19,7 +19,7 @@ use wasmer::Store;
 
 use crate::{
     transactions::{phase::StateInTransit, execute}, 
-    types::BaseTx, 
+    types::{BaseTx, DeferredCommand}, 
     wasmer::cache::Cache, 
     TransitionError, gas::{CostChange, self}, contract::{Module, SmartContractContext, self}, BlockchainParams
 };
@@ -59,28 +59,70 @@ impl Runtime {
     }
 
     /// transition performs state transition of world state (WS) from transaction (tx) and blockchain data (bd)as inputs.
-    pub fn transition<S: WorldStateStorage + Send + Sync + Clone + 'static>(&self, 
+    pub fn transition<S: WorldStateStorage + Send + Sync + Clone + 'static>(
+        &self, 
         ws: WorldState<S>, 
         tx: pchain_types::Transaction, 
         bd: BlockchainParams
     ) -> TransitionResult<S> {
+        // create transition context from world state
         let mut ctx = TransitionContext::new(ws);
-        
         if let Some(cache) = &self.sc_cache {
             ctx.sc_context.cache = Some(cache.clone());
         }
 
+        // transaction inputs
+        let tx_size = tx.serialize().len();
         let base_tx = BaseTx::from(&tx);
         let commands = tx.commands;
 
-        let state = StateInTransit { tx: base_tx, ctx, bd };
+        // initial state for transition
+        let state = StateInTransit { tx: base_tx, tx_size, commands_len: commands.len(), ctx, bd };
 
+        // initiate command execution
         if commands.iter().any(|c| matches!(c, Command::NextEpoch)) {
             execute::execute_next_epoch_command(state, commands)
         } else {
             execute::execute_commands(state, commands)
         }
     }
+    
+    /// view performs view call to a target contract
+    pub fn view<S: WorldStateStorage + Send + Sync + Clone + 'static>(
+        &self, 
+        ws: WorldState<S>, 
+        gas_limit: u64,
+        target: PublicAddress,
+        method: String,
+        arguments: Option<Vec<Vec<u8>>>
+    ) -> (CommandReceipt, Option<TransitionError>)  {
+        // create transition context from world state
+        let mut ctx = TransitionContext::new(ws);
+        if let Some(cache) = &self.sc_cache {
+            ctx.sc_context.cache = Some(cache.clone());
+        }
+        
+        // create a dummy transaction
+        let dummy_tx = BaseTx {
+            gas_limit, 
+            ..Default::default()
+        };
+
+        let dummy_bd = BlockchainParams::default();
+
+        // initialize state for executing view call
+        let state = StateInTransit { 
+            tx: dummy_tx, 
+            bd: dummy_bd,
+            ctx, 
+            // the below fields are not cared in view call
+            tx_size: 0, commands_len: 0
+        };
+
+        // execute view
+        execute::execute_view(state, target, method, arguments)
+    }
+
 }
 
 /// Result of state transition. It is the return type of `pchain_runtime::Runtime::transition`.
@@ -149,21 +191,22 @@ pub(crate) struct TransitionContext<S>
     /// Smart contract context for execution
     pub sc_context: SmartContractContext,
 
+    /// Commands that deferred from a Call Comamnd via host function specified in CBI.
+    pub commands: Vec<DeferredCommand>,
+
+    /// Gas consumed in transaction, no matter whether the transaction succeeds or fails.
+    gas_used: u64,
+
     /// the gas charged for adding logs and setting return value in receipt.
     pub receipt_write_gas: CostChange,
 
     /// logs stores the list of events emitted by an execution ordered in the order of emission.
     pub logs: Vec<pchain_types::Log>,
 
-    /// Gas consumed in transaction, no matter whether the transaction succeeds or fails.
-    gas_used: u64,
-
     /// return_value is the value returned by a call transaction using the `return_value` SDK function. It is None if the
     /// execution has not/did not return anything.
     pub return_value: Option<Vec<u8>>,
 
-    /// Commands that deferred from a Call Comamnd via host function specified in CBI.
-    pub commands: Vec<pchain_types::Command>
 }
 
 impl<S> TransitionContext<S> 
@@ -189,38 +232,32 @@ impl<S> TransitionContext<S>
         self.gas_used = gas_used
     }
     
-    /// Gas incurred to be charged
-    pub fn chargeable_gas(&self) -> u64 {
-        (self.rw_set.write_gas + self.receipt_write_gas + *self.rw_set.read_gas.borrow()).values().0
+    /// It is equivalent to gas_consumed + chareable_gas. The chareable_gas consists of
+    /// - write cost to storage
+    /// - read cost to storage
+    /// - write cost to receipt (blockchain data)
+    pub fn total_gas_to_be_consumed(&self) -> u64 {
+        // Gas incurred to be charged
+        let chargeable_gas = (self.rw_set.write_gas + self.receipt_write_gas + *self.rw_set.read_gas.borrow()).values().0;
+        self.gas_consumed().saturating_add(chargeable_gas)
     }
 
-    /// Minimum chargeable gas
-    pub fn minimum_chargeable_gas(&self) -> u64 {
-        self.rw_set.read_gas.borrow().values().0
-    }
-
-    /// Discard the changes except the read_gas
+    /// Discard the changes to world state
     pub fn revert_changes(&mut self) {
         self.rw_set.reads.borrow_mut().clear();
         self.rw_set.writes.clear();
-        self.rw_set.write_gas = CostChange::default();
-        // read_gas is not clear for gas charging
     }
 
     /// Output the CommandReceipt and clear the intermediate context for next command execution. 
     /// `prev_gas_used` will be needed for getting the intermediate gas consumption.
-    /// If exit status is not successful, return_values and logs will be empty in the receipt.
     pub fn extract(&mut self, prev_gas_used: u64, exit_status: ExitStatus) -> CommandReceipt {
         // 1. Create Command Receipt
-        let is_success = exit_status == ExitStatus::Success;
         let ret = CommandReceipt { 
             exit_status,
             gas_used: self.gas_used.saturating_sub(prev_gas_used), 
-            return_values: match &self.return_value {
-                Some(value) if is_success => value.clone(),
-                _ => Vec::new()
-            },
-            logs: if is_success { self.logs.clone() } else { Vec::new() }
+            // Intentionally retain return_values and logs even if exit_status is failed
+            return_values: self.return_value.clone().map_or(Vec::new(), std::convert::identity),
+            logs: self.logs.clone()
         };
         // 2. Clear data for next command execution
         *self.rw_set.read_gas.borrow_mut() = CostChange::default();
@@ -233,12 +270,11 @@ impl<S> TransitionContext<S>
     }
 
     /// Pop commands from context. None if there is nothing to pop
-    pub fn pop_commands(&mut self) -> Option<Vec<Command>> {
+    pub fn pop_commands(&mut self) -> Option<Vec<DeferredCommand>> {
+        if self.commands.is_empty() { return None }
         let mut ret = Vec::new();
         ret.append(&mut self.commands);
-        assert!(self.commands.is_empty());
-        if ret.is_empty() { None }
-        else { Some(ret) }
+        Some(ret)
     }
 }
 

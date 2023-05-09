@@ -177,6 +177,51 @@ pub fn create_importable<'a, T, K>(store: &'a Store, env: &T) -> Importable<'a>
     }, store)
 }
 
+/// Create importable (View) for instantiation of contract module.
+pub fn create_importable_view<'a, T, K>(store: &'a Store, env: &T) -> Importable<'a> 
+where 
+    T: wasmer::WasmerEnv + 'static, 
+    K: ContractBinaryInterface<T> + 'static,
+{
+    Importable(imports! {
+        "env" => {
+            "set" => Function::new_native(store, not_callable::set),
+            "get" => Function::new_native_with_env(store, env.clone(), K::get),
+            "get_network_storage" => Function::new_native_with_env(store, env.clone(), K::get_network_storage), 
+            "balance" => Function::new_native_with_env(store, env.clone(), K::balance),
+            
+            "block_height" => Function::new_native(store, not_callable::block_height),
+            "block_timestamp" => Function::new_native(store, not_callable::block_timestamp),
+            "prev_block_hash" => Function::new_native(store, not_callable::prev_block_hash),
+            
+            "calling_account" => Function::new_native(store, not_callable::calling_account),
+            "current_account" => Function::new_native_with_env(store, env.clone(), K::current_account),
+            "method" => Function::new_native_with_env(store, env.clone(), K::method), 
+            "arguments" => Function::new_native_with_env(store, env.clone(), K::arguments), 
+            "amount" => Function::new_native(store, not_callable::amount),
+            "is_internal_call" => Function::new_native_with_env(store, env.clone(), K::is_internal_call),
+            "transaction_hash" => Function::new_native(store, not_callable::transaction_hash),
+            
+            "call" => Function::new_native_with_env(store, env.clone(), K::call), // TODO
+            "return_value" => Function::new_native_with_env(store, env.clone(), K::return_value),
+            "transfer" => Function::new_native(store, not_callable::transfer),
+            "defer_create_deposit" => Function::new_native(store, not_callable::defer_create_deposit),
+            "defer_set_deposit_settings" => Function::new_native(store, not_callable::defer_set_deposit_settings),
+            "defer_topup_deposit" => Function::new_native(store, not_callable::defer_topup_deposit),
+            "defer_withdraw_deposit" => Function::new_native(store, not_callable::defer_withdraw_deposit),
+            "defer_stake_deposit" => Function::new_native(store, not_callable::defer_stake_deposit),
+            "defer_unstake_deposit" => Function::new_native(store, not_callable::defer_unstake_deposit),
+
+            "_log" => Function::new_native_with_env(store, env.clone(), K::log),
+            
+            "sha256" => Function::new_native_with_env(store, env.clone(), K::sha256),
+            "keccak256" => Function::new_native_with_env(store, env.clone(), K::keccak256),
+            "ripemd" => Function::new_native_with_env(store, env.clone(), K::ripemd),
+            "verify_ed25519_signature" => Function::new_native_with_env(store, env.clone(), K::verify_ed25519_signature),
+        }
+    }, store)
+}
+
 /// Importable is data object required to instantiate contract module
 pub struct Importable<'a>(pub(crate) ImportObject, &'a Store);
 
@@ -258,6 +303,29 @@ pub mod blank {
     pub(crate) fn keccak256(_: u32, _: u32, _: u32) { }
     pub(crate) fn ripemd(_: u32, _: u32, _: u32) { }
     pub(crate) fn verify_ed25519_signature(_: u32, _: u32, _: u32, _: u32) -> i32 { 0 }
+}
+
+/// stubs that are used as non-callable host functions. E.g. set() in view calls.
+mod not_callable {
+    use super::FuncError;
+
+    pub(crate) fn set(_: u32, _: u32, _: u32, _: u32) -> Result<(), FuncError> { Err(FuncError::Internal) }
+
+    pub(crate) fn block_height() -> Result<u64, FuncError> { Err(FuncError::Internal) }
+    pub(crate) fn block_timestamp() -> Result<u32, FuncError> { Err(FuncError::Internal) }
+    pub(crate) fn prev_block_hash(_: u32) -> Result<(), FuncError> { Err(FuncError::Internal) }
+
+    pub(crate) fn calling_account(_: u32) -> Result<(), FuncError> { Err(FuncError::Internal) }
+    pub(crate) fn amount() -> Result<u64, FuncError> { Err(FuncError::Internal) }
+    pub(crate) fn transaction_hash(_: u32) -> Result<(), FuncError> { Err(FuncError::Internal) }
+    
+    pub(crate) fn transfer(_: u32) -> Result<(), FuncError> { Err(FuncError::Internal) }
+    pub(crate) fn defer_create_deposit(_: u32, _: u32) -> Result<(), FuncError> { Err(FuncError::Internal) }
+    pub(crate) fn defer_set_deposit_settings(_: u32, _: u32) -> Result<(), FuncError> { Err(FuncError::Internal) }
+    pub(crate) fn defer_topup_deposit(_: u32, _: u32) -> Result<(), FuncError> { Err(FuncError::Internal) }
+    pub(crate) fn defer_withdraw_deposit(_: u32, _: u32) -> Result<(), FuncError> { Err(FuncError::Internal) }
+    pub(crate) fn defer_stake_deposit(_: u32, _: u32) -> Result<(), FuncError> { Err(FuncError::Internal) }
+    pub(crate) fn defer_unstake_deposit(_: u32, _: u32) -> Result<(), FuncError> { Err(FuncError::Internal) }
 }
 
 /// FuncError defines the error returns from execution of host functions

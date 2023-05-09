@@ -7,7 +7,7 @@
 
 use std::ops::{Deref, DerefMut};
 
-use pchain_types::{PublicAddress, Sha256Hash, Signature, Transaction};
+use pchain_types::{PublicAddress, Sha256Hash, Signature, Transaction, Command};
 
 /// BaseTx consists of common fields inside [pchain_types::Transaction].
 #[derive(Clone)]
@@ -19,6 +19,20 @@ pub struct BaseTx {
     pub gas_limit: u64,
     pub max_base_fee_per_gas: u64,
     pub priority_fee_per_gas: u64,   
+}
+
+impl Default for BaseTx {
+    fn default() -> Self {
+        Self {
+            signer: [0u8; 32],
+            hash: [0u8; 32],
+            signature: [0u8; 64],
+            nonce: 0,
+            gas_limit: 0,
+            max_base_fee_per_gas: 0,
+            priority_fee_per_gas: 0,
+        }
+    }
 }
 
 impl From<&Transaction> for BaseTx {
@@ -56,4 +70,11 @@ impl DerefMut for CallTx {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.base_tx
     }
+}
+
+/// DeferredCommand is the command created from contract call.
+#[derive(Clone, Debug)]
+pub struct DeferredCommand {
+    pub contract_address: PublicAddress,
+    pub command: Command
 }

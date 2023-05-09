@@ -1,6 +1,6 @@
 [package]
 name = "pchain-runtime"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["ParallelChain Lab <info@parallelchain.io>"]
 edition = "2021"
 description = "parallelchain-runtime: ParallelChain F Runtime for state transition in ParallelChain Mainnet"

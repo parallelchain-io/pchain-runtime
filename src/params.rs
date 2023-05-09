@@ -11,7 +11,7 @@ use pchain_types::{Sha256Hash, PublicAddress, ViewNumber};
 
 
 /// BlockchainParams defines information that are supplied to state transition function.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct BlockchainParams {
     /// Height of the Block
     pub this_block_number: u64,

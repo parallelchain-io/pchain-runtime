@@ -3,11 +3,11 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Internal transactions includes transfering tokens from contract and invoking another contract from contract.
+//! Internal transactions includes transferring tokens from contract and invoking another contract from contract.
 
-use std::{sync::{Arc, Mutex}};
+use std::sync::{Arc, Mutex};
 use pchain_types::PublicAddress;
-use pchain_world_state::{storage::WorldStateStorage};
+use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
     transition::TransitionContext, 
@@ -30,7 +30,8 @@ pub(crate) fn call_from_contract<S>(
     mut tx_from_contract: CallTx,
     bd: BlockchainParams,
     txn_in_env: Arc<Mutex<TransitionContext<S>>>,
-    call_counter: u32
+    call_counter: u32,
+    is_view: bool
 ) -> InternalCallResult 
     where S: WorldStateStorage + Send + Sync + Clone + 'static
 {
@@ -79,6 +80,7 @@ pub(crate) fn call_from_contract<S>(
     let instance = match contract_module.instantiate(
         txn_in_env, 
         call_counter, 
+        is_view,
         tx_from_contract, 
         bd
     ) {
@@ -99,7 +101,7 @@ pub(crate) fn call_from_contract<S>(
     internal_call_result
 }
 
-/// Execution logics for transfering tokens from a contract
+/// Execution logics for transferring tokens from a contract
 pub(crate) fn transfer_from_contract<S>(
     signer: PublicAddress,
     amount: u64,
@@ -111,7 +113,7 @@ pub(crate) fn transfer_from_contract<S>(
     let mut ctx_locked = txn_in_env.lock().unwrap();
     let mut internal_call_result = InternalCallResult::default();
 
-    // 1. Verify that the caller's balance is >= value
+    // 1. Verify that the caller's balance is >= amount
     let (from_balance, cost_change) = ctx_locked.balance(signer);
     internal_call_result.non_wasmer_gas += cost_change;
 
@@ -120,12 +122,12 @@ pub(crate) fn transfer_from_contract<S>(
         return internal_call_result;
     }
 
-    // 2. Debit value from from_address.
+    // 2. Debit amount from from_address.
     let from_address_new_balance = from_balance - amount;
     let cost_change = ctx_locked.set_balance(signer, from_address_new_balance);
     internal_call_result.non_wasmer_gas += cost_change;
 
-    // 3. Credit value to target_address.
+    // 3. Credit amount to recipient.
     let (to_address_prev_balance, cost_change) = ctx_locked.balance(recipient);
     internal_call_result.non_wasmer_gas += cost_change;
     let to_address_new_balance = to_address_prev_balance + amount;

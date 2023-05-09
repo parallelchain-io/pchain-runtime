@@ -30,7 +30,7 @@ impl Instance {
 
         let method = match self.0.exports.get_native_function::<(), ()>(CONTRACT_METHOD) {
             Ok(m) => m,
-            Err(e) => return Err((remaining_gas, MethodCallError::NoExportedMethodError(e))) // Invariant violated: A contract that does not export method_name was deployed.
+            Err(e) => return Err((remaining_gas, MethodCallError::NoExportedMethod(e))) // Invariant violated: A contract that does not export method_name was deployed.
         };
 
         // method call
@@ -44,8 +44,8 @@ impl Instance {
 
         match execution_result{
             Ok(_) => Ok(remaining_gas),
-            Err(_) if remaining_gas == 0 => Err((remaining_gas, MethodCallError::GasExhaustionError)),
-            Err(e) /* remaining_gas > 0 */ => Err((remaining_gas, MethodCallError::RuntimeError(e)))
+            Err(_) if remaining_gas == 0 => Err((remaining_gas, MethodCallError::GasExhaustion)),
+            Err(e) /* remaining_gas > 0 */ => Err((remaining_gas, MethodCallError::Runtime(e)))
         }
     }
 
@@ -61,9 +61,9 @@ impl Instance {
 /// terminate early.
 #[derive(Debug)]
 pub enum MethodCallError {
-    RuntimeError(wasmer::RuntimeError),
-    GasExhaustionError,
-    NoExportedMethodError(wasmer::ExportError),
+    Runtime(wasmer::RuntimeError),
+    GasExhaustion,
+    NoExportedMethod(wasmer::ExportError),
 }
 
 /// ContractValidateError enumerates through the possible reasons why the contract is not runnable

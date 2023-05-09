@@ -13,6 +13,7 @@ pub const CBI_VERSION: u32 = CBIVER_ADAM;
 const CBIVER_ADAM: u32 = 0;
 
 /// Check if version is compatible to runtime. Current CBI version = [CBI_VERSION].
+#[allow(clippy::absurd_extreme_comparisons)]
 pub(crate) const fn is_cbi_compatible(version: u32) -> bool {
     version <= CBI_VERSION
 }

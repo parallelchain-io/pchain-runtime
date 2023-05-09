@@ -29,6 +29,14 @@
 //! the data [types] definitions of ParallelChain F. In Call Transaction, it uses [wasmer] as underlying WebAssembly 
 //! runtime to invoke a [contract], which is gas-metered, and the [cost] incurred will be set to transaction receipt.
 
+#![cfg_attr(
+    feature = "cargo-clippy",
+    allow(
+        clippy::new_without_default,
+        clippy::result_large_err
+    )
+)]
+
 mod contract;
 
 mod cost;

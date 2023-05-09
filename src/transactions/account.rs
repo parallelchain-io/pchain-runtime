@@ -28,7 +28,7 @@ pub(crate) fn try_execute<S>(
     state: StateInTransit<S>, 
     command: &Command
 ) -> TryExecuteResult<S>
-    where S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static
+    where S: WorldStateStorage + Send + Sync + Clone + 'static
 {
     let ret = match command {
         Command::Transfer { recipient, amount } =>
@@ -36,7 +36,7 @@ pub(crate) fn try_execute<S>(
         Command::Deploy { contract, cbi_version } =>
             deploy(state, contract.to_vec(), *cbi_version),
         Command::Call { target, method, arguments, amount } =>
-            call(state, *target, method.clone(),arguments.clone(), *amount),
+            call(state, false, *target, method.clone(),arguments.clone(), *amount),
         _=> return TryExecuteResult::Err(state)
     };
 
@@ -49,7 +49,7 @@ pub(crate) fn transfer<S>(
     recipient: PublicAddress,
     amount: u64,
 ) -> Result<StateInTransit<S>, StateChangesResult<S>>
-    where S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static
+    where S: WorldStateStorage + Send + Sync + Clone + 'static
 {
     let signer = state.tx.signer;
 
@@ -70,12 +70,13 @@ pub(crate) fn transfer<S>(
 /// Execution of Work step for [pchain_types::Command::Call]
 pub(crate) fn call <S>(
     mut state: StateInTransit<S>,
+    is_view: bool,
     target: PublicAddress,
     method: String,
     arguments: Option<Vec<Vec<u8>>>,
     amount: Option<u64>,
 ) -> Result<StateInTransit<S>, StateChangesResult<S>>
-    where S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone
+    where S: WorldStateStorage + Send + Sync + Clone
 {
 
     if let Some(amount) = amount {
@@ -94,7 +95,7 @@ pub(crate) fn call <S>(
     }
 
     // Instantiation of contract
-    let instance = CallInstance::instantiate(state, target, method, arguments, amount)
+    let instance = CallInstance::instantiate(state, is_view, target, method, arguments, amount)
         .map_err(|(state, transition_err)| phase::abort(state, transition_err) )?;
     
     // Call the contract
@@ -120,6 +121,7 @@ where S: WorldStateStorage + Send + Sync + Clone + 'static  {
     /// contrac tinstantiation and verification.
     fn instantiate(
         state: StateInTransit<S>,
+        is_view: bool,
         target: PublicAddress,
         method: String,
         arguments: Option<Vec<Vec<u8>>>,
@@ -149,7 +151,7 @@ where S: WorldStateStorage + Send + Sync + Clone + 'static  {
 
         // Check pay for storage gas cost at this point. Consider it as runtime cost because the world state write is an execution gas
         // Gas limit for init method call should be subtract the blockchain and worldstate storage cost
-        let pre_execution_baseline_gas_limit = state.gas_consumed().saturating_add(state.chargeable_gas());
+        let pre_execution_baseline_gas_limit = state.total_gas_to_be_consumed();
         if state.tx.gas_limit < pre_execution_baseline_gas_limit {
             return Err((state, TransitionError::ExecutionProperGasExhausted))
         }
@@ -158,7 +160,7 @@ where S: WorldStateStorage + Send + Sync + Clone + 'static  {
         let call_tx = CallTx {
             base_tx: BaseTx {
                 gas_limit: gas_limit_for_execution,
-                ..state.tx.clone()
+                ..state.tx
             },
             amount,
             arguments,
@@ -169,7 +171,8 @@ where S: WorldStateStorage + Send + Sync + Clone + 'static  {
         let instance = match module.instantiate(
             Arc::new(Mutex::new(state.ctx.clone())),
             0,
-            call_tx.clone(),
+            is_view,
+            call_tx,
             state.bd.clone()
         ) {
             Ok(ret) => ret,
@@ -191,7 +194,7 @@ where S: WorldStateStorage + Send + Sync + Clone + 'static  {
         state.set_gas_consumed(gas_consumed.saturating_add(wasm_exec_gas));
 
         let transition_err =
-        if state.tx.gas_limit < state.gas_consumed().saturating_add(state.chargeable_gas()) {
+        if state.tx.gas_limit < state.total_gas_to_be_consumed() {
             Some(TransitionError::ExecutionProperGasExhausted)
         } else {
             call_error.map(TransitionError::from)
@@ -207,7 +210,7 @@ pub(crate) fn deploy<S>(
     contract: Vec<u8>,
     cbi_version: u32,
 ) -> Result<StateInTransit<S>, StateChangesResult<S>>
-    where S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone
+    where S: WorldStateStorage + Send + Sync + Clone
 {
     let contract_address = pchain_types::crypto::sha256(&[state.tx.signer.to_vec(), state.tx.nonce.to_le_bytes().to_vec()].concat());
     
@@ -286,7 +289,7 @@ where S: WorldStateStorage + Send + Sync + Clone + 'static  {
         self.set_code(contract_address, contract_code);
         self.set_cbi_version(contract_address, cbi_version);
 
-        if self.tx.gas_limit < self.gas_consumed().saturating_add(self.chargeable_gas()) {
+        if self.tx.gas_limit < self.total_gas_to_be_consumed() {
             return Err((self.state, DeployError::InsufficientGasForInitialWritesError))
         }
 

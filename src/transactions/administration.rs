@@ -33,7 +33,7 @@ pub(crate) fn next_epoch<S>(
 
     let new_validator_set = 
     {
-        let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS);
+        let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS).unwrap();
         let mut state = NetworkAccountWorldState::new(&mut state, acc_state);
 
         let mut pools_in_vp = Vec::new();

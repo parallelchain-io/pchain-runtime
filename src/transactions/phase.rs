@@ -26,10 +26,22 @@ use crate::{
 pub(crate) struct StateInTransit<S> 
     where S: WorldStateStorage + Send + Sync + Clone +'static 
 {
+    /*** Transaction ***/
+
     /// Base Transaction as a transition input
     pub tx: BaseTx,
+    /// size of serialized Transaction
+    pub tx_size: usize,
+    /// length of commands in the transaction
+    pub commands_len: usize,
+
+    /*** Blockchain ***/
+    
     /// Blockchain data as a transition input
     pub bd: BlockchainParams,
+    
+    /*** World State ***/
+
     /// Transition Context which also contains world state as input
     pub ctx: TransitionContext<S>,
 }
@@ -79,7 +91,7 @@ impl<S> NetworkAccountStorage for StateInTransit<S>
 pub(crate) fn tentative_charge<S>(state: &mut StateInTransit<S>) ->  Result<u64, TransitionError>
     where S: WorldStateStorage + Send + Sync + Clone + 'static
 {
-    let init_gas = gas::tx_base_cost();
+    let init_gas = gas::tx_inclusion_cost_from(state.tx_size, state.commands_len);
     if state.tx.gas_limit < init_gas {
         return Err(TransitionError::PreExecutionGasExhausted)
     }
@@ -111,7 +123,7 @@ pub(crate) fn tentative_charge<S>(state: &mut StateInTransit<S>) ->  Result<u64,
 pub(crate) fn finalize_gas_consumption<S>(mut state: StateInTransit<S>) -> Result<StateInTransit<S>, StateChangesResult<S>>
     where S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static
 {
-    let gas_used = state.gas_consumed().saturating_add(state.chargeable_gas());
+    let gas_used = state.total_gas_to_be_consumed();
     if state.tx.gas_limit <  gas_used {
         return Err(abort(state, TransitionError::ExecutionProperGasExhausted))
     }
@@ -124,8 +136,7 @@ pub(crate) fn abort<S>(mut state: StateInTransit<S>, transition_err: TransitionE
     where S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static
 {
     state.revert_changes();
-    // read cost is mandatory in gas consumption
-    let gas_used = std::cmp::min(state.tx.gas_limit, state.gas_consumed().saturating_add(state.minimum_chargeable_gas()));
+    let gas_used = std::cmp::min(state.tx.gas_limit, state.total_gas_to_be_consumed());
     state.set_gas_consumed(gas_used);
     charge(state, Some(transition_err))
 }
@@ -227,6 +238,7 @@ impl ContractModule {
     pub(crate) fn instantiate<S>(self, 
         ctx: Arc<Mutex<TransitionContext<S>>>,
         call_counter: u32,
+        is_view: bool,
         tx: CallTx,
         bd: BlockchainParams
     ) -> Result<ContractInstance<S>, ()> 
@@ -236,14 +248,22 @@ impl ContractModule {
         let environment = wasmer_env::Env::new(
             ctx, 
             call_counter,
+            is_view,
             tx, 
             bd
         );
 
-        let importable =contract::create_importable::<wasmer_env::Env<S>, ContractBinaryFunctions>(
-            &self.store, 
-            &environment,
-        );
+        let importable =  if is_view {
+            contract::create_importable_view::<wasmer_env::Env<S>, ContractBinaryFunctions>(
+                &self.store, 
+                &environment
+            )
+        } else {
+            contract::create_importable::<wasmer_env::Env<S>, ContractBinaryFunctions>(
+                &self.store, 
+                &environment,
+            )
+        };
     
         let instance = self.module.instantiate(&importable, gas_limit).map_err(|_| ())?;
 

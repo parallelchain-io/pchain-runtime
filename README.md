@@ -63,10 +63,10 @@ A receipt describes what happened during the execution of a transaction at a hig
 
 - Exit Statuses: it tells whether the corresponding command in the sequence succeeded in doing its operation, and, if it failed, whether the failure is because of gas exhaustion or some other reason.
 - Gas Used: how much gas was used in the execution of the transaction. This will at most be the transaction’s gas limit.
-- Return Values: the return value of the corresponding call command.
+- Return Values: the return value of the corresponding command.
 - Logs: the logs emitted during the corresponding call command.
 
-Command Receipts are included in a receipt in the order their command is included in the transaction. All commands exit with an exit status, but only call commands can create return values or logs, so transactions that do not have a call command will have empty return values and logs. When a command fails, following commands do not get executed, so a receipt can have less exit statuses than the transaction has commands.
+Command Receipts are included in a receipt in the order their command is included in the transaction. All commands exit with an exit status, but only call commands can create logs, so transactions that do not have a call command will have empty logs. When a command fails, following commands do not get executed, so a receipt can have less exit statuses than the transaction has commands.
 
 ## Execution
 
@@ -248,7 +248,8 @@ In the above example, case 1 is fine as the resulting deposit balance (10-1=9) i
 2. current_epoch_locked_power = current_validator_set.get(operator).get_stake(owner);
 3. cur_deposit_balance = deposits[(operator, owner)].balance;
 4. new_deposit_balance = calculate_resulting_balance(prev_epoch_locked_power, current_epoch_locked_power, cur_deposit_balance, requested_withdrawal_amount);
-5. deposits[(operator, owner)].balance = new_deposit_balance;
+5. deposits[(operator, owner)].delete() if new_deposit_balance = 0, otherwise
+   deposits[(operator, owner)].balance = new_deposit_balance
 6. ws[owner].balance += cur_deposit_balance - new_deposit_balance;
 7. stake = pools[operator].get_stake(owner);
 8. pools[operator].change_stake_power(owner, new_deposit_balance) if stake.power > new_deposit_balance;
@@ -323,8 +324,6 @@ Storage Cost. The cost to access the data in world state.
 - Write: write value for a key in storage
 
 Wasm Execution Gas Cost. The cost of executing a WASM contract.
-
-When gas consumption is finalized for receipt creation, the write cost in Storage Cost is not counted if the transaction fails.
 
 Execution of WASM contract can be exited earlier even if Wasm Execution Gas does not reach the gas limit. It is because runtime will reduce the available gas by Non-Wasm execution gas cost (Blockchain Cost, Storage Cost) which is incurred during the execution.
 
