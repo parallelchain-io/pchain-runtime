@@ -1,9 +1,9 @@
 [package]
 name = "pchain-runtime"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["ParallelChain Lab <info@parallelchain.io>"]
 edition = "2021"
-description = "parallelchain-runtime: ParallelChain F Runtime for state transition in ParallelChain Mainnet"
+description = "parallelchain-runtime: ParallelChain Mainnet Runtime for state transition in ParallelChain Mainnet"
 license = "Apache-2.0"
 repository = "https://github.com/parallelchain-io/pchain-runtime"
 
@@ -16,7 +16,7 @@ blake2 = "0.10"
 ed25519-dalek = "1.0.1"
 keccak-hasher = "0.15.3"
 loupe = "0.1"
-pchain-types = { git = "https://github.com/parallelchain-io/pchain-types" }
+pchain-types = "0.4"
 pchain-world-state = { git = "https://github.com/parallelchain-io/pchain-world-state" }
 ripemd = "0.1.1"
 sha2 = "0.10.0"
@@ -36,7 +36,7 @@ borsh = "=0.10.2"
 rand = "0.7"
 rand_chacha = "0.2"
 ed25519-dalek = "1.0.1"
-hotstuff_rs = { git = "https://github.com/parallelchain-io/hotstuff_rs" }
+hotstuff_rs = "0.2.0"
 
 [profile.release]
 overflow-checks = true

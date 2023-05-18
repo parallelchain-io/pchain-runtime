@@ -3,10 +3,10 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! An Implementation for host functions used for contract methods.
+//! Implementation for host functions used for contract methods according to [crate::contract::cbi].
 
-use pchain_types::{Deserializable};
-use pchain_world_state::{keys::AppKey, storage::WorldStateStorage};
+use pchain_types::{serialization::{Deserializable, Serializable}, blockchain::{Command, Log}, runtime::CallInput};
+use pchain_world_state::{keys::AppKey, storage::WorldStateStorage, network::constants::NETWORK_ADDRESS};
 use ed25519_dalek::Verifier;
 use sha2::{Sha256, Digest as sha256_digest};
 use tiny_keccak::{Hasher as _, Keccak};
@@ -15,8 +15,8 @@ use ripemd::Ripemd160;
 use crate::{
     contract::{ContractBinaryInterface, FuncError}, 
     wasmer::{wasmer_env::Env}, 
-    transactions::{self}, 
-    gas::{self}, types::DeferredCommand,
+    execution::{self}, 
+    gas::{self}, types::DeferredCommand, cost::CostChange,
 };
     
 
@@ -64,7 +64,7 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
         let app_key = AppKey::new(app_key);
 
         let tx_ctx_lock = env.context.lock().unwrap();
-        let (value, cost_change) = tx_ctx_lock.app_data(pchain_types::NETWORK_ADDRESS, app_key);
+        let (value, cost_change) = tx_ctx_lock.app_data(NETWORK_ADDRESS, app_key);
         drop(tx_ctx_lock);
 
         env.consume_non_wasm_gas(cost_change);
@@ -110,7 +110,7 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
     fn arguments(env: &Env<S>, arguments_ptr_ptr: u32) -> Result<u32, FuncError> {
         match &env.call_tx.arguments {
             Some(arguments) => {
-                let arguments = <Vec<Vec<u8>> as pchain_types::Serializable>::serialize(arguments);
+                let arguments = <Vec<Vec<u8>> as Serializable>::serialize(arguments);
                 env.write_bytes(arguments, arguments_ptr_ptr)
             },
             None => Ok(0)
@@ -132,10 +132,10 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
 
     fn log(env: &Env<S>, log_ptr: u32, log_len: u32) -> Result<(), FuncError> {
         let serialized_log = env.read_bytes(log_ptr, log_len)?;
-        let log = pchain_types::transaction::Log::deserialize(&serialized_log)
+        let log = Log::deserialize(&serialized_log)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
-        let cost_change = gas::blockchain_log_cost(log.topic.len(), log.value.len());
+        let cost_change = CostChange::deduct(gas::blockchain_log_cost(log.topic.len(), log.value.len()));
         let mut tx_ctx_lock = env.context.lock().unwrap();
         tx_ctx_lock.receipt_write_gas += cost_change;
         drop(tx_ctx_lock);
@@ -155,7 +155,7 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
     fn return_value(env: &Env<S>, value_ptr: u32, value_len: u32) -> Result<(), FuncError> {
         let value = env.read_bytes(value_ptr, value_len)?;
 
-        let cost_change = gas::blockchain_return_value_cost(value.len());
+        let cost_change = CostChange::deduct(gas::blockchain_return_values_cost(value.len()));
         let mut tx_ctx_lock = env.context.lock().unwrap();
         tx_ctx_lock.receipt_write_gas += cost_change;
         drop(tx_ctx_lock);
@@ -174,13 +174,13 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
 
     fn call(env: &Env<S>, call_input_ptr: u32, call_input_len :u32, return_ptr_ptr: u32) -> Result<u32, FuncError>{
         let call_command_bytes = env.read_bytes(call_input_ptr, call_input_len)?;
-        let call_command = pchain_types::Command::deserialize(&call_command_bytes)
+        let call_command = Command::deserialize(&call_command_bytes)
             .map_err(|e| FuncError::Runtime(e.into()))?;
         
         let (
             target, method, arguments, amount
         ) = match call_command {
-            pchain_types::Command::Call { target, method, arguments, amount } => (
+            Command::Call(CallInput { target, method, arguments, amount }) => (
                 target, method, arguments, amount
             ),
             _=> return Err(FuncError::Internal)
@@ -206,7 +206,7 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
         call_tx.arguments = arguments;
         call_tx.amount = amount;
 
-        let result = transactions::internal::call_from_contract(
+        let result = execution::internal::call_from_contract(
             call_tx,
             env.params_from_blockchain.clone(),
             env.context.clone(),
@@ -246,7 +246,7 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
         let recipient = recipient.try_into().unwrap();
         let amount = u64::from_le_bytes(amount_bytes.try_into().unwrap());
 
-        let result = transactions::internal::transfer_from_contract(
+        let result = execution::internal::transfer_from_contract(
             env.call_tx.target, // the signer address (this contract's address) from transaction execution context
             amount,
             recipient,
@@ -262,10 +262,10 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
 
     fn defer_create_deposit(env: &Env<S>, create_deposit_input_ptr: u32, create_deposit_input_len: u32) -> Result<(), FuncError> {
         let serialized_command = env.read_bytes(create_deposit_input_ptr, create_deposit_input_len)?;
-        let command = pchain_types::Command::deserialize(&serialized_command)
+        let command = Command::deserialize(&serialized_command)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
-        if !matches!(command, pchain_types::Command::CreateDeposit { .. }) {
+        if !matches!(command, Command::CreateDeposit { .. }) {
             return Err(FuncError::Internal)
         }
 
@@ -276,10 +276,10 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
 
     fn defer_set_deposit_settings(env: &Env<S>, set_deposit_settings_input_ptr: u32, set_deposit_settings_input_len: u32) -> Result<(), FuncError> {
         let serialized_command = env.read_bytes(set_deposit_settings_input_ptr, set_deposit_settings_input_len)?;
-        let command = pchain_types::Command::deserialize(&serialized_command)
+        let command = Command::deserialize(&serialized_command)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
-        if !matches!(command, pchain_types::Command::SetDepositSettings { .. }) {
+        if !matches!(command, Command::SetDepositSettings { .. }) {
             return Err(FuncError::Internal)
         }
         
@@ -290,10 +290,10 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
 
     fn defer_topup_deposit(env: &Env<S>, top_up_deposit_input_ptr: u32, top_up_deposit_input_len: u32) -> Result<(), FuncError> {
         let serialized_command = env.read_bytes(top_up_deposit_input_ptr, top_up_deposit_input_len)?;
-        let command = pchain_types::Command::deserialize(&serialized_command)
+        let command = Command::deserialize(&serialized_command)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
-        if !matches!(command, pchain_types::Command::TopUpDeposit { .. }) {
+        if !matches!(command, Command::TopUpDeposit { .. }) {
             return Err(FuncError::Internal)
         }
         
@@ -304,10 +304,10 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
 
     fn defer_withdraw_deposit(env: &Env<S>, withdraw_deposit_input_ptr: u32, withdraw_deposit_input_len: u32) -> Result<(), FuncError> {
         let serialized_command = env.read_bytes(withdraw_deposit_input_ptr, withdraw_deposit_input_len)?;
-        let command = pchain_types::Command::deserialize(&serialized_command)
+        let command = Command::deserialize(&serialized_command)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
-        if !matches!(command, pchain_types::Command::WithdrawDeposit { .. }) {
+        if !matches!(command, Command::WithdrawDeposit { .. }) {
             return Err(FuncError::Internal)
         }
         
@@ -318,10 +318,10 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
 
     fn defer_stake_deposit(env: &Env<S>, stake_deposit_input_ptr: u32, stake_deposit_input_len: u32) -> Result<(), FuncError> {
         let serialized_command = env.read_bytes(stake_deposit_input_ptr, stake_deposit_input_len)?;
-        let command = pchain_types::Command::deserialize(&serialized_command)
+        let command = Command::deserialize(&serialized_command)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
-        if !matches!(command, pchain_types::Command::StakeDeposit { .. }) {
+        if !matches!(command, Command::StakeDeposit { .. }) {
             return Err(FuncError::Internal)
         }
         
@@ -332,10 +332,10 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
 
     fn defer_unstake_deposit(env: &Env<S>, unstake_deposit_input_ptr: u32, unstake_deposit_input_len: u32) -> Result<(), FuncError> {
         let serialized_command = env.read_bytes(unstake_deposit_input_ptr, unstake_deposit_input_len)?;
-        let command = pchain_types::Command::deserialize(&serialized_command)
+        let command = Command::deserialize(&serialized_command)
             .map_err(|e| FuncError::Runtime(e.into()))?;
 
-        if !matches!(command, pchain_types::Command::UnstakeDeposit { .. }) {
+        if !matches!(command, Command::UnstakeDeposit { .. }) {
             return Err(FuncError::Internal)
         }
         
@@ -347,7 +347,7 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
     fn sha256(env: &Env<S>, msg_ptr: u32, msg_len: u32, digest_ptr_ptr: u32) -> Result<(), FuncError> {
         let input_bytes = env.read_bytes(msg_ptr, msg_len)?;
 
-        env.consume_wasm_gas(crate::cost::CRYPTO_SHA256_PER_BYTE * input_bytes.len() as u64);
+        env.consume_wasm_gas(gas::CRYPTO_SHA256_PER_BYTE * input_bytes.len() as u64);
 
         let mut hasher = Sha256::new();
         sha2::Digest::update(&mut hasher, input_bytes);
@@ -360,7 +360,7 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
     fn keccak256(env: &Env<S>, msg_ptr: u32, msg_len: u32, digest_ptr_ptr: u32) -> Result<(), FuncError> {
         let mut input_bytes = env.read_bytes(msg_ptr, msg_len)?;
 
-        env.consume_wasm_gas(crate::cost::CRYPTO_KECCAK256_PER_BYTE * input_bytes.len() as u64);
+        env.consume_wasm_gas(gas::CRYPTO_KECCAK256_PER_BYTE * input_bytes.len() as u64);
 
         let mut keccak = Keccak::v256();
         keccak.update(&input_bytes);
@@ -374,7 +374,7 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
     fn ripemd(env: &Env<S>, msg_ptr: u32, msg_len: u32, digest_ptr_ptr :u32) -> Result<(), FuncError>  {
         let input_bytes = env.read_bytes(msg_ptr, msg_len)?;
 
-        env.consume_wasm_gas(crate::cost::CRYPTO_RIPEMD160_PER_BYTE * input_bytes.len() as u64);
+        env.consume_wasm_gas(gas::CRYPTO_RIPEMD160_PER_BYTE * input_bytes.len() as u64);
 
         let mut hasher = Ripemd160::new();
         hasher.update(&input_bytes);
@@ -391,7 +391,7 @@ impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions where S: Wor
 
         let address = env.read_bytes(address_ptr, 32)?;
 
-        env.consume_wasm_gas(crate::cost::crypto_verify_ed25519_signature_cost(message.len()));
+        env.consume_wasm_gas(gas::crypto_verify_ed25519_signature_cost(message.len()));
 
         let public_key = ed25519_dalek::PublicKey::from_bytes(&address)
             .map_err(|_| FuncError::Internal)?;

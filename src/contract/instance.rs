@@ -3,13 +3,13 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! An instance uses [wasmer::Instance] to perform method call according to Parallelchain-F Smart Contract Defintions.
+//! Defines a struct to use [wasmer::Instance] to perform method call according to ParallelChain Smart Contract Defintions.
 
 use anyhow::Result;
 
 /// Instance represents a WebAssembly module that has been 'instantiated' into a stateful quasi-process and can have its methods
 /// called.
-pub struct Instance(pub(crate) wasmer::Instance);
+pub(crate) struct Instance(pub(crate) wasmer::Instance);
 
 impl Instance {
     /// call_method executes the named method of the Instance
@@ -73,6 +73,6 @@ pub enum ContractValidateError{
     InstantiateError,
 }
 
-/// CONTRACT_METHOD is reserved by the ParallelChain F protocol to name callable function 
+/// CONTRACT_METHOD is reserved by the ParallelChain Mainnet protocol to name callable function 
 /// exports from smart contract Modules.  
 pub const CONTRACT_METHOD: &str = "entrypoint";

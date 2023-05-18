@@ -3,12 +3,45 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Execution process of a sequence of Transaction Commands undergoes phases: Tentative -> Work -> Charge, except
-//! for a special Transaction Command [Command::NextEpoch].
+//! Implementation of execution process on a sequence of Commands. The process starts from Pre-Charge phase, 
+//! and then goes into Commands Phases, and finally Charge Phase.
 //! 
-//! This mod includes unit test cases that are specific Network Commands. 
+//! Processes include execution of:
+//! - [Commands](pchain_types::blockchain::Command) from a transaction (Account Command and Staking Command).
+//! - [View call](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
+//! - [Next Epoch](pchain_types::blockchain::Command::NextEpoch) Command.
+//! 
+//! ### Executing Commands from a Transaction
+//! 
+//! It is the normal flow of a transaction. Firstly, basic checking is performed and
+//! cancel the execution if it fails, and Balance of signer is deducted beforehand (Pre-Charge).
+//! 
+//! Then Commands are encapsulated into `Command Tasks`. Each command task is an item in
+//! a stack. Execution order starts from the top item. When [Call](pchain_types::blockchain::Command::Call) 
+//! Command is executed successfully with `Deferred Command`, the Deferred Commands are then
+//! encapsulated into Command Task and put to the stack. This stack model allows the Deferred Command
+//! to be executed right after its parent Call Command in the same way other commands do. 
+//! 
+//! Each command task completes with a [Command Receipt](pchain_types::blockchain::CommandReceipt). If
+//! it fails, the process aborts and then goes to Charge Phase immediately.
+//! 
+//! Finally in the Charge Phase, the signer balance is adjusted according to the gas used. Some fees are also
+//! transferred to Proposer and Treasury.
+//! 
+//! ### Executing a View Call
+//! 
+//! View Call means execution of a contract by calling its view-only methods. There is not Pre-Charge Phase nor
+//! Charge Phase. The gas used in the resulting command receipt is only catered for the gas consumption of this
+//! contract call.
+//! 
+//! ### Executing Next Epoch Command
+//! 
+//! Next Epoch Command is a special command that does not go through Pre-Charge Phase or Charge Phase, but
+//! will modify the state and update signers nonce. Its goal is to compute the resulting state of 
+//! Network Account and return changes to a validator set for next epoch in [TransitionResult].
 
-use pchain_types::{ExitStatus, Command, CommandReceipt, PublicAddress};
+use pchain_types::blockchain::{ExitStatus, Command, CommandReceipt};
+use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
@@ -17,22 +50,23 @@ use crate::{
 };
 
 use super::{
-    phase::{self, StateInTransit}, 
+    phase::{self}, 
     account,
-    network, administration,
+    staking, protocol,
+    state::ExecutionState,
 };
 
-/// Backbone logic of Transaction Commands Execution
-pub(crate) fn execute_commands<S>(mut state: StateInTransit<S>, commands: Vec<Command>) -> TransitionResult<S> 
+/// Backbone logic of Commands Execution
+pub(crate) fn execute_commands<S>(mut state: ExecutionState<S>, commands: Vec<Command>) -> TransitionResult<S> 
     where S: WorldStateStorage + Send + Sync + Clone
 {
-    // Phase: Tentative Charge
-    if let Err(err) = phase::tentative_charge(&mut state) {
+    // Phase: Pre-Charge
+    if let Err(err) = phase::pre_charge(&mut state) {
         return TransitionResult { new_state: state.ctx.rw_set.ws, receipt: None, error: Some(err), validator_changes: None }
     }
     let mut prev_gas_used = state.gas_consumed();
     
-    // Phase: Work(s)
+    // Phase: Command(s)
     let mut command_task_results = CommandTaskResults::new();
     let mut command_tasks = CommandTasks::new();
     command_tasks.append(commands.into_iter().map(CommandTaskItem::TransactionCommmand).collect(), None);
@@ -46,12 +80,12 @@ pub(crate) fn execute_commands<S>(mut state: StateInTransit<S>, commands: Vec<Co
                 (deferred_command.contract_address, deferred_command.command),
         };
         
-        // Work: Execute command triggered from the Transaction
+        // Execute command triggered from the Transaction
         let ret = account::try_execute(state, &command)
-            .or_else(|state| network::try_execute(actor, state, &command))
+            .or_else(|state| staking::try_execute(actor, state, &command))
             .unwrap();
 
-        // Work: Proceed execution result
+        // Proceed execution result
         state = match ret {
             // command execution is not completed, continue with resulting state
             Ok(mut state_of_success_execution) => {
@@ -79,8 +113,9 @@ pub(crate) fn execute_commands<S>(mut state: StateInTransit<S>, commands: Vec<Co
     phase::charge(state, None).finalize(command_task_results.command_receipts())
 }
 
+/// Execute a View Call
 pub(crate) fn execute_view<S>(
-    state: StateInTransit<S>,
+    state: ExecutionState<S>,
     target: PublicAddress,
     method: String,
     arguments: Option<Vec<Vec<u8>>>,
@@ -100,8 +135,8 @@ pub(crate) fn execute_view<S>(
     }
 }
 
-/// Execution flow for NextEpoch Command, which does not proceed through the fixed sequence of Phases.
-pub(crate) fn execute_next_epoch_command<S>(state: StateInTransit<S>, commands: Vec<Command>) -> TransitionResult<S> 
+/// Execution of NextEpoch Command.
+pub(crate) fn execute_next_epoch_command<S>(state: ExecutionState<S>, commands: Vec<Command>) -> TransitionResult<S> 
     where S: WorldStateStorage + Send + Sync + Clone
 {
     // There can only be one NextEpoch Command in a transaction.
@@ -116,7 +151,7 @@ pub(crate) fn execute_next_epoch_command<S>(state: StateInTransit<S>, commands: 
     }
 
     // State transition
-    let (mut state, new_vs) = administration::next_epoch(state);
+    let (mut state, new_vs) = protocol::next_epoch(state);
 
     // Update Nonce for the transaction. This step ensures future epoch transaction produced 
     // by the signer will have different transaction hash.
@@ -227,21 +262,21 @@ impl CommandTaskResult {
 pub(crate) enum TryExecuteResult<S> 
     where S: WorldStateStorage + Send + Sync + Clone + 'static
 {
-    Ok(Result<StateInTransit<S>, StateChangesResult<S>>),
-    Err(StateInTransit<S>)
+    Ok(Result<ExecutionState<S>, StateChangesResult<S>>),
+    Err(ExecutionState<S>)
 }
 
 impl<S> TryExecuteResult<S>
     where S: WorldStateStorage + Send + Sync + Clone + 'static
 {
-    pub fn or_else<O: FnOnce(StateInTransit<S>) -> TryExecuteResult<S>>(self, op: O) -> TryExecuteResult<S> {
+    pub fn or_else<O: FnOnce(ExecutionState<S>) -> TryExecuteResult<S>>(self, op: O) -> TryExecuteResult<S> {
         match self {
             TryExecuteResult::Ok(t) => TryExecuteResult::Ok(t),
             TryExecuteResult::Err(e) => op(e),
         }
     }
 
-    pub fn unwrap(self) -> Result<StateInTransit<S>, StateChangesResult<S>> {
+    pub fn unwrap(self) -> Result<ExecutionState<S>, StateChangesResult<S>> {
         match self {
             TryExecuteResult::Ok(ret) => ret,
             TryExecuteResult::Err(_) => panic!(),
@@ -253,13 +288,23 @@ impl<S> TryExecuteResult<S>
 mod test {
     use std::{collections::HashMap};
 
-    use pchain_types::{MIN_BASE_FEE, Command, ExitStatus, PublicAddress, Stake, Pool, Transaction, Serializable};
-    use pchain_world_state::{storage::{WorldStateStorage, Key, Value}, states::WorldState, network::{stake::StakeValue, pool::{PoolKey}, network_account::NetworkAccountSized}};
+    use pchain_types::blockchain::{Command, ExitStatus, Transaction};
+    use pchain_types::runtime::*;
+    use pchain_types::serialization::Serializable;
+    use pchain_types::cryptography::PublicAddress;
+    use pchain_world_state::network::constants;
+    use pchain_world_state::{
+        storage::{WorldStateStorage, Key, Value}, 
+        states::WorldState, 
+        network::{stake::{StakeValue, Stake}, pool::{PoolKey, Pool}, network_account::NetworkAccountSized}
+    };
 
-    use crate::{transactions::{phase::{StateInTransit}, execute::{execute_commands, execute_next_epoch_command}}, transition::TransitionContext, types::BaseTx, TransitionError, BlockchainParams, ValidatorPerformance, BlockProposalStats, gas::{tx_inclusion_cost_from}};
+    use crate::gas;
+    use crate::{execution::{state::ExecutionState, execute::{execute_commands, execute_next_epoch_command}}, transition::TransitionContext, types::BaseTx, TransitionError, BlockchainParams, ValidatorPerformance, BlockProposalStats};
 
-    const TEST_MAX_VALIDATOR_SET_SIZE: u16 = pchain_types::MAX_VALIDATOR_SET_SIZE;
-    const TEST_MAX_STAKES_PER_POOL: u16 = pchain_types::MAX_STAKES_PER_POOL;
+    const TEST_MAX_VALIDATOR_SET_SIZE: u16 = constants::MAX_VALIDATOR_SET_SIZE;
+    const TEST_MAX_STAKES_PER_POOL: u16 = constants::MAX_STAKES_PER_POOL;
+    const MIN_BASE_FEE: u64 = 8;
     type NetworkAccount<'a, S> = NetworkAccountSized<'a, S, {TEST_MAX_VALIDATOR_SET_SIZE}, {TEST_MAX_STAKES_PER_POOL}>;
 
     #[derive(Clone)]
@@ -303,7 +348,7 @@ mod test {
     #[test]
     fn test_create_pool() {
         let state = create_state(None);
-        let ret = execute_commands(state, vec![Command::CreatePool { commission_rate: 1 }]);
+        let ret = execute_commands(state, vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })]);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
@@ -315,13 +360,13 @@ mod test {
         
         let mut state = create_state(Some(state.ws.to_owned()));
         state.tx.nonce = 1;
-        let ret = execute_commands(state, vec![Command::CreatePool { commission_rate: 1 }]);
+        let ret = execute_commands(state, vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })]);
         assert_eq!(ret.error, Some(TransitionError::PoolAlreadyExists));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
         state.tx.nonce = 2;
-        let ret = execute_commands(state, vec![Command::CreatePool { commission_rate: 101 }]);
+        let ret = execute_commands(state, vec![Command::CreatePool(CreatePoolInput { commission_rate: 101 })]);
         assert_eq!(ret.error, Some(TransitionError::InvalidPoolPolicy));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
     }
@@ -335,8 +380,8 @@ mod test {
     fn test_create_pool_set_policy() {
         let state = create_state(None);
         let ret = execute_commands(state, vec![
-            Command::CreatePool { commission_rate: 1 },
-            Command::SetPoolSettings { commission_rate: 2 }
+            Command::CreatePool(CreatePoolInput { commission_rate: 1 }),
+            Command::SetPoolSettings(SetPoolSettingsInput { commission_rate: 2 })
         ]);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
@@ -348,20 +393,20 @@ mod test {
         
         let mut state = create_state(Some(state.ws.to_owned()));
         state.tx.signer = ACCOUNT_B;
-        let ret = execute_commands(state, vec![Command::SetPoolSettings { commission_rate: 3 }]);
+        let ret = execute_commands(state, vec![Command::SetPoolSettings(SetPoolSettingsInput { commission_rate: 3 })]);
         assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         
         let mut state = create_state(Some(ret.new_state));
         state.tx.signer = ACCOUNT_A;
         state.tx.nonce = 1;
-        let ret = execute_commands(state, vec![Command::SetPoolSettings { commission_rate: 101 }]);
+        let ret = execute_commands(state, vec![Command::SetPoolSettings(SetPoolSettingsInput { commission_rate: 101 })]);
         assert_eq!(ret.error, Some(TransitionError::InvalidPoolPolicy));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         let mut state = create_state(Some(ret.new_state));
         state.tx.nonce = 2;
-        let ret = execute_commands(state, vec![Command::SetPoolSettings { commission_rate: 2 }]);
+        let ret = execute_commands(state, vec![Command::SetPoolSettings(SetPoolSettingsInput { commission_rate: 2 })]);
         assert_eq!(ret.error, Some(TransitionError::InvalidPoolPolicy));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
@@ -374,7 +419,7 @@ mod test {
     fn test_create_delete_pool() {
         let state = create_state(None);
         let ret = execute_commands(state, vec![
-            Command::CreatePool { commission_rate: 1 },
+            Command::CreatePool(CreatePoolInput { commission_rate: 1 }),
             Command::DeletePool
         ]);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
@@ -406,13 +451,13 @@ mod test {
     fn test_create_pool_create_deposit() {
         let state = create_state(None);
         let ret = execute_commands(state, vec![
-            Command::CreatePool { commission_rate: 1 },
+            Command::CreatePool(CreatePoolInput { commission_rate: 1 }),
         ]);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
 
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::CreateDeposit { operator: ACCOUNT_A, balance: 500_000, auto_stake_rewards: false }
+            Command::CreateDeposit(CreateDepositInput { operator: ACCOUNT_A, balance: 500_000, auto_stake_rewards: false })
         ];
         set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -428,14 +473,14 @@ mod test {
         let mut state = create_state(Some(state.ws.to_owned()));
         state.tx.nonce = 1;
         let ret = execute_commands(state, vec![
-            Command::CreateDeposit { operator: ACCOUNT_B, balance: 500_000, auto_stake_rewards: false }
+            Command::CreateDeposit(CreateDepositInput { operator: ACCOUNT_B, balance: 500_000, auto_stake_rewards: false })
         ]);
         assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::CreateDeposit { operator: ACCOUNT_A, balance: 500_000, auto_stake_rewards: false }
+            Command::CreateDeposit(CreateDepositInput { operator: ACCOUNT_A, balance: 500_000, auto_stake_rewards: false })
         ];
         set_tx(&mut state, ACCOUNT_B, 1, &commands);
         let ret = execute_commands(state, commands);
@@ -444,7 +489,7 @@ mod test {
 
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::CreateDeposit { operator: ACCOUNT_A, balance: 500_000_000, auto_stake_rewards: false }
+            Command::CreateDeposit(CreateDepositInput { operator: ACCOUNT_A, balance: 500_000_000, auto_stake_rewards: false })
         ];
         set_tx(&mut state, ACCOUNT_C, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -470,8 +515,8 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::CreateDeposit { operator: ACCOUNT_A, balance: 500_000, auto_stake_rewards: false },
-            Command::SetDepositSettings { operator: ACCOUNT_A, auto_stake_rewards: true }   
+            Command::CreateDeposit(CreateDepositInput { operator: ACCOUNT_A, balance: 500_000, auto_stake_rewards: false }),
+            Command::SetDepositSettings(SetDepositSettingsInput { operator: ACCOUNT_A, auto_stake_rewards: true })
         ];
         set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -486,14 +531,14 @@ mod test {
 
         let state = create_state(Some(state.ws.to_owned()));
         let ret = execute_commands(state, vec![
-            Command::SetDepositSettings { operator: ACCOUNT_B, auto_stake_rewards: true }   
+            Command::SetDepositSettings(SetDepositSettingsInput { operator: ACCOUNT_B, auto_stake_rewards: true })
         ]);
         assert_eq!(ret.error, Some(TransitionError::DepositsNotExists));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::SetDepositSettings { operator: ACCOUNT_A, auto_stake_rewards: true } // Same deposit plocy
+            Command::SetDepositSettings(SetDepositSettingsInput { operator: ACCOUNT_A, auto_stake_rewards: true }) // Same deposit plocy
         ];
         set_tx(&mut state, ACCOUNT_B, 1, &commands);
         let ret = execute_commands(state, commands);
@@ -519,8 +564,8 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::CreateDeposit { operator: ACCOUNT_A, balance: 500_000, auto_stake_rewards: false },
-            Command::TopUpDeposit { operator: ACCOUNT_A, amount: 100 }
+            Command::CreateDeposit(CreateDepositInput { operator: ACCOUNT_A, balance: 500_000, auto_stake_rewards: false }),
+            Command::TopUpDeposit(TopUpDepositInput { operator: ACCOUNT_A, amount: 100 })
         ];
         set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -535,14 +580,14 @@ mod test {
         
         let state = create_state(Some(state.ws.to_owned()));
         let ret = execute_commands(state, vec![
-            Command::TopUpDeposit { operator: ACCOUNT_A, amount: 100 }
+            Command::TopUpDeposit(TopUpDepositInput { operator: ACCOUNT_A, amount: 100 })
         ]);
         assert_eq!(ret.error, Some(TransitionError::DepositsNotExists));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
 
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::CreateDeposit { operator: ACCOUNT_A, balance: 500_000_000, auto_stake_rewards: false }
+            Command::CreateDeposit(CreateDepositInput { operator: ACCOUNT_A, balance: 500_000_000, auto_stake_rewards: false })
         ];
         set_tx(&mut state, ACCOUNT_C, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -574,7 +619,7 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 20_000 + 1 } // stake more than deposit
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_A, max_amount: 20_000 + 1 }) // stake more than deposit
         ];
         set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -593,7 +638,7 @@ mod test {
         
         let mut state = create_state(Some(state.ws.to_owned()));
         let commands = vec![
-            Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 20_000 }
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_A, max_amount: 20_000 })
         ];
         set_tx(&mut state, ACCOUNT_C, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -602,7 +647,7 @@ mod test {
 
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 1 }
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_A, max_amount: 1 })
         ];
         set_tx(&mut state, ACCOUNT_B, 1, &commands);
         let ret = execute_commands(state, commands);
@@ -619,7 +664,7 @@ mod test {
         // and then stake deposit
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 20_000 }
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_A, max_amount: 20_000 })
         ];
         set_tx(&mut state, ACCOUNT_B, 2, &commands);
         let ret = execute_commands(state, commands);
@@ -645,7 +690,7 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 6_300_000 }
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_A, max_amount: 6_300_000 })
         ];
         set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -686,7 +731,7 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::StakeDeposit { operator: ACCOUNT_B, max_amount: 6_500_000 }
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_B, max_amount: 6_500_000 })
         ];
         set_tx(&mut state, ACCOUNT_C, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -725,7 +770,7 @@ mod test {
         let mut state = create_state(Some(ws));
         let prev_pool_power = NetworkAccount::pools(&mut state, ACCOUNT_A).power().unwrap();
         let commands = vec![
-            Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 250_000 }
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_A, max_amount: 250_000 })
         ];
         set_tx(&mut state, ACCOUNT_C, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -746,7 +791,7 @@ mod test {
         let mut state = create_state(Some(state.ws.to_owned()));
         // create deposit first (too low to join deledated stake )
         let commands = vec![
-            Command::CreateDeposit { operator: ACCOUNT_A, balance: 100_000, auto_stake_rewards: false }
+            Command::CreateDeposit(CreateDepositInput { operator: ACCOUNT_A, balance: 100_000, auto_stake_rewards: false })
         ];
         set_tx(&mut state, ACCOUNT_D, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -755,7 +800,7 @@ mod test {
         // and then stake deposit
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 100_000 }
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_A, max_amount: 100_000 })
         ];
         set_tx(&mut state, ACCOUNT_D, 1, &commands);
         let ret = execute_commands(state, commands);
@@ -779,7 +824,7 @@ mod test {
         let mut state = create_state(Some(ws));
         let prev_pool_power = NetworkAccount::pools(&mut state, ACCOUNT_C).power().unwrap();
         let commands = vec![
-            Command::StakeDeposit { operator: ACCOUNT_C, max_amount: 110_000 }
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_C, max_amount: 110_000 })
         ];
         set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -821,7 +866,7 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 40_000 }
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_A, max_amount: 40_000 })
         ];
         set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -857,7 +902,7 @@ mod test {
         
         let state = create_state(Some(ws));
         let ret = execute_commands(state, vec![
-            Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 20_000 }
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_A, max_amount: 20_000 })
         ]);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 20_000_u64.to_le_bytes().to_vec());
@@ -890,7 +935,7 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 110_000 }
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_A, max_amount: 110_000 })
         ];
         set_tx(&mut state, ACCOUNT_A, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -934,7 +979,7 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::StakeDeposit { operator: ACCOUNT_C, max_amount: 150_000 }
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_C, max_amount: 150_000 })
         ];
         set_tx(&mut state, ACCOUNT_C, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -971,7 +1016,7 @@ mod test {
         
         let state = create_state(Some(ws));
         let ret = execute_commands(state, vec![
-            Command::StakeDeposit { operator: ACCOUNT_A, max_amount: 10_000 }
+            Command::StakeDeposit(StakeDepositInput { operator: ACCOUNT_A, max_amount: 10_000 })
         ]);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 10_000_u64.to_le_bytes().to_vec());
@@ -1011,7 +1056,7 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::UnstakeDeposit { operator: ACCOUNT_A, max_amount: 40_000 }
+            Command::UnstakeDeposit(UnstakeDepositInput { operator: ACCOUNT_A, max_amount: 40_000 })
         ];
         set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1031,7 +1076,7 @@ mod test {
         
         let mut state = create_state(Some(state.ws.to_owned()));
         let commands = vec![
-            Command::UnstakeDeposit { operator: ACCOUNT_C, max_amount: 40_000 }
+            Command::UnstakeDeposit(UnstakeDepositInput { operator: ACCOUNT_C, max_amount: 40_000 })
         ];
         set_tx(&mut state, ACCOUNT_B, 1, &commands);
         let ret = execute_commands(state, commands);
@@ -1041,7 +1086,7 @@ mod test {
         // create Pool and deposit first
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::CreatePool { commission_rate: 1 }
+            Command::CreatePool(CreatePoolInput { commission_rate: 1 })
         ];
         set_tx(&mut state, ACCOUNT_C, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1049,7 +1094,7 @@ mod test {
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::CreateDeposit { operator: ACCOUNT_C, balance: 10_000, auto_stake_rewards: false }
+            Command::CreateDeposit(CreateDepositInput { operator: ACCOUNT_C, balance: 10_000, auto_stake_rewards: false })
         ];
         set_tx(&mut state, ACCOUNT_B, 2, &commands);
         let ret = execute_commands(state, commands);
@@ -1058,7 +1103,7 @@ mod test {
         // and then UnstakeDeposit
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::UnstakeDeposit { operator: ACCOUNT_C, max_amount: 10_000 }
+            Command::UnstakeDeposit(UnstakeDepositInput { operator: ACCOUNT_C, max_amount: 10_000 })
         ];
         set_tx(&mut state, ACCOUNT_B, 3, &commands);
         let ret = execute_commands(state, commands);
@@ -1075,7 +1120,7 @@ mod test {
         // then UnstakeDeposit
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::UnstakeDeposit { operator: ACCOUNT_A, max_amount: 10_000 }
+            Command::UnstakeDeposit(UnstakeDepositInput { operator: ACCOUNT_A, max_amount: 10_000 })
         ];
         set_tx(&mut state, ACCOUNT_B, 4, &commands);
         let ret = execute_commands(state, commands);
@@ -1102,7 +1147,7 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::UnstakeDeposit { operator: ACCOUNT_A, max_amount: stake.power }
+            Command::UnstakeDeposit(UnstakeDepositInput { operator: ACCOUNT_A, max_amount: stake.power })
         ];
         set_tx(&mut state, biggest, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1139,7 +1184,7 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::UnstakeDeposit { operator: ACCOUNT_T, max_amount: 150_000 + 1 } // unstake more than staked
+            Command::UnstakeDeposit(UnstakeDepositInput { operator: ACCOUNT_T, max_amount: 150_000 + 1 }) // unstake more than staked
         ];
         set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1175,7 +1220,7 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::UnstakeDeposit { operator: ACCOUNT_T, max_amount: 200_000 }
+            Command::UnstakeDeposit(UnstakeDepositInput { operator: ACCOUNT_T, max_amount: 200_000 })
         ];
         set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1213,7 +1258,7 @@ mod test {
         
         let state = create_state(Some(ws));
         let ret = execute_commands(state, vec![
-            Command::UnstakeDeposit { operator: ACCOUNT_A, max_amount: 100_000 }
+            Command::UnstakeDeposit(UnstakeDepositInput { operator: ACCOUNT_A, max_amount: 100_000 })
         ]);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         assert_eq!(ret.receipt.as_ref().unwrap().last().unwrap().return_values, 100_000_u64.to_le_bytes().to_vec());
@@ -1230,7 +1275,7 @@ mod test {
         let mut state = create_state(Some(state.ws.to_owned()));
         state.tx.nonce = 1;
         let ret = execute_commands(state, vec![
-            Command::UnstakeDeposit { operator: ACCOUNT_A, max_amount: 50_000 }
+            Command::UnstakeDeposit(UnstakeDepositInput { operator: ACCOUNT_A, max_amount: 50_000 })
         ]);
         assert_eq!(ret.error, Some(TransitionError::PoolHasNoStakes));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
@@ -1256,7 +1301,7 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::UnstakeDeposit { operator: ACCOUNT_T, max_amount: 190_000 }
+            Command::UnstakeDeposit(UnstakeDepositInput { operator: ACCOUNT_T, max_amount: 190_000 })
         ];
         set_tx(&mut state, ACCOUNT_T, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1293,7 +1338,7 @@ mod test {
         
         let mut state = create_state(Some(ws));
         let commands = vec![
-            Command::UnstakeDeposit { operator: ACCOUNT_T, max_amount: 200_000 }
+            Command::UnstakeDeposit(UnstakeDepositInput { operator: ACCOUNT_T, max_amount: 200_000 })
         ];
         set_tx(&mut state, ACCOUNT_T, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1338,7 +1383,7 @@ mod test {
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_B);
         let commands = vec![
-            Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 40_000 }
+            Command::WithdrawDeposit(WithdrawDepositInput { operator: ACCOUNT_A, max_amount: 40_000 })
         ];
         let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1361,7 +1406,7 @@ mod test {
         
         let state = create_state(Some(state.ws.to_owned()));
         let ret = execute_commands(state, vec![
-            Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 40_000 }
+            Command::WithdrawDeposit(WithdrawDepositInput { operator: ACCOUNT_A, max_amount: 40_000 })
         ]);
         assert_eq!(ret.error, Some(TransitionError::DepositsNotExists));
         println!("gas_consumed {}", ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>());
@@ -1375,7 +1420,7 @@ mod test {
         // Then unstake
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::UnstakeDeposit { operator: ACCOUNT_A, max_amount: 10_000 } // 60_000 - 10_000
+            Command::UnstakeDeposit(UnstakeDepositInput { operator: ACCOUNT_A, max_amount: 10_000 }) // 60_000 - 10_000
         ];
         set_tx(&mut state, ACCOUNT_B, 1, &commands);
         let ret = execute_commands(state, commands);
@@ -1384,7 +1429,7 @@ mod test {
         // pvp: 0, vp: 60_000, nvp: 50_000, deposit: 60_000, Try withdraw
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 10_000 }
+            Command::WithdrawDeposit(WithdrawDepositInput { operator: ACCOUNT_A, max_amount: 10_000 })
         ];
         set_tx(&mut state, ACCOUNT_B, 2, &commands);
         let ret = execute_commands(state, commands);
@@ -1401,7 +1446,7 @@ mod test {
         // pvp: 60_000, vp: 50_000, nvp: 50_000, deposit: 60_013, Deduce deposit to 60_000
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 13 } // reduce deposit to 60_000
+            Command::WithdrawDeposit(WithdrawDepositInput { operator: ACCOUNT_A, max_amount: 13 }) // reduce deposit to 60_000
         ];
         set_tx(&mut state, ACCOUNT_B, 3, &commands);
         let ret = execute_commands(state, commands);
@@ -1410,7 +1455,7 @@ mod test {
         // pvp: 60_000, vp: 50_000, nvp: 50_000, deposit: 60_000, Try Withdraw
         let mut state = create_state(Some(ret.new_state));
         let commands = vec![
-            Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 10_000 }
+            Command::WithdrawDeposit(WithdrawDepositInput { operator: ACCOUNT_A, max_amount: 10_000 })
         ];
         set_tx(&mut state, ACCOUNT_B, 4, &commands);
         let ret = execute_commands(state, commands);
@@ -1442,7 +1487,7 @@ mod test {
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_B);
         let commands = vec![
-            Command::WithdrawDeposit { operator: ACCOUNT_T, max_amount: 200_000 }
+            Command::WithdrawDeposit(WithdrawDepositInput { operator: ACCOUNT_T, max_amount: 200_000 })
         ];
         let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1490,7 +1535,7 @@ mod test {
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_A);
         let commands = vec![
-            Command::WithdrawDeposit { operator: ACCOUNT_T, max_amount: 300_000 }
+            Command::WithdrawDeposit(WithdrawDepositInput { operator: ACCOUNT_T, max_amount: 300_000 })
         ];
         let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1534,7 +1579,7 @@ mod test {
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_A);
         let commands = vec![
-            Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 45_000 }
+            Command::WithdrawDeposit(WithdrawDepositInput { operator: ACCOUNT_A, max_amount: 45_000 })
         ];
         let tx_base_cost = set_tx(&mut state, ACCOUNT_A, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1574,7 +1619,7 @@ mod test {
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_T);
         let commands = vec![
-            Command::WithdrawDeposit { operator: ACCOUNT_T, max_amount: 200_000 }
+            Command::WithdrawDeposit(WithdrawDepositInput { operator: ACCOUNT_T, max_amount: 200_000 })
         ];
         let tx_base_cost = set_tx(&mut state, ACCOUNT_T, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1616,7 +1661,7 @@ mod test {
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_A);
         let commands = vec![
-            Command::WithdrawDeposit { operator: ACCOUNT_T, max_amount: 300_000 }
+            Command::WithdrawDeposit(WithdrawDepositInput { operator: ACCOUNT_T, max_amount: 300_000 })
         ];
         let tx_base_cost = set_tx(&mut state, ACCOUNT_T, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1669,7 +1714,7 @@ mod test {
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_B);
         let commands = vec![
-            Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 40_000 }
+            Command::WithdrawDeposit(WithdrawDepositInput { operator: ACCOUNT_A, max_amount: 40_000 })
         ];
         let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1723,7 +1768,7 @@ mod test {
         let mut state = create_state(Some(ws));
         let owner_balance_before = state.ctx.rw_set.ws.balance(ACCOUNT_B);
         let commands = vec![
-            Command::WithdrawDeposit { operator: ACCOUNT_A, max_amount: 40_000 }
+            Command::WithdrawDeposit(WithdrawDepositInput { operator: ACCOUNT_A, max_amount: 40_000 })
         ];
         let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
         let ret = execute_commands(state, commands);
@@ -1969,9 +2014,9 @@ mod test {
         assert_eq!(NetworkAccount::nvp(&mut state).length(), TEST_MAX_VALIDATOR_SET_SIZE as u32);
 
         {
-            // open account state for speed up read operations
-            let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS).unwrap();
-            let mut state = super::administration::NetworkAccountWorldState::new(&mut state, acc_state);
+            // open account storage state for speed up read operations
+            let acc_state = state.ws.account_storage_state(constants::NETWORK_ADDRESS).unwrap();
+            let mut state = super::protocol::NetworkAccountWorldState::new(&mut state, acc_state);
         
             // Pool power of vp and nvp are equal 
             let l = NetworkAccount::vp(&mut state).length();
@@ -2023,9 +2068,9 @@ mod test {
         assert_eq!(NetworkAccount::nvp(&mut state).length(), TEST_MAX_VALIDATOR_SET_SIZE as u32);
 
         {
-            // open account state for speed up read operations
-            let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS).unwrap();
-            let mut state = super::administration::NetworkAccountWorldState::new(&mut state, acc_state);
+            // open account storage state for speed up read operations
+            let acc_state = state.ws.account_storage_state(constants::NETWORK_ADDRESS).unwrap();
+            let mut state = super::protocol::NetworkAccountWorldState::new(&mut state, acc_state);
 
             // Pool power of pvp, vp and nvp are equal 
             let l = NetworkAccount::vp(&mut state).length();
@@ -2098,9 +2143,9 @@ mod test {
         assert_eq!(NetworkAccount::nvp(&mut state).length(), TEST_MAX_VALIDATOR_SET_SIZE as u32);
 
         {
-            // open account state for speed up read operations
-            let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS).unwrap();
-            let mut state = super::administration::NetworkAccountWorldState::new(&mut state, acc_state);
+            // open account storage state for speed up read operations
+            let acc_state = state.ws.account_storage_state(constants::NETWORK_ADDRESS).unwrap();
+            let mut state = super::protocol::NetworkAccountWorldState::new(&mut state, acc_state);
         
             // Pool power of vp and nvp are equal 
             let l = NetworkAccount::vp(&mut state).length();
@@ -2154,9 +2199,9 @@ mod test {
         assert_eq!(NetworkAccount::nvp(&mut state).length(), TEST_MAX_VALIDATOR_SET_SIZE as u32);
 
         {
-            // open account state for speed up read operations
-            let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS).unwrap();
-            let mut state = super::administration::NetworkAccountWorldState::new(&mut state, acc_state);
+            // open account storage state for speed up read operations
+            let acc_state = state.ws.account_storage_state(constants::NETWORK_ADDRESS).unwrap();
+            let mut state = super::protocol::NetworkAccountWorldState::new(&mut state, acc_state);
 
             // Pool power of vp and nvp are equal and greater than pool power of pvp
             let l = NetworkAccount::vp(&mut state).length();
@@ -2228,7 +2273,7 @@ mod test {
         let mut state = create_state(Some(state.ctx.rw_set.ws));
         state.tx.signer = ACCOUNT_B;
         state.tx.nonce = 0;
-        let ret = execute_commands(state, vec![ Command::CreatePool { commission_rate: 1 } ]);
+        let ret = execute_commands(state, vec![ Command::CreatePool(CreatePoolInput { commission_rate: 1 }) ]);
         assert_eq!((&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_status), (&None, &ExitStatus::Success));
         let gas_used = ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>();
         println!("gas_consumed {}", gas_used);
@@ -2238,7 +2283,7 @@ mod test {
         execute_next_epoch(state);
     }
 
-    fn create_state(init_ws: Option<WorldState<SimpleStore>>) -> StateInTransit<SimpleStore> {
+    fn create_state(init_ws: Option<WorldState<SimpleStore>>) -> ExecutionState<SimpleStore> {
         let ws = match init_ws {
             Some(ws) => ws,
             None => {
@@ -2253,16 +2298,16 @@ mod test {
         let ctx = TransitionContext::new(ws);
         let tx = create_tx(ACCOUNT_A);
         let base_tx = BaseTx::from(&tx);
-        StateInTransit { bd: create_bd(), tx_size: tx.serialize().len(), commands_len: 0, tx: base_tx, ctx }
+        ExecutionState { bd: create_bd(), tx_size: tx.serialize().len(), commands_len: 0, tx: base_tx, ctx }
     }
 
-    fn set_tx(state: &mut StateInTransit<SimpleStore>, signer: PublicAddress, nonce: u64, commands: &Vec<Command>) -> u64 {
+    fn set_tx(state: &mut ExecutionState<SimpleStore>, signer: PublicAddress, nonce: u64, commands: &Vec<Command>) -> u64 {
         let mut tx = create_tx(signer);
         tx.nonce = nonce;
         state.tx_size = tx.serialize().len();
         state.tx = BaseTx::from(&tx);
         state.commands_len = commands.len();
-        tx_inclusion_cost_from(state.tx_size, state.commands_len)
+        gas::tx_inclusion_cost(state.tx_size, state.commands_len)
     }
 
     fn create_tx(signer: PublicAddress) -> Transaction {
@@ -2331,7 +2376,7 @@ mod test {
 
     /// Pools address range from \[X, 1, 1, 1, ... , 1\] where X \in \[1, TEST_MAX_VALIDATOR_SET_SIZE\]
     /// Pool powers = 100_000, 200_000, ... , 6_400_000
-    fn create_full_pools_in_nvp(ws: &mut StateInTransit<SimpleStore>, add_operators_deposit: bool, operators_auto_stake_rewards: bool) {
+    fn create_full_pools_in_nvp(ws: &mut ExecutionState<SimpleStore>, add_operators_deposit: bool, operators_auto_stake_rewards: bool) {
         NetworkAccount::nvp(ws).clear();
         for i in 1..TEST_MAX_VALIDATOR_SET_SIZE+1 {
             let (address, power, rate) = init_setup_pool_power(i);
@@ -2361,7 +2406,7 @@ mod test {
 
     /// Staker address range from \[X, X, X, X, ... , 2\] where X starts with u32(\[2,2,2,2\]). Number of stakers = TEST_MAX_STAKES_PER_POOL
     /// Stake powers = 200_000, 300_000, ...
-    fn create_full_stakes_in_pool(ws: &mut StateInTransit<SimpleStore>, operator: PublicAddress) {
+    fn create_full_stakes_in_pool(ws: &mut ExecutionState<SimpleStore>, operator: PublicAddress) {
         NetworkAccount::pools(ws, operator).delegated_stakes().clear();
         let mut sum = 0;
         let mut vs = vec![];
@@ -2390,7 +2435,7 @@ mod test {
 
     /// Staker address range from \[X, X, X, X, ... , 2\] where X starts with u32(\[2,2,2,2\]). Number of stakers = TEST_MAX_STAKES_PER_POOL
     /// Deposits = 200_000, 300_000, ... 
-    fn create_full_deposits_in_pool(ws: &mut StateInTransit<SimpleStore>, operator: PublicAddress, auto_stake_rewards: bool) {
+    fn create_full_deposits_in_pool(ws: &mut ExecutionState<SimpleStore>, operator: PublicAddress, auto_stake_rewards: bool) {
         
         for i in 0..TEST_MAX_STAKES_PER_POOL {
             let (address, balance) = init_setup_stake_of_owner(i);
@@ -2398,7 +2443,7 @@ mod test {
             NetworkAccount::deposits(ws, operator, address).set_auto_stake_rewards(auto_stake_rewards);
         }
     }
-    fn create_full_nvp_pool_stakes_deposits(ws: &mut StateInTransit<SimpleStore>, auto_stake_rewards: bool, add_operators_deposit: bool, operators_auto_stake_rewards: bool) {
+    fn create_full_nvp_pool_stakes_deposits(ws: &mut ExecutionState<SimpleStore>, auto_stake_rewards: bool, add_operators_deposit: bool, operators_auto_stake_rewards: bool) {
         create_full_pools_in_nvp(ws,add_operators_deposit, operators_auto_stake_rewards);
         let mut nvps = vec![];
         for i in 0..TEST_MAX_VALIDATOR_SET_SIZE {
@@ -2432,7 +2477,7 @@ mod test {
     // deposits[A, A] = 10_000
     // deposits[A, B] = 90_000
     fn setup_pool(
-        state: &mut StateInTransit<SimpleStore>, 
+        state: &mut ExecutionState<SimpleStore>, 
         operator: PublicAddress,
         operator_power: u64,
         owner: PublicAddress, 
@@ -2459,7 +2504,7 @@ mod test {
 
     }
 
-    fn execute_next_epoch(state: StateInTransit<SimpleStore>) -> StateInTransit<SimpleStore> {
+    fn execute_next_epoch(state: ExecutionState<SimpleStore>) -> ExecutionState<SimpleStore> {
         let ret = execute_next_epoch_command(state, vec![
             Command::NextEpoch
         ]);

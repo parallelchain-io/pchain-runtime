@@ -3,7 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! custom_tunables defines structures to allow limiting the memory used for wasm module instantiation.
+//! Defines structs that are used as configuration of wasmer store for limiting the memory 
+//! used for wasm module instantiation.
 
 use loupe::MemoryUsage;
 use std::ptr::NonNull;

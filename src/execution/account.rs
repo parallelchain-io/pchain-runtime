@@ -3,14 +3,14 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Execution logics of Account Commands.
+//! Implementation of executing [Account Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#account-commands).
 
 use std::{
     ops::{Deref, DerefMut}, 
     sync::{Arc, Mutex}
 };
 use pchain_world_state::{storage::WorldStateStorage};
-use pchain_types::{PublicAddress, Command};
+use pchain_types::{cryptography::PublicAddress, blockchain::Command, runtime::{TransferInput, DeployInput, CallInput}};
 
 use crate::{
     transition::{StateChangesResult}, 
@@ -20,22 +20,25 @@ use crate::{
 };
 
 use super::{
-    phase::{self, StateInTransit, ContractModule, ContractInstance}, execute::TryExecuteResult
+    phase::{self},
+    execute::TryExecuteResult, contract::{ContractInstance, ContractModule},
+    state::ExecutionState
 };
 
 /// Execution Logic for Account Commands. Err If the Command is not Account Command.
 pub(crate) fn try_execute<S>(
-    state: StateInTransit<S>, 
+    state: ExecutionState<S>, 
     command: &Command
 ) -> TryExecuteResult<S>
     where S: WorldStateStorage + Send + Sync + Clone + 'static
 {
+    
     let ret = match command {
-        Command::Transfer { recipient, amount } =>
+        Command::Transfer(TransferInput { recipient, amount })=>
             transfer(state, *recipient, *amount),
-        Command::Deploy { contract, cbi_version } =>
+        Command::Deploy(DeployInput { contract, cbi_version }) =>
             deploy(state, contract.to_vec(), *cbi_version),
-        Command::Call { target, method, arguments, amount } =>
+        Command::Call(CallInput{ target, method, arguments, amount }) =>
             call(state, false, *target, method.clone(),arguments.clone(), *amount),
         _=> return TryExecuteResult::Err(state)
     };
@@ -43,12 +46,12 @@ pub(crate) fn try_execute<S>(
     TryExecuteResult::Ok(ret)
 }
 
-/// Execution of Work step for [pchain_types::Command::Transfer]
+/// Execution of [pchain_types::blockchain::Command::Transfer]
 pub(crate) fn transfer<S>(
-    mut state: StateInTransit<S>, 
+    mut state: ExecutionState<S>, 
     recipient: PublicAddress,
     amount: u64,
-) -> Result<StateInTransit<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone + 'static
 {
     let signer = state.tx.signer;
@@ -67,15 +70,15 @@ pub(crate) fn transfer<S>(
     phase::finalize_gas_consumption(state)
 }
 
-/// Execution of Work step for [pchain_types::Command::Call]
+/// Execution of [pchain_types::blockchain::Command::Call]
 pub(crate) fn call <S>(
-    mut state: StateInTransit<S>,
+    mut state: ExecutionState<S>,
     is_view: bool,
     target: PublicAddress,
     method: String,
     arguments: Option<Vec<Vec<u8>>>,
     amount: Option<u64>,
-) -> Result<StateInTransit<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
 
@@ -110,7 +113,7 @@ pub(crate) fn call <S>(
 /// CallInstance defines the steps of contract instantiation and contract call.
 struct CallInstance<S>
 where S: WorldStateStorage + Send + Sync + Clone + 'static { 
-    state: StateInTransit<S>,
+    state: ExecutionState<S>,
     instance: ContractInstance<S>,
 }
 
@@ -120,13 +123,13 @@ where S: WorldStateStorage + Send + Sync + Clone + 'static  {
     /// Instantiate an instant to be called. It returns transition error for failures in 
     /// contrac tinstantiation and verification.
     fn instantiate(
-        state: StateInTransit<S>,
+        state: ExecutionState<S>,
         is_view: bool,
         target: PublicAddress,
         method: String,
         arguments: Option<Vec<Vec<u8>>>,
         amount: Option<u64>,
-    ) -> Result<Self, (StateInTransit<S>, TransitionError)> 
+    ) -> Result<Self, (ExecutionState<S>, TransitionError)> 
         where S: WorldStateStorage + Send + Sync + Clone + 'static
     {
         // check CBI version is None
@@ -183,9 +186,9 @@ where S: WorldStateStorage + Send + Sync + Clone + 'static  {
     }
 
     /// Call the Instance and transits the state.
-    fn call(self) -> (StateInTransit<S>, Option<TransitionError>) {
+    fn call(self) -> (ExecutionState<S>, Option<TransitionError>) {
         let (ctx, wasm_exec_gas, call_error) = self.instance.call();
-        let mut state = StateInTransit { 
+        let mut state = ExecutionState { 
             ctx,
             ..self.state
         };
@@ -204,15 +207,15 @@ where S: WorldStateStorage + Send + Sync + Clone + 'static  {
     }
 }
 
-/// Execution of Work step for [pchain_types::Command::Deploy]
+/// Execution of [pchain_types::blockchain::Command::Deploy]
 pub(crate) fn deploy<S>(
-    state: StateInTransit<S>,
+    state: ExecutionState<S>,
     contract: Vec<u8>,
     cbi_version: u32,
-) -> Result<StateInTransit<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
-    let contract_address = pchain_types::crypto::sha256(&[state.tx.signer.to_vec(), state.tx.nonce.to_le_bytes().to_vec()].concat());
+    let contract_address = pchain_types::cryptography::sha256([state.tx.signer.to_vec(), state.tx.nonce.to_le_bytes().to_vec()].concat());
     
     // Instantiate instant to preform contract deployment.
     let instance = DeployInstance::instantiate(state, contract, cbi_version, contract_address)
@@ -228,7 +231,7 @@ pub(crate) fn deploy<S>(
 /// DeployInstance defines the steps of contract instantiation and contract deploy.
 struct DeployInstance<S>
 where S: WorldStateStorage + Send + Sync + Clone + 'static { 
-    state: StateInTransit<S>,
+    state: ExecutionState<S>,
     module: ContractModule,
     contract_address: PublicAddress,
     contract: Vec<u8>,
@@ -240,11 +243,11 @@ where S: WorldStateStorage + Send + Sync + Clone + 'static  {
 
     /// Instantiate an instance after contract validation
     fn instantiate(
-        state: StateInTransit<S>,
+        state: ExecutionState<S>,
         contract: Vec<u8>,
         cbi_version: u32,
         contract_address: PublicAddress
-    ) -> Result<Self, (StateInTransit<S>, DeployError)> {
+    ) -> Result<Self, (ExecutionState<S>, DeployError)> {
 
         if !contract::is_cbi_compatible(cbi_version) {
             return Err((state, DeployError::InvalidDeployTransactionData))
@@ -275,7 +278,7 @@ where S: WorldStateStorage + Send + Sync + Clone + 'static  {
     }
 
     /// Deploy by writing contract to storage and transit to the state.
-    fn deploy(mut self) -> Result<StateInTransit<S>, (StateInTransit<S>, DeployError)> {
+    fn deploy(mut self) -> Result<ExecutionState<S>, (ExecutionState<S>, DeployError)> {
         let contract_address = self.contract_address;
         
         // cache the module
@@ -300,7 +303,7 @@ where S: WorldStateStorage + Send + Sync + Clone + 'static  {
 
 impl<S> Deref for DeployInstance<S>
 where S: WorldStateStorage + Send + Sync + Clone {
-    type Target = StateInTransit<S>;
+    type Target = ExecutionState<S>;
 
     fn deref(&self) -> &Self::Target {
         &self.state

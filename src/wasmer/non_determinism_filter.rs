@@ -3,7 +3,10 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! non_determinism filter is a custom middleware to disallow non-deterministic operations.
+//! Defines a middleware filter to disallow non-deterministic operations.
+//! 
+//! Non-deterministic operations refer to some specific Opcodes in wasm execution,
+//! for example, floating point operations.
 
 use loupe::MemoryUsage;
 use wasmer::{wasmparser::Operator, FunctionMiddleware, MiddlewareError, MiddlewareReaderState, LocalFunctionIndex, ModuleMiddleware};
@@ -13,27 +16,27 @@ use wasmer::{wasmparser::Operator, FunctionMiddleware, MiddlewareError, Middlewa
 /// This is an attribute for the NonDeterminismFilter middleware defined below.
 #[derive(Debug, MemoryUsage, Clone, Copy)]
 struct NonDeterminismFilterConfig {
-    // allow_floating_point_ops is a flag to enable/disable sequential floating point operations.
-    // Note: This feature is known to induce non-determinism and is encouraged to be set as false.
-    // See <https://github.com/WebAssembly/design/blob/main/Nondeterminism.md>
+    /// allow_floating_point_ops is a flag to enable/disable sequential floating point operations.
+    /// Note: This feature is known to induce non-determinism and is encouraged to be set as false.
+    /// See <https://github.com/WebAssembly/design/blob/main/Nondeterminism.md>
     allow_floating_point_ops: bool,
-    // allow_simd_ops is a flag to enable/disable fixed width SIMD operations.
-    // Note: There are floating point operations described in WASM SIMD Instructions
-    // which are known to induce non-determinism and is encouraged to be set as false.
-    // See <https://github.com/WebAssembly/simd/blob/main/proposals/simd/SIMD.md>  <https://github.com/WebAssembly/design/blob/main/Nondeterminism.md>
+    /// allow_simd_ops is a flag to enable/disable fixed width SIMD operations.
+    /// Note: There are floating point operations described in WASM SIMD Instructions
+    /// which are known to induce non-determinism and is encouraged to be set as false.
+    /// See <https://github.com/WebAssembly/simd/blob/main/proposals/simd/SIMD.md>  <https://github.com/WebAssembly/design/blob/main/Nondeterminism.md>
     allow_simd_ops: bool,
-    // allow_atomic_ops is a flag to enable/disable atomic operations with WASM threads.
-    // Note: They are known to induce non-determinism due to hardware standardization constraints and are encouraged to be set as false.
-    // See <https://github.com/WebAssembly/design/blob/main/Nondeterminism.md>
+    /// allow_atomic_ops is a flag to enable/disable atomic operations with WASM threads.
+    /// Note: They are known to induce non-determinism due to hardware standardization constraints and are encouraged to be set as false.
+    /// See <https://github.com/WebAssembly/design/blob/main/Nondeterminism.md>
     allow_atomic_ops: bool,
-    // allow_bulk_memory_operations is a flag to enable/disable bulk memory operations.
-    // See <https://github.com/WebAssembly/bulk-memory-operations>
+    /// allow_bulk_memory_operations is a flag to enable/disable bulk memory operations.
+    /// See <https://github.com/WebAssembly/bulk-memory-operations>
     allow_bulk_memory_operations: bool,
-    // allow_reference_types is a flag to enable/disable reference types.
-    // See <https://github.com/WebAssembly/reference-types>
+    /// allow_reference_types is a flag to enable/disable reference types.
+    /// See <https://github.com/WebAssembly/reference-types>
     allow_reference_types: bool,
-    // allow_exception_handling is a flag to enable/disable exception handling.
-    // See <https://github.com/WebAssembly/exception-handling/blob/main/proposals/exception-handling/Exceptions.md> 
+    /// allow_exception_handling is a flag to enable/disable exception handling.
+    /// See <https://github.com/WebAssembly/exception-handling/blob/main/proposals/exception-handling/Exceptions.md> 
     allow_exception_handling: bool,
 }
 
@@ -59,9 +62,9 @@ impl Default for NonDeterminismFilter {
     // a set of boolean flags on NonDeterminismFilterConfig when the method "default" is called.  
     fn default() -> Self {
         Self::create(NonDeterminismFilterConfig {
-            // floating point operations are set to false to promote determinism inside the ParallelChain F ecosystem. 
+            // floating point operations are set to false to promote determinism inside the ParallelChain Mainnet ecosystem. 
             allow_floating_point_ops: false,
-            // simd ops are set to false to promote determinism inside the ParallelChain F ecosystem. 
+            // simd ops are set to false to promote determinism inside the ParallelChain Mainnet ecosystem. 
             allow_simd_ops: false,
             // atomic operations are set to false as they need WASM threads to execute. 
             allow_atomic_ops: false,

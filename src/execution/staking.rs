@@ -3,51 +3,56 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Execution logics of Network Commands.
+//! Implementation of executing [Staking Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#staking-commands).
 
-use pchain_types::{PublicAddress, Stake, Command};
+use pchain_types::runtime::{SetPoolSettingsInput, CreateDepositInput, SetDepositSettingsInput, TopUpDepositInput, WithdrawDepositInput, StakeDepositInput, UnstakeDepositInput};
+use pchain_types::{cryptography::PublicAddress, runtime::CreatePoolInput};
+use pchain_types::blockchain::Command;
 use pchain_world_state::{
-    network::{network_account::{NetworkAccount, NetworkAccountStorage}, pool::{PoolKey}, stake::StakeValue}, 
+    network::{network_account::{NetworkAccount, NetworkAccountStorage}, pool::{PoolKey}, stake::{StakeValue, Stake}}, 
     storage::WorldStateStorage
 };
 
+use crate::cost::CostChange;
+use crate::gas;
 use crate::{
     transition::{StateChangesResult}, 
-    TransitionError, gas
+    TransitionError
 };
 
+use super::state::ExecutionState;
 use super::{
-    phase::{self, StateInTransit}, execute::TryExecuteResult
+    phase::{self}, execute::TryExecuteResult
 };
 
-/// Execution Logic for Network Commands. Err If the Command is not Network Command.
+/// Execution Logic for Staking Commands. Err If the Command is not Staking Command.
 /// It transits the state according to Metwork Command, on behalf of actor. Actor is expected 
 /// to be the signer of the transaction, or the contract that triggers deferred command.
 pub(crate) fn try_execute<S>(
     actor: PublicAddress,
-    state: StateInTransit<S>, 
+    state: ExecutionState<S>, 
     command: &Command
 ) -> TryExecuteResult<S> 
     where S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static
 {
     let ret = match command {
-        Command::CreatePool { commission_rate } => 
+        Command::CreatePool(CreatePoolInput { commission_rate }) => 
             create_pool(actor, state, *commission_rate),
-        Command::SetPoolSettings { commission_rate } => 
+        Command::SetPoolSettings(SetPoolSettingsInput { commission_rate }) => 
             set_pool_settings(actor, state, *commission_rate),
         Command::DeletePool => 
             delete_pool(actor, state),
-        Command::CreateDeposit { operator, balance, auto_stake_rewards } => 
+        Command::CreateDeposit(CreateDepositInput { operator, balance, auto_stake_rewards }) => 
             create_deposit(actor, state, *operator, *balance, *auto_stake_rewards),
-        Command::SetDepositSettings { operator, auto_stake_rewards } => 
+        Command::SetDepositSettings(SetDepositSettingsInput { operator, auto_stake_rewards }) => 
             set_deposit_settings(actor, state, *operator, *auto_stake_rewards),
-        Command::TopUpDeposit { operator, amount } => 
+        Command::TopUpDeposit(TopUpDepositInput { operator, amount }) => 
             topup_deposit(actor, state, *operator, *amount),
-        Command::WithdrawDeposit { operator, max_amount } => 
+        Command::WithdrawDeposit(WithdrawDepositInput { operator, max_amount }) => 
             withdraw_deposit(actor, state, *operator, *max_amount),
-        Command::StakeDeposit { operator, max_amount } => 
+        Command::StakeDeposit(StakeDepositInput { operator, max_amount }) => 
             stake_deposit(actor, state, *operator, *max_amount),
-        Command::UnstakeDeposit { operator, max_amount } => 
+        Command::UnstakeDeposit(UnstakeDepositInput { operator, max_amount }) => 
             unstake_deposit(actor, state, *operator, *max_amount),
         _=> return TryExecuteResult::Err(state)
     };
@@ -55,12 +60,12 @@ pub(crate) fn try_execute<S>(
     TryExecuteResult::Ok(ret)
 }
 
-/// Execution of Work step for [pchain_types::Command::CreatePool]
+/// Execution of [pchain_types::blockchain::Command::CreatePool]
 pub(crate) fn create_pool<S>(
     operator: PublicAddress,
-    mut state: StateInTransit<S>,
+    mut state: ExecutionState<S>,
     commission_rate: u8,
-) -> Result<StateInTransit<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
 
@@ -84,12 +89,12 @@ pub(crate) fn create_pool<S>(
     phase::finalize_gas_consumption(state)
 }
 
-/// Execution of Work step for [pchain_types::Command::SetPoolSettings]
+/// Execution of [pchain_types::blockchain::Command::SetPoolSettings]
 pub(crate) fn set_pool_settings<S>(
     operator: PublicAddress,
-    mut state: StateInTransit<S>,
+    mut state: ExecutionState<S>,
     new_commission_rate: u8
-) -> Result<StateInTransit<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
 
@@ -112,11 +117,11 @@ pub(crate) fn set_pool_settings<S>(
     phase::finalize_gas_consumption(state)
 }
 
-/// Execution of Work step for [pchain_types::Command::DeletePool]
+/// Execution of [pchain_types::blockchain::Command::DeletePool]
 pub(crate) fn delete_pool<S>(
     operator: PublicAddress,
-    mut state: StateInTransit<S>,
-) -> Result<StateInTransit<S>, StateChangesResult<S>> 
+    mut state: ExecutionState<S>,
+) -> Result<ExecutionState<S>, StateChangesResult<S>> 
     where S: WorldStateStorage + Send + Sync + Clone
 {
     let pool = NetworkAccount::pools(&mut state, operator);
@@ -131,14 +136,14 @@ pub(crate) fn delete_pool<S>(
     phase::finalize_gas_consumption(state)
 }
 
-/// Execution of Work step for [pchain_types::Command::CreateDeposit]
+/// Execution of [pchain_types::blockchain::Command::CreateDeposit]
 pub(crate) fn create_deposit<S>(
     owner: PublicAddress,
-    mut state: StateInTransit<S>, 
+    mut state: ExecutionState<S>, 
     operator: PublicAddress,
     balance: u64,
     auto_stake_rewards: bool,
-) -> Result<StateInTransit<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
 
@@ -163,13 +168,13 @@ pub(crate) fn create_deposit<S>(
     phase::finalize_gas_consumption(state)
 }
 
-/// Execution of Work step for [pchain_types::Command::SetDepositSettings]
+/// Execution of [pchain_types::blockchain::Command::SetDepositSettings]
 pub(crate) fn set_deposit_settings<S>(
     owner: PublicAddress,
-    mut state: StateInTransit<S>, 
+    mut state: ExecutionState<S>, 
     operator: PublicAddress,
     new_auto_stake_rewards: bool,
-) -> Result<StateInTransit<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
 
@@ -187,13 +192,13 @@ pub(crate) fn set_deposit_settings<S>(
     phase::finalize_gas_consumption(state)
 }
 
-/// Execution of Work step for [pchain_types::Command::TopUpDeposit]
+/// Execution of [pchain_types::blockchain::Command::TopUpDeposit]
 pub(crate) fn topup_deposit<S>(
     owner: PublicAddress,
-    mut state: StateInTransit<S>, 
+    mut state: ExecutionState<S>, 
     operator: PublicAddress,
     amount: u64
-) -> Result<StateInTransit<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
 
@@ -214,13 +219,13 @@ pub(crate) fn topup_deposit<S>(
     phase::finalize_gas_consumption(state)
 }
 
-/// Execution of Work step for [pchain_types::Command::WithdrawDeposit]
+/// Execution of [pchain_types::blockchain::Command::WithdrawDeposit]
 pub(crate) fn withdraw_deposit<S>(
     owner: PublicAddress,
-    mut state: StateInTransit<S>, 
+    mut state: ExecutionState<S>, 
     operator: PublicAddress,
     max_amount: u64,
-) -> Result<StateInTransit<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
 
@@ -279,7 +284,7 @@ pub(crate) fn withdraw_deposit<S>(
 
     // 5. Set the withdrawal amount to return_value
     let return_value = withdrawal_amount.to_le_bytes().to_vec();
-    state.receipt_write_gas += gas::blockchain_return_value_cost(return_value.len());
+    state.receipt_write_gas += CostChange::deduct(gas::blockchain_return_values_cost(return_value.len()));
     if state.tx.gas_limit < state.total_gas_to_be_consumed() {
         return Err(phase::abort(state, TransitionError::ExecutionProperGasExhausted))
     }
@@ -288,13 +293,13 @@ pub(crate) fn withdraw_deposit<S>(
     phase::finalize_gas_consumption(state)
 }
 
-/// Execution of Work step for [pchain_types::Command::StakeDeposit]
+/// Execution of [pchain_types::blockchain::Command::StakeDeposit]
 pub(crate) fn stake_deposit<S>(
     owner: PublicAddress,
-    mut state: StateInTransit<S>, 
+    mut state: ExecutionState<S>, 
     operator: PublicAddress,
     max_amount: u64,
-) -> Result<StateInTransit<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, StateChangesResult<S>>
     where S: WorldStateStorage + Send + Sync + Clone
 {
 
@@ -327,7 +332,7 @@ pub(crate) fn stake_deposit<S>(
 
     // Set the staked amount to return_value
     let return_value = stake_power_to_increase.to_le_bytes().to_vec();
-    state.receipt_write_gas += gas::blockchain_return_value_cost(return_value.len());
+    state.receipt_write_gas += CostChange::deduct(gas::blockchain_return_values_cost(return_value.len()));
     if state.tx.gas_limit < state.total_gas_to_be_consumed() {
         return Err(phase::abort(state, TransitionError::ExecutionProperGasExhausted))
     }
@@ -336,13 +341,13 @@ pub(crate) fn stake_deposit<S>(
     phase::finalize_gas_consumption(state)
 }
 
-/// Execution of Work step for [pchain_types::Command::UnstakeDeposit]
+/// Execution of [pchain_types::blockchain::Command::UnstakeDeposit]
 pub(crate) fn unstake_deposit<S>(
     owner: PublicAddress,
-    mut state: StateInTransit<S>, 
+    mut state: ExecutionState<S>, 
     operator: PublicAddress, 
     max_amount: u64
-) -> Result<StateInTransit<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, StateChangesResult<S>>
     where S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone
 {
 
@@ -368,7 +373,7 @@ pub(crate) fn unstake_deposit<S>(
 
     // 4. set the unstaked amount to return_value
     let return_value = amount_unstaked.to_le_bytes().to_vec();
-    state.receipt_write_gas += gas::blockchain_return_value_cost(return_value.len());
+    state.receipt_write_gas += CostChange::deduct(gas::blockchain_return_values_cost(return_value.len()));
     if state.tx.gas_limit < state.total_gas_to_be_consumed() {
         return Err(phase::abort(state, TransitionError::ExecutionProperGasExhausted))
     }

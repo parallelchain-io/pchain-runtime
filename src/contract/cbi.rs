@@ -3,12 +3,16 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definition of host functions that are imported by smart contracts.
+//! Definition of host functions that are imported by ParallelChain Smart Contracts. 
+//! 
+//! The definitions follows the specification in [ParallelChain protocol](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md).
 
 use wasmer::{Function, Store, imports, ImportObject};
 
-/// Definition of host functions with WasmerEnv. Implement this trait for creation of importable 
-/// that can be used in intantiation of contract module.
+use super::MethodCallError;
+
+/// Definition of host functions with [wasmer::WasmerEnv]. Implement this trait for creation of importable 
+/// that can be used in instantiation of contract module.
 /// 
 /// Host function arguments with suffix `_ptr_ptr` are namely pointer-to-pointer variable that 
 /// is considered as mutable reference to memory as an output value. Method `wasmer_memory::MemoryContext::set_return_values_to_memory` 
@@ -76,7 +80,7 @@ pub trait ContractBinaryInterface<T> where T: wasmer::WasmerEnv + 'static {
     fn transaction_hash(env: &T, hash_ptr_ptr: u32) -> Result<(), FuncError>;
 
     /// call methods of another contract.
-    /// - `call_ptr` points to memory of [pchain_types::Command::Call]
+    /// - `call_ptr` points to memory of [pchain_types::blockchain::Command::Call]
     /// - `return_ptr_ptr` points to memory of bytes.
     /// - returns the length of Return Value.
     fn call(env: &T, call_input_ptr: u32, call_input_len: u32, rval_ptr_ptr: u32) -> Result<u32, FuncError>;
@@ -90,27 +94,27 @@ pub trait ContractBinaryInterface<T> where T: wasmer::WasmerEnv + 'static {
     fn transfer(env: &T, transfer_input_ptr: u32) -> Result<(), FuncError>;
     
     /// Insert command execution after success of this contract call.
-    /// - `create_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::Command::CreateDeposit].
+    /// - `create_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::blockchain::Command::CreateDeposit].
     fn defer_create_deposit(env: &T, create_deposit_input_ptr: u32, create_deposit_input_len: u32) -> Result<(), FuncError>;
 
     /// Insert command execution after success of this contract call.
-    /// - `set_deposit_settings_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::Command::SetDepositSettings].
+    /// - `set_deposit_settings_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::blockchain::Command::SetDepositSettings].
     fn defer_set_deposit_settings(env: &T, set_deposit_settings_input_ptr: u32, set_deposit_settings_input_len: u32) -> Result<(), FuncError>;
 
     /// Insert command execution after success of this contract call.
-    /// - `top_up_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::Command::TopUpDeposit].
+    /// - `top_up_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::blockchain::Command::TopUpDeposit].
     fn defer_topup_deposit(env: &T, top_up_deposit_input_ptr: u32, top_up_deposit_input_len: u32) -> Result<(), FuncError>;
 
     /// Insert command execution after success of this contract call.
-    /// - `withdraw_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::Command::WithdrawDeposit].
+    /// - `withdraw_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::blockchain::Command::WithdrawDeposit].
     fn defer_withdraw_deposit(env: &T, withdraw_deposit_input_ptr: u32, withdraw_deposit_input_len: u32) -> Result<(), FuncError>;
 
     /// Insert command execution after success of this contract call.
-    /// - `stake_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::Command::StakeDeposit].
+    /// - `stake_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::blockchain::Command::StakeDeposit].
     fn defer_stake_deposit(env: &T, stake_deposit_input_ptr: u32, stake_deposit_input_len: u32) -> Result<(), FuncError>;
     
     /// Insert command execution after success of this contract call.
-    /// - `unstake_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::Command::UnstakeDeposit].
+    /// - `unstake_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::blockchain::Command::UnstakeDeposit].
     fn defer_unstake_deposit(env: &T, unstake_deposit_input_ptr: u32, unstake_deposit_input_len: u32) -> Result<(), FuncError>;
 
     /// Add a log to the Transaction's Receipt.
@@ -133,7 +137,7 @@ pub trait ContractBinaryInterface<T> where T: wasmer::WasmerEnv + 'static {
 }
 
 /// Create importable for instantiation of contract module.
-pub fn create_importable<'a, T, K>(store: &'a Store, env: &T) -> Importable<'a> 
+pub(crate) fn create_importable<'a, T, K>(store: &'a Store, env: &T) -> Importable<'a> 
     where 
         T: wasmer::WasmerEnv + 'static, 
         K: ContractBinaryInterface<T> + 'static,
@@ -178,7 +182,7 @@ pub fn create_importable<'a, T, K>(store: &'a Store, env: &T) -> Importable<'a>
 }
 
 /// Create importable (View) for instantiation of contract module.
-pub fn create_importable_view<'a, T, K>(store: &'a Store, env: &T) -> Importable<'a> 
+pub(crate) fn create_importable_view<'a, T, K>(store: &'a Store, env: &T) -> Importable<'a> 
 where 
     T: wasmer::WasmerEnv + 'static, 
     K: ContractBinaryInterface<T> + 'static,
@@ -223,11 +227,11 @@ where
 }
 
 /// Importable is data object required to instantiate contract module
-pub struct Importable<'a>(pub(crate) ImportObject, &'a Store);
+pub(crate) struct Importable<'a>(pub(crate) ImportObject, &'a Store);
 
 /// `blank` implementations of exports functions, used to instantiate a contract to 
 /// extract its exported metadata (without executing any of its methods).
-pub mod blank {
+pub(crate) mod blank {
     use wasmer::{Function, Store, imports};
 
     pub(crate) fn imports(store: &Store) -> wasmer::ImportObject {
@@ -343,7 +347,7 @@ pub enum FuncError {
 
     /// MethodCallError inside host function is the error from CtoC call.
     #[error("Runtime")]
-    MethodCallError(crate::contract::MethodCallError),
+    MethodCallError(MethodCallError),
 
     /// Transaction inferred to be CtoC but no contract found with its to_address
     #[error("ContractNotFound")]

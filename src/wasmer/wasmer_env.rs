@@ -3,7 +3,11 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! wasmer_env defines environment for constructing instance of wasmer execution.
+//! Defines environment for constructing instance of wasmer execution.
+//! 
+//! The environment (Env) keeps track on the data changes happens inside a contract call. Data 
+//! changes include the read-write operation on world state, the incurring gas consumption and
+//! context related to cross-contract calls.
 
 use std::{
     convert::TryInto, 
@@ -19,8 +23,7 @@ use anyhow::Result;
 use crate::{
     transition::TransitionContext,
     wasmer::wasmer_memory::MemoryContext, 
-    gas::{CostChange, self}, 
-    types::CallTx, BlockchainParams, contract::FuncError
+    types::CallTx, BlockchainParams, contract::FuncError, cost::CostChange, gas
 };
 
 /// Env provides the functions in `exports` (which are in turn 'imported' by WASM smart contracts)
@@ -131,19 +134,13 @@ impl<S> Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'static {
 
     /// write the data to memory, charge the write cost and return the length
     pub fn write_bytes(&self, value :Vec<u8>, val_ptr_ptr :u32) -> Result<u32, FuncError> {
-        let (deduct, _) = gas::wasm_memory_write_cost(value.len()).values();
-        if deduct > 0 {
-            self.consume_wasm_gas(deduct);
-        }
+        self.consume_wasm_gas(gas::wasm_memory_write_cost(value.len()));
         MemoryContext::write_bytes_to_memory(self, value, val_ptr_ptr).map_err(FuncError::Runtime)
     }
 
     /// read data from memory and charge the read cost
     pub fn read_bytes(&self, offset: u32, len: u32) -> Result<Vec<u8>, FuncError> {
-        let (deduct, _) = gas::wasm_memory_read_cost(len as usize).values();
-        if deduct > 0 {
-            self.consume_wasm_gas(deduct);
-        }
+        self.consume_wasm_gas(gas::wasm_memory_read_cost(len as usize));
         MemoryContext::read_bytes_from_memory(self, offset, len).map_err(FuncError::Runtime)
     }
 

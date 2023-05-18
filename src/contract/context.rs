@@ -3,7 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-/// Context for Smart Contract Execution
+//! Defines a struct containing context for a Smart Contract Execution such as cache for storing 
+//! smart contract module and VM memory limit for contract execution.
 
 use crate::{Cache, wasmer::wasmer_store};
 
@@ -18,7 +19,7 @@ pub(crate) struct SmartContractContext {
 
 impl SmartContractContext {
     /// Instantiate [wasmer::Store] from this context.
-    pub fn store(&self) -> wasmer::Store {
-        wasmer_store::new(u64::MAX, self.memory_limit)
+    pub fn instantiate_store(&self) -> wasmer::Store {
+        wasmer_store::instantiate_store(u64::MAX, self.memory_limit)
     }
 }

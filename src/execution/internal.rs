@@ -3,20 +3,19 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Internal transactions includes transferring tokens from contract and invoking another contract from contract.
+//! Implementation of internal transactions such as transferring tokens from contract and invoking another contract from contract.
 
 use std::sync::{Arc, Mutex};
-use pchain_types::PublicAddress;
+use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
     transition::TransitionContext, 
     contract::{self, FuncError}, 
-    gas::{CostChange}, 
-    types::CallTx, BlockchainParams
+    types::CallTx, BlockchainParams, cost::CostChange
 };
 
-use super::{phase::ContractModule};
+use super::contract::ContractModule;
 
 #[derive(Default)]
 pub(crate) struct InternalCallResult {

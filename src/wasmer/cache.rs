@@ -3,7 +3,11 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! cache for wasmer module of smart contract.
+//! Defines a struct that caches wasmer module of smart contract.
+//! 
+//! The cache uses [FileSystemCache] from wasmer to cache compiled smart contract module. 
+//! It also store the metadata about the smart contract module, such as the CBI version and
+//! the size of the wasm bytecode which is used on module compilation, into a seperate file system.
 
 use std::{
     path::PathBuf,
@@ -11,9 +15,11 @@ use std::{
     io::{Error, ErrorKind, Read, Write}
 };
 use anyhow::Result;
-use pchain_types::PublicAddress;
+use pchain_types::cryptography::PublicAddress;
 use wasmer::{DeserializeError, SerializeError, Module};
 use wasmer_cache::{FileSystemCache, Cache as WasmerCache};
+
+use crate::contract;
 
 /// Smart Contract Cache provides atomic access to smart contract data.
 /// File system cache will then be created with it is instantiated.
@@ -66,7 +72,7 @@ impl Cache {
         )?;
 
         file_storage.store(key, module)?;
-        file_storage.set_metadata(key, ModuleMetadata { cbi_version: crate::contract::CBI_VERSION, bytes_length }).map_err(|_| {
+        file_storage.set_metadata(key, ModuleMetadata { cbi_version: contract::CBI_VERSION, bytes_length }).map_err(|_| {
             SerializeError::Io(Error::from(ErrorKind::NotFound))
         })?;
 

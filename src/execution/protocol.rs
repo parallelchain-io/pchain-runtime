@@ -3,29 +3,27 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Execution logics of Administration Commands.
+//! Implementation of executing [Protocol Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#protocol-commands).
 
 use std::{collections::HashMap};
 
-use pchain_types::{PublicAddress, Pool, issuance_reward};
+use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{
     storage::WorldStateStorage, 
-    network::{network_account::{NetworkAccount, NetworkAccountStorage}, 
-    stake::StakeValue}, 
-    states::AccountState, keys::AppKey
+    network::{network_account::{NetworkAccount, NetworkAccountStorage}, stake::StakeValue, pool::Pool, constants::NETWORK_ADDRESS}, 
+    states::AccountStorageState, keys::AppKey
 };
 
 use crate::{
-    transition::{ReadWriteSet}, 
-    BlockProposalStats, ValidatorChanges
+    BlockProposalStats, ValidatorChanges, formulas::issuance_reward, read_write_set::ReadWriteSet
 };
 
-use super::phase::{StateInTransit};
+use super::state::ExecutionState;
 
-/// Execution of Work step for [pchain_types::Command::NextEpoch]
+/// Execution of [pchain_types::blockchain::Command::NextEpoch]
 pub(crate) fn next_epoch<S>(
-    mut state: StateInTransit<S>,
-) -> (StateInTransit<S>, ValidatorChanges)
+    mut state: ExecutionState<S>,
+) -> (ExecutionState<S>, ValidatorChanges)
     where S: WorldStateStorage + Send + Sync + Clone
 {
 
@@ -33,7 +31,7 @@ pub(crate) fn next_epoch<S>(
 
     let new_validator_set = 
     {
-        let acc_state = state.ws.account_state(pchain_types::NETWORK_ADDRESS).unwrap();
+        let acc_state = state.ws.account_storage_state(NETWORK_ADDRESS).unwrap();
         let mut state = NetworkAccountWorldState::new(&mut state, acc_state);
 
         let mut pools_in_vp = Vec::new();
@@ -142,7 +140,7 @@ pub(crate) fn next_epoch<S>(
             } else {
                 pool.delegated_stakes().get_by(&owner).map(|stake| stake.power )
             };
-            let _ = super::network::increase_stake_power(&mut state, operator, pool_power, owner, stake_power, increase_amount, false);
+            let _ = super::staking::increase_stake_power(&mut state, operator, pool_power, owner, stake_power, increase_amount, false);
         }
 
         // 2. Replace PVS with VS
@@ -200,23 +198,23 @@ pub(crate) fn next_epoch<S>(
     (state, new_validator_set)
 }
 
-/// NetworkAccountWorldState is specific to accessing storage of an Account State.
-/// It stores account state and use it for subsequent Read / Writes operations.
+/// NetworkAccountWorldState is specific to accessing storage of an Account Storage State.
+/// It stores account storage state and use it for subsequent Read / Writes operations.
 /// Write opertions would store to read write set.
-/// Different with [phase::StateInTransit] which also implements Trait [NetworkAccountStorage], 
+/// Different with [state::ExecutionState] which also implements Trait [NetworkAccountStorage], 
 /// it does not charge gas for opertaions.
 pub(crate) struct NetworkAccountWorldState<'a, S> 
     where S: WorldStateStorage + Send + Sync + Clone 
 {
-    account_state: AccountState<S>,
+    account_storage_state: AccountStorageState<S>,
     rw_set: &'a mut ReadWriteSet<S>
 }
 
 impl<'a, S> NetworkAccountWorldState<'a, S> 
     where S: WorldStateStorage + Send + Sync + Clone 
 {
-    pub(crate) fn new(state: &'a mut StateInTransit<S> , account_state: AccountState<S>) -> Self {
-        Self { account_state, rw_set: &mut state.ctx.rw_set }
+    pub(crate) fn new(state: &'a mut ExecutionState<S> , account_storage_state: AccountStorageState<S>) -> Self {
+        Self { account_storage_state, rw_set: &mut state.ctx.rw_set }
     }
 }
 
@@ -224,26 +222,26 @@ impl<'a, S> NetworkAccountStorage for NetworkAccountWorldState<'a, S>
     where S: WorldStateStorage + Send + Sync + Clone
 {
     fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.rw_set.app_data_from_account_state(
-            &self.account_state, 
+        self.rw_set.app_data_from_account_storage_state(
+            &self.account_storage_state, 
             AppKey::new(key.to_vec())
         )
     }
 
     fn contains(&self, key: &[u8]) -> bool {
-        self.rw_set.contains_app_data_from_account_state(
-            &self.account_state,
+        self.rw_set.contains_app_data_from_account_storage_state(
+            &self.account_storage_state,
             AppKey::new(key.to_vec())
         )
     }
 
     fn set(&mut self, key: &[u8], value: Vec<u8>) {
-        let address = self.account_state.address();
+        let address = self.account_storage_state.address();
         self.rw_set.set_app_data_uncharged(address, AppKey::new(key.to_vec()), value);
     }
 
     fn delete(&mut self, key: &[u8]) {
-        let address = self.account_state.address();
+        let address = self.account_storage_state.address();
         self.rw_set.set_app_data_uncharged(address, AppKey::new(key.to_vec()), Vec::new());
     }
 }

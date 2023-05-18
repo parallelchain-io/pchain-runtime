@@ -3,9 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! ParallelChain F Runtime is a **State Transition Function** to transit from an input state of the blockchain to next state. 
+//! ParallelChain Mainnet Runtime is a **State Transition Function** to transit from an input state of the blockchain to next state. 
 //! It is also the sole system component to handle Smart Contract that is primarily built from Rust code by using 
-//! ParallelChain F Smart Contract Development Kit (SDK).
+//! ParallelChain Smart Contract Development Kit (SDK).
 //! 
 //! ```text
 //! f(WS, BD, TX) -> (WS', R)
@@ -21,13 +21,14 @@
 //! ```rust
 //! // prepare world state (ws), transaction (tx), and blockchain data (bd),
 //! // and call transition.
-//! let result = pchain_runtime::new().transition(ws, tx, bd);
+//! let result = pchain_runtime::Runtime::new().transition(ws, tx, bd);
 //! ```
 //! 
-//! In summary, A state [transition] function intakes Transaction, Blockchain [params] and world state to execute 
-//! [transactions], and output transition result which could be a success result or an [error]. The transition follows 
-//! the data [types] definitions of ParallelChain F. In Call Transaction, it uses [wasmer] as underlying WebAssembly 
-//! runtime to invoke a [contract], which is gas-metered, and the [cost] incurred will be set to transaction receipt.
+//! In summary, a state [transition] function intakes Transaction, Blockchain and World State to [execute](execution), 
+//! and output transition result which could be a success result or an [error]. The transition follows 
+//! the data [types] definitions of ParallelChain Mainnet and the [formulas] in this library. 
+//! When transiting the state by executing smart [contract], it uses [wasmer] as underlying WebAssembly runtime, 
+//! which is gas-metered, and the [gas] [cost] incurred will be set to transaction receipt.
 
 #![cfg_attr(
     feature = "cargo-clippy",
@@ -37,24 +38,20 @@
     )
 )]
 
-mod contract;
+pub mod contract;
 
-mod cost;
-pub use cost::gas;
+pub mod cost;
 
-mod error;
+pub mod error;
 pub use error::TransitionError;
 
-pub mod params;
-pub use params::{
-    BlockchainParams,
-    BlockProposalStats,
-    ValidatorPerformance
-};
+pub mod execution;
 
-mod transactions;
+pub mod formulas;
 
-mod transition;
+pub mod gas;
+
+pub mod transition;
 pub use transition::{
     cbi_version,
     Runtime,
@@ -62,7 +59,14 @@ pub use transition::{
     ValidatorChanges
 };
 
-mod types;
+pub mod types;
+pub use types::{
+    BlockchainParams,
+    BlockProposalStats,
+    ValidatorPerformance
+};
 
-mod wasmer;
+pub mod wasmer;
 pub use crate::wasmer::cache::Cache;
+
+pub mod read_write_set;

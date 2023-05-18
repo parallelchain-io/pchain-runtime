@@ -3,12 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! wasmer_memory is a collection of functions that help with reading and writing byte arrays into WASM linear memory.
+//! Defines a struct that implements operations of reading and writing byte arrays into WASM linear memory.
 
 use anyhow::{Result, anyhow};
 use wasmer::{Array, Memory, WasmPtr, NativeFunc};
 
-/// Memory context is used by [super::wasmer_env::Env] for read-write access to WASM linear memory.
+/// Memory context is used by [Wasmer Environment](super::wasmer_env) for read-write access to WASM linear memory.
 pub trait MemoryContext {
     fn get_memory(&self) -> &Memory;
     fn get_alloc(&self) -> &NativeFunc<u32, WasmPtr<u8, Array>>;

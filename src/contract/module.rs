@@ -3,9 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! A Module uses [wasmer::Module] as underlying WASM module to work with compiled contract bytecode in Parallelchain-F.
+//! Defines a struct to use [wasmer::Module] as underlying WASM module to work with compiled contract bytecode in Parallelchain Mainnet.
 
-use pchain_types::PublicAddress;
+use pchain_types::cryptography::PublicAddress;
 
 use crate::{
     contract::{Importable, blank}, 
@@ -20,7 +20,7 @@ use super::{
 
 /// Module is a structure representing a WebAssembly executable that has been compiled down to architecture-specific
 /// machine code in preparation for execution.
-pub struct Module(pub wasmer::Module, pub ModuleMetadata);
+pub(crate) struct Module(pub wasmer::Module, pub ModuleMetadata);
 
 impl Module {
 
@@ -104,7 +104,9 @@ impl Module {
 /// ModuleBuildError enumerates the possible reasons why arbitrary bytecode might fail to be interpreted as WASM and compiled
 /// down to machine code in preparation for execution.
 #[derive(Debug)]
-pub enum ModuleBuildError {
+pub(crate) enum ModuleBuildError {
+    /// Contract contains opcodes what are not allowed.
     DisallowedOpcodePresent,
+    /// Errors other than `DisallowedOpcodePresent`
     Else,
 }
