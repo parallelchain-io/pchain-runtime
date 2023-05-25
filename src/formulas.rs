@@ -29,7 +29,6 @@ pub const fn issuance_reward(epoch_number: u64, amount: u64) -> (u128, u128) {
     } 
     // 835 = 0.0835 mutliplied by 10_000 x value in ISSURANCE_RATE_FACTORS multiplied by 10_000
     let rate = 835 * ISSUANCE_RATE_FACTORS[epoch_number as usize];
-    // denominator = 1_000_000
     ( amount as u128 * rate as u128, 365 * 100_000_000 )
 }
 

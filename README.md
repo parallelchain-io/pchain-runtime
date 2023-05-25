@@ -21,15 +21,6 @@ Blockchain State model (World State) can refer to the crate [ParallelChain World
 
 The mentioned Smart Contract Development Kit can refer to the crate [ParallelChain Smart Contract SDK](https://crates.io/crates/pchain-sdk).
 
-## Terminology
-
-- **Runtime**: the state transition function. In this context, it also refers to the library for executing transaction.
-- **World State**: the user-visible state maintained in the blockchain. 
-- **Transaction**: the unit of a Block in the blockchain, indicates operations in blockchain such as token transfers and smart contract call.
-- **Command**: the component of a Transaction. It specifies the execution rules in Runtime.
-- **Smart Contract**: a special artifact in the blockchain, which allows users define their own execution logics to modify state.
-- **View Call**: a trigger to execute a smart contract, specifically execute in routine without modifying state.
-
 ## Repository Structure
 
 Major modules of this repository are organized as following:
