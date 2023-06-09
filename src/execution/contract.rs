@@ -1,5 +1,5 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
@@ -12,11 +12,16 @@ use pchain_world_state::storage::WorldStateStorage;
 use wasmer::Store;
 
 use crate::{
-    contract::{self, ModuleBuildError, SmartContractContext, ContractValidateError, ContractBinaryFunctions, MethodCallError}, 
-    cost::CostChange, 
-    wasmer::{wasmer_store, wasmer_env}, 
-    transition::{TransitionContext}, 
-    Cache, types::CallTx, BlockchainParams, read_write_set::ReadWriteSet
+    contract::{
+        self, ContractBinaryFunctions, ContractValidateError, MethodCallError, ModuleBuildError,
+        SmartContractContext,
+    },
+    cost::CostChange,
+    read_write_set::ReadWriteSet,
+    transition::TransitionContext,
+    types::CallTx,
+    wasmer::{wasmer_env, wasmer_store},
+    BlockchainParams, Cache,
 };
 
 /// ContractModule stores the intermediate data related to Contract in Commands Phase.
@@ -24,39 +29,50 @@ pub(crate) struct ContractModule {
     store: Store,
     module: contract::Module,
     /// Gas cost for getting contract code
-    pub gas_cost: CostChange
+    pub gas_cost: CostChange,
 }
 
 impl ContractModule {
-
-    pub(crate) fn new(contract_code: &Vec<u8>, memory_limit: Option<usize>) -> Result<Self, ModuleBuildError> {
+    pub(crate) fn new(
+        contract_code: &Vec<u8>,
+        memory_limit: Option<usize>,
+    ) -> Result<Self, ModuleBuildError> {
         let wasmer_store = wasmer_store::instantiate_store(u64::MAX, memory_limit);
         // Load the contract module from raw bytes here because it is not expected to save into sc_cache at this point of time.
-        let module = contract::Module::from_wasm_bytecode(contract::CBI_VERSION, contract_code, &wasmer_store)?;
+        let module = contract::Module::from_wasm_bytecode(
+            contract::CBI_VERSION,
+            contract_code,
+            &wasmer_store,
+        )?;
 
         Ok(Self {
             store: wasmer_store,
             module,
-            gas_cost: CostChange::default()
+            gas_cost: CostChange::default(),
         })
     }
 
     pub(crate) fn build_contract<S>(
         contract_address: PublicAddress,
         sc_ctx: &SmartContractContext,
-        rw_set: &ReadWriteSet<S>
-    ) -> Result<Self, ()> 
-        where S: WorldStateStorage + Send + Sync + Clone + 'static
+        rw_set: &ReadWriteSet<S>,
+    ) -> Result<Self, ()>
+    where
+        S: WorldStateStorage + Send + Sync + Clone + 'static,
     {
         let (module, store, gas_cost) = {
             let (result, gas_cost) = rw_set.code_from_sc_cache(contract_address, sc_ctx);
             match result {
                 Some((module, store)) => (module, store, gas_cost),
-                None => return Err(())
+                None => return Err(()),
             }
         };
 
-        Ok(Self { store, module, gas_cost })
+        Ok(Self {
+            store,
+            module,
+            gas_cost,
+        })
     }
 
     pub(crate) fn validate(&self) -> Result<(), ContractValidateError> {
@@ -65,65 +81,69 @@ impl ContractModule {
 
     pub(crate) fn cache(&self, contract_address: PublicAddress, cache: &mut Cache) {
         self.module.cache_to(contract_address, cache)
-    } 
+    }
 
-    pub(crate) fn instantiate<S>(self, 
+    pub(crate) fn instantiate<S>(
+        self,
         ctx: Arc<Mutex<TransitionContext<S>>>,
         call_counter: u32,
         is_view: bool,
         tx: CallTx,
-        bd: BlockchainParams
-    ) -> Result<ContractInstance<S>, ()> 
-        where S: WorldStateStorage + Send + Sync + Clone + 'static
+        bd: BlockchainParams,
+    ) -> Result<ContractInstance<S>, ()>
+    where
+        S: WorldStateStorage + Send + Sync + Clone + 'static,
     {
         let gas_limit = tx.gas_limit;
-        let environment = wasmer_env::Env::new(
-            ctx, 
-            call_counter,
-            is_view,
-            tx, 
-            bd
-        );
+        let environment = wasmer_env::Env::new(ctx, call_counter, is_view, tx, bd);
 
-        let importable =  if is_view {
+        let importable = if is_view {
             contract::create_importable_view::<wasmer_env::Env<S>, ContractBinaryFunctions>(
-                &self.store, 
-                &environment
+                &self.store,
+                &environment,
             )
         } else {
             contract::create_importable::<wasmer_env::Env<S>, ContractBinaryFunctions>(
-                &self.store, 
+                &self.store,
                 &environment,
             )
         };
-    
-        let instance = self.module.instantiate(&importable, gas_limit).map_err(|_| ())?;
 
-        Ok(ContractInstance { environment, instance })
+        let instance = self
+            .module
+            .instantiate(&importable, gas_limit)
+            .map_err(|_| ())?;
+
+        Ok(ContractInstance {
+            environment,
+            instance,
+        })
     }
-
 }
 
 /// ContractInstance contains contract instance which is prepared to be called in Commands Phase.
-pub(crate) struct ContractInstance<S> 
-    where S: WorldStateStorage + Send + Sync + Clone + 'static
+pub(crate) struct ContractInstance<S>
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     environment: wasmer_env::Env<S>,
-    instance: contract::Instance
+    instance: contract::Instance,
 }
 
-impl<S> ContractInstance<S> 
-    where S: WorldStateStorage + Send + Sync + Clone + 'static
+impl<S> ContractInstance<S>
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     pub(crate) fn call(self) -> (TransitionContext<S>, u64, Option<MethodCallError>) {
         // initialize the variable of wasmer remaining gas
-        self.environment.init_wasmer_remaining_points(self.instance.remaining_points());
-    
+        self.environment
+            .init_wasmer_remaining_points(self.instance.remaining_points());
+
         // Invoke Wasm Execution
         let call_result = unsafe { self.instance.call_method() };
-        
+
         let non_wasmer_gas_amount = self.environment.get_non_wasm_gas_amount();
-        
+
         // drop the variable of wasmer remaining gas
         self.environment.drop_wasmer_remaining_points();
 
@@ -132,7 +152,10 @@ impl<S> ContractInstance<S>
             Err((remaining_gas, call_error)) => (remaining_gas, Some(call_error)),
         };
 
-        let total_gas = self.environment.call_tx.gas_limit
+        let total_gas = self
+            .environment
+            .call_tx
+            .gas_limit
             .saturating_sub(remaining_gas)
             .saturating_sub(non_wasmer_gas_amount); // add back the non_wasmer gas because it is already accounted in read write set.
 

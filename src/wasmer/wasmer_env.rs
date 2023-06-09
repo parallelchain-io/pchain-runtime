@@ -1,29 +1,26 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
 //! Defines environment for constructing instance of wasmer execution.
-//! 
-//! The environment (Env) keeps track on the data changes happens inside a contract call. Data 
+//!
+//! The environment (Env) keeps track on the data changes happens inside a contract call. Data
 //! changes include the read-write operation on world state, the incurring gas consumption and
 //! context related to cross-contract calls.
 
-use std::{
-    convert::TryInto, 
-    sync::{Arc, Mutex}, 
-    mem::MaybeUninit
-};
-use pchain_world_state::{
-    storage::WorldStateStorage
-};
-use wasmer::{LazyInit, Memory, NativeFunc, Global};
 use anyhow::Result;
+use pchain_world_state::storage::WorldStateStorage;
+use std::{
+    convert::TryInto,
+    mem::MaybeUninit,
+    sync::{Arc, Mutex},
+};
+use wasmer::{Global, LazyInit, Memory, NativeFunc};
 
 use crate::{
-    transition::TransitionContext,
-    wasmer::wasmer_memory::MemoryContext, 
-    types::CallTx, BlockchainParams, contract::FuncError, cost::CostChange, gas
+    contract::FuncError, cost::CostChange, gas, transition::TransitionContext, types::CallTx,
+    wasmer::wasmer_memory::MemoryContext, BlockchainParams,
 };
 
 /// Env provides the functions in `exports` (which are in turn 'imported' by WASM smart contracts)
@@ -31,7 +28,10 @@ use crate::{
 ///
 /// Wasmer handles everything for us.
 #[derive(wasmer::WasmerEnv, Clone)]
-pub(crate) struct Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'static {
+pub(crate) struct Env<S>
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
+{
     /// Transition Context
     pub context: Arc<Mutex<TransitionContext<S>>>,
 
@@ -54,11 +54,14 @@ pub(crate) struct Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'sta
     #[wasmer(export)]
     pub memory: LazyInit<Memory>,
 
-    #[wasmer(export(name="alloc"))]
+    #[wasmer(export(name = "alloc"))]
     pub alloc: LazyInit<NativeFunc<u32, wasmer::WasmPtr<u8, wasmer::Array>>>,
 }
 
-impl<S> Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'static {
+impl<S> Env<S>
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
+{
     /// env is a helper function to create an Env, which is an object used in functions exported to smart
     /// contract modules.
     pub fn new(
@@ -66,9 +69,8 @@ impl<S> Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'static {
         call_counter: u32,
         is_view: bool,
         call_tx: CallTx,
-        params_from_blockchain: BlockchainParams
+        params_from_blockchain: BlockchainParams,
     ) -> Env<S> {
-
         Env {
             context,
             call_counter,
@@ -77,16 +79,15 @@ impl<S> Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'static {
             alloc: LazyInit::default(),
             call_tx,
             params_from_blockchain,
-            is_view
+            is_view,
         }
     }
 
     /// initialize the variable wasmer_remaining_points
     pub fn init_wasmer_remaining_points(&self, global: Global) {
-        self.gas_meter.lock().unwrap().write(
-            GasMeter { 
-                wasmer_gas: global, 
-                non_wasmer_gas_amount: 0 
+        self.gas_meter.lock().unwrap().write(GasMeter {
+            wasmer_gas: global,
+            non_wasmer_gas_amount: 0,
         });
     }
 
@@ -98,26 +99,39 @@ impl<S> Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'static {
     /// get remaining points (gas) of wasm execution
     pub fn get_wasmer_remaining_points(&self) -> u64 {
         unsafe {
-            self.gas_meter.lock().unwrap().assume_init_ref().wasmer_gas.get().try_into().unwrap()
+            self.gas_meter
+                .lock()
+                .unwrap()
+                .assume_init_ref()
+                .wasmer_gas
+                .get()
+                .try_into()
+                .unwrap()
         }
     }
 
     /// get the recorded non-wasm gas amount from gas meter
     pub fn get_non_wasm_gas_amount(&self) -> u64 {
         unsafe {
-            self.gas_meter.lock().unwrap().assume_init_ref().non_wasmer_gas_amount
+            self.gas_meter
+                .lock()
+                .unwrap()
+                .assume_init_ref()
+                .non_wasmer_gas_amount
         }
     }
 
     /// substract remaining points of wasm execution and record the amount to non_wasmer_gas_amount
     pub fn consume_non_wasm_gas(&self, change: CostChange) {
-        // rewards is not useful in substracting remaining points. It is fine because it will 
-        // eventaully be used to reduce gas consumption of the transaction, but here we just do not 
+        // rewards is not useful in substracting remaining points. It is fine because it will
+        // eventaully be used to reduce gas consumption of the transaction, but here we just do not
         // want to extend the wasm execution time.
         let (deduct, _) = change.values();
         if deduct > 0 {
             unsafe {
-                self.gas_meter.lock().unwrap()
+                self.gas_meter
+                    .lock()
+                    .unwrap()
                     .assume_init_mut()
                     .substract_non_wasmer_gas(deduct);
             }
@@ -127,13 +141,11 @@ impl<S> Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'static {
     /// substract remaining points of wasm execution
     pub fn consume_wasm_gas(&self, gas_consumed: u64) -> u64 {
         let gas_meter_lock = self.gas_meter.lock().unwrap();
-        unsafe {
-            gas_meter_lock.assume_init_ref().substract(gas_consumed)
-        }
+        unsafe { gas_meter_lock.assume_init_ref().substract(gas_consumed) }
     }
 
     /// write the data to memory, charge the write cost and return the length
-    pub fn write_bytes(&self, value :Vec<u8>, val_ptr_ptr :u32) -> Result<u32, FuncError> {
+    pub fn write_bytes(&self, value: Vec<u8>, val_ptr_ptr: u32) -> Result<u32, FuncError> {
         self.consume_wasm_gas(gas::wasm_memory_write_cost(value.len()));
         MemoryContext::write_bytes_to_memory(self, value, val_ptr_ptr).map_err(FuncError::Runtime)
     }
@@ -143,10 +155,12 @@ impl<S> Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'static {
         self.consume_wasm_gas(gas::wasm_memory_read_cost(len as usize));
         MemoryContext::read_bytes_from_memory(self, offset, len).map_err(FuncError::Runtime)
     }
-
 }
 
-impl<S> MemoryContext for Env<S> where S: WorldStateStorage + Send + Sync + Clone + 'static {
+impl<S> MemoryContext for Env<S>
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
+{
     fn get_memory(&self) -> &Memory {
         self.memory_ref().unwrap()
     }
@@ -161,10 +175,10 @@ impl<S> MemoryContext for Env<S> where S: WorldStateStorage + Send + Sync + Clon
 pub(crate) struct GasMeter {
     /// global vaiable of wasmer_middlewares::metering remaining points.
     wasmer_gas: wasmer::Global,
-        
+
     /// the gas accounted as part of the wasm execution gas during execution for eariler exiting when
     /// gas becomes insufficient. This value is useful in deriving the gas used only for wasm execution.
-    non_wasmer_gas_amount: u64
+    non_wasmer_gas_amount: u64,
 }
 
 impl GasMeter {
@@ -172,7 +186,9 @@ impl GasMeter {
     fn substract(&self, amount: u64) -> u64 {
         let current_remaining_points: u64 = self.wasmer_gas.get().try_into().unwrap();
         let new_remaining_points = current_remaining_points.saturating_sub(amount);
-        self.wasmer_gas.set(new_remaining_points.into()).expect("Can't subtract `wasmer_metering_remaining_points` in Env");
+        self.wasmer_gas
+            .set(new_remaining_points.into())
+            .expect("Can't subtract `wasmer_metering_remaining_points` in Env");
         new_remaining_points
     }
 

@@ -1,9 +1,9 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines structs that are used as configuration of wasmer store for limiting the memory 
+//! Defines structs that are used as configuration of wasmer store for limiting the memory
 //! used for wasm module instantiation.
 
 use loupe::MemoryUsage;
@@ -14,12 +14,12 @@ use wasmer::{
     MemoryType, Pages, TableType, Tunables,
 };
 
-/// CustomTunables allows the setting of an upper limit on the guest memory of the VM. 
-/// CustomTunables also conists of a base Tunables attribute which all the existing logic is delegated to after 
+/// CustomTunables allows the setting of an upper limit on the guest memory of the VM.
+/// CustomTunables also conists of a base Tunables attribute which all the existing logic is delegated to after
 /// guest memory adjustment  
 #[derive(MemoryUsage)]
 pub struct CustomTunables<T: Tunables> {
-    /// maximum allowable guest memory (in WASM pages, each approximately 65KiB in size) 
+    /// maximum allowable guest memory (in WASM pages, each approximately 65KiB in size)
     limit: Pages,
 
     /// base implementation we delegate all the logic to after guest memory adjustment
@@ -27,7 +27,7 @@ pub struct CustomTunables<T: Tunables> {
 }
 
 impl<T: Tunables> Tunables for CustomTunables<T> {
-    /// `memory_style` is used to construct a WebAssembly `MemoryStyle` for the provided `MemoryType` using base tunables 
+    /// `memory_style` is used to construct a WebAssembly `MemoryStyle` for the provided `MemoryType` using base tunables
     /// For more information on `memory_style`: See <https://github.com/wasmerio/wasmer/blob/master/examples/tunables_limit_memory.rs>
     fn memory_style(&self, memory: &MemoryType) -> MemoryStyle {
         let adjusted = self.adjust_memory(memory);
@@ -63,7 +63,8 @@ impl<T: Tunables> Tunables for CustomTunables<T> {
     ) -> Result<Arc<dyn vm::Memory>, MemoryError> {
         let adjusted = self.adjust_memory(ty);
         self.validate_memory(&adjusted)?;
-        self.base.create_vm_memory(&adjusted, style, vm_definition_location)
+        self.base
+            .create_vm_memory(&adjusted, style, vm_definition_location)
     }
 
     // `create_host_table` creates a table owned by the host given a WebAssembly `TableType` and a `TableStyle`.
@@ -93,8 +94,8 @@ impl<T: Tunables> CustomTunables<T> {
         Self { limit, base }
     }
 
-    // `adjust_memory` accepts an input memory descriptor requested by guest and sets 
-    // a maximum limit for the descriptor, if not assigned earlier. 
+    // `adjust_memory` accepts an input memory descriptor requested by guest and sets
+    // a maximum limit for the descriptor, if not assigned earlier.
     fn adjust_memory(&self, requested: &MemoryType) -> MemoryType {
         let mut adjusted = *requested;
         if requested.maximum.is_none() {

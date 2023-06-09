@@ -1,21 +1,20 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines [TransitionError] which is set of error definitions in state transitions. 
-//! 
+//! Defines [TransitionError] which is set of error definitions in state transitions.
+//!
 //! Transition Error is not failure code specified in [ExitStatus], which is not included
 //! in the block for transaction failure. The error types are for the purpose of diagnosis.
 
 use pchain_types::blockchain::ExitStatus;
 
-use crate::contract::{MethodCallError, FuncError};
+use crate::contract::{FuncError, MethodCallError};
 
 /// Descriptive error definitions of a Transition
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TransitionError {
-
     /// Nonce is not current nonce.
     WrongNonce,
 
@@ -36,7 +35,7 @@ pub enum TransitionError {
 
     /// Contract does not export the METHOD_CONTRACT method.
     NoExportedContractMethod,
-    
+
     /// Deployment failed for some other reason.
     OtherDeployError,
 
@@ -74,18 +73,18 @@ pub enum TransitionError {
     /// Scenarios such as
     /// 1. commission fee is greater than 100
     /// 2. commission fee is as same as the origin onw
-    InvalidPoolPolicy, 
+    InvalidPoolPolicy,
 
     /// Staking Command - Create Deposits fails because the deposits already exists
     DepositsAlreadyExists,
 
     /// Staking Command fails because the deposits does not exist.
     DepositsNotExists,
-    
-    /// Staking Command - Set Deposit Settings fails because the deposit amount 
-    InvalidDepositPolicy, 
-    
-    /// Staking Command fails because the specified amount does not match with the requirement of the operation. 
+
+    /// Staking Command - Set Deposit Settings fails because the deposit amount
+    InvalidDepositPolicy,
+
+    /// Staking Command fails because the specified amount does not match with the requirement of the operation.
     /// Scenarios such as
     /// 1. Stake power has already reached upper limit (deposit amount) for Command - Stake Deposit
     /// 2. Stake power is not enough to stay in the delegated stakes for Command - Stake Deposit
@@ -108,7 +107,9 @@ impl From<MethodCallError> for TransitionError {
                 // check for internal errors
                 match e.downcast::<FuncError>() {
                     Err(_) => TransitionError::RuntimeError,
-                    Ok(FuncError::GasExhaustionError) => TransitionError::ExecutionProperGasExhausted,
+                    Ok(FuncError::GasExhaustionError) => {
+                        TransitionError::ExecutionProperGasExhausted
+                    }
                     Ok(_) => TransitionError::InternalRuntimeError,
                 }
             }
@@ -119,9 +120,9 @@ impl From<MethodCallError> for TransitionError {
 impl<'a> From<&'a TransitionError> for ExitStatus {
     fn from(value: &'a TransitionError) -> Self {
         match value {
-            TransitionError::ExecutionProperGasExhausted |
-            TransitionError::InternalExecutionProperGasExhaustion => ExitStatus::GasExhausted,
-            _ => ExitStatus::Failed
+            TransitionError::ExecutionProperGasExhausted
+            | TransitionError::InternalExecutionProperGasExhaustion => ExitStatus::GasExhausted,
+            _ => ExitStatus::Failed,
         }
     }
 }

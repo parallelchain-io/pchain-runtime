@@ -1,0 +1,1 @@
+This folder contains the sample contracts for integration tests

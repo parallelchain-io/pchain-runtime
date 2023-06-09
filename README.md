@@ -17,7 +17,7 @@ High level description on implementation of `pchain-runtime` can refer to [Paral
 
 Data types related to blockchain that are frequently used can be found on the crate [ParallelChain Types](https://crates.io/crates/pchain-types).
 
-Blockchain State model (World State) can refer to the crate [ParallelChain World State](https://crates.io/crates/pchain-world-state).
+Blockchain State model (World State) can refer to the crate [ParallelChain World State](https://github.com/parallelchain-io/pchain-world-state).
 
 The mentioned Smart Contract Development Kit can refer to the crate [ParallelChain Smart Contract SDK](https://crates.io/crates/pchain-sdk).
 

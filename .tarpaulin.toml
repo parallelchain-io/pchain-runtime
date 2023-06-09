@@ -1,0 +1,6 @@
+[all_coverage]
+engine = "Auto"
+release = true
+
+[report]
+out = ["Html"]

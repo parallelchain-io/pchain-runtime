@@ -1,12 +1,12 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
 //! Defines constants and formulas which are used in `pchain_runtime`.
-//! 
-//! For example, they are 
-//! - the portion of gas fee burning into Tresury account ([TREASURY_CUT_OF_BASE_FEE]) 
+//!
+//! For example, they are
+//! - the portion of gas fee burning into Tresury account ([TREASURY_CUT_OF_BASE_FEE])
 //! - the calculation of issuance to reward the network ([issuance_reward])
 //! - issuance rate ([ISSUANCE_RATE_FACTORS])
 
@@ -16,20 +16,20 @@ pub const TREASURY_CUT_OF_BASE_FEE: u64 = 20;
 pub const TOTAL_BASE_FEE: u64 = 100;
 
 /// Calculate issuance reward at particular epoch.
-/// 
+///
 /// Equations:
 /// - Issuance_n = (0.0835 * 0.85^(n/365)) / 365 if epoch number < [ISSUANCE_STABLE_EPOCH].
 /// - Issuance_n = 0.0150 / 365 otherwise.
-/// 
+///
 /// Returns the value as tuple of (numerator, denominator).
 pub const fn issuance_reward(epoch_number: u64, amount: u64) -> (u128, u128) {
     if epoch_number as usize >= ISSUANCE_STABLE_EPOCH {
         // 15 = 0.015 mutliplied by 1_000
-        return ( amount as u128 * 15,  365 * 1_000 );
-    } 
+        return (amount as u128 * 15, 365 * 1_000);
+    }
     // 835 = 0.0835 mutliplied by 10_000 x value in ISSURANCE_RATE_FACTORS multiplied by 10_000
     let rate = 835 * ISSUANCE_RATE_FACTORS[epoch_number as usize];
-    ( amount as u128 * rate as u128, 365 * 100_000_000 )
+    (amount as u128 * rate as u128, 365 * 100_000_000)
 }
 
 /// Number of epoch to reach for applying a constant issurance rate in reward calculation

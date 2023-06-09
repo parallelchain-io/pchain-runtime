@@ -1,16 +1,13 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
 //! Implementation of Store instantiation from special configuration, including middleware [filter](super::non_determinism_filter::NonDeterminismFilter).
- 
-use std::sync::Arc;
+
 use std::convert::TryFrom;
-use wasmer::{
-    BaseTunables, CompilerConfig, Pages, Store,
-    Target, WASM_PAGE_SIZE,
-};
+use std::sync::Arc;
+use wasmer::{BaseTunables, CompilerConfig, Pages, Store, Target, WASM_PAGE_SIZE};
 use wasmer_compiler_singlepass::Singlepass;
 use wasmer_engine_universal::Universal;
 use wasmer_middlewares::Metering;
@@ -23,10 +20,10 @@ use crate::wasmer::non_determinism_filter::NonDeterminismFilter;
 pub fn instantiate_store(gas_limit: u64, memory_limit: Option<usize>) -> Store {
     // call non_determinism_filter.rs to disallow non-deterministic types
     let nd_filter = Arc::new(NonDeterminismFilter::default());
-    
+
     // define the metering middleware
     let metering = Arc::new(Metering::new(gas_limit, wasm_opcode_gas_schedule));
-    
+
     // use the LLVM compiler
     let mut compiler_config = Singlepass::new();
     compiler_config.push_middleware(nd_filter);
@@ -40,7 +37,7 @@ pub fn instantiate_store(gas_limit: u64, memory_limit: Option<usize>) -> Store {
             let base_tunables = BaseTunables::for_target(&Target::default());
             let custom_tunables = CustomTunables::new(base_tunables, limit_pages(limit));
             Store::new_with_tunables(&engine, custom_tunables)
-        },
+        }
         None => Store::new(&engine),
     }
 }
@@ -59,5 +56,3 @@ fn limit_pages(limit: usize) -> Pages {
     };
     Pages(capped_size)
 }
-
-

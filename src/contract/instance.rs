@@ -1,5 +1,5 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
@@ -13,33 +13,40 @@ pub(crate) struct Instance(pub(crate) wasmer::Instance);
 
 impl Instance {
     /// call_method executes the named method of the Instance
-    /// 
+    ///
     /// If the call completes successfully, it returns the remaining gas after the execution. If the call terminated early,
     /// it returns a two-tuple comprising the remaining gas after the execution, and a MethodCallError describing the
     /// cause of the early termination.
-    /// 
+    ///
     /// # Panics
     /// call_method assumes that the Instance does export the name method, and panics otherwise.
     pub(crate) unsafe fn call_method(&self) -> Result<u64, (u64, MethodCallError)> {
-
         // remaining_gas before method call
         let remaining_gas = match wasmer_middlewares::metering::get_remaining_points(&self.0) {
-            wasmer_middlewares::metering::MeteringPoints::Exhausted => { 0 },
-            wasmer_middlewares::metering::MeteringPoints::Remaining(gas_left_after_execution) => { gas_left_after_execution }
+            wasmer_middlewares::metering::MeteringPoints::Exhausted => 0,
+            wasmer_middlewares::metering::MeteringPoints::Remaining(gas_left_after_execution) => {
+                gas_left_after_execution
+            }
         };
 
-        let method = match self.0.exports.get_native_function::<(), ()>(CONTRACT_METHOD) {
+        let method = match self
+            .0
+            .exports
+            .get_native_function::<(), ()>(CONTRACT_METHOD)
+        {
             Ok(m) => m,
-            Err(e) => return Err((remaining_gas, MethodCallError::NoExportedMethod(e))) // Invariant violated: A contract that does not export method_name was deployed.
+            Err(e) => return Err((remaining_gas, MethodCallError::NoExportedMethod(e))), // Invariant violated: A contract that does not export method_name was deployed.
         };
 
         // method call
         let execution_result = method.call();
-        
+
         // remaining_gas after method call
         let remaining_gas = match wasmer_middlewares::metering::get_remaining_points(&self.0) {
-            wasmer_middlewares::metering::MeteringPoints::Exhausted => { 0 },
-            wasmer_middlewares::metering::MeteringPoints::Remaining(gas_left_after_execution) => { gas_left_after_execution }
+            wasmer_middlewares::metering::MeteringPoints::Exhausted => 0,
+            wasmer_middlewares::metering::MeteringPoints::Remaining(gas_left_after_execution) => {
+                gas_left_after_execution
+            }
         };
 
         match execution_result{
@@ -51,11 +58,13 @@ impl Instance {
 
     /// return a global variable which can read and modify the metering remaining points of wasm execution of this Instance
     pub(crate) fn remaining_points(&self) -> wasmer::Global {
-        self.0.exports.get_global("wasmer_metering_remaining_points").unwrap().clone()
-    } 
+        self.0
+            .exports
+            .get_global("wasmer_metering_remaining_points")
+            .unwrap()
+            .clone()
+    }
 }
-
-
 
 /// MethodCallError enumerates through the possible reasons why a call into a contract Instance's exported methods might
 /// terminate early.
@@ -68,11 +77,11 @@ pub enum MethodCallError {
 
 /// ContractValidateError enumerates through the possible reasons why the contract is not runnable
 #[derive(Debug)]
-pub enum ContractValidateError{
+pub enum ContractValidateError {
     MethodNotFound,
     InstantiateError,
 }
 
-/// CONTRACT_METHOD is reserved by the ParallelChain Mainnet protocol to name callable function 
+/// CONTRACT_METHOD is reserved by the ParallelChain Mainnet protocol to name callable function
 /// exports from smart contract Modules.  
 pub const CONTRACT_METHOD: &str = "entrypoint";

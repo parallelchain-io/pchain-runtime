@@ -1,18 +1,20 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
 //! Implementation of internal transactions such as transferring tokens from contract and invoking another contract from contract.
 
-use std::sync::{Arc, Mutex};
 use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::storage::WorldStateStorage;
+use std::sync::{Arc, Mutex};
 
 use crate::{
-    transition::TransitionContext, 
-    contract::{self, FuncError}, 
-    types::CallTx, BlockchainParams, cost::CostChange
+    contract::{self, FuncError},
+    cost::CostChange,
+    transition::TransitionContext,
+    types::CallTx,
+    BlockchainParams,
 };
 
 use super::contract::ContractModule;
@@ -21,7 +23,7 @@ use super::contract::ContractModule;
 pub(crate) struct InternalCallResult {
     pub exec_gas: u64,
     pub non_wasmer_gas: CostChange,
-    pub error: Option<FuncError>
+    pub error: Option<FuncError>,
 }
 
 /// Execution logics for invoking another contract from a contract
@@ -30,9 +32,10 @@ pub(crate) fn call_from_contract<S>(
     bd: BlockchainParams,
     txn_in_env: Arc<Mutex<TransitionContext<S>>>,
     call_counter: u32,
-    is_view: bool
-) -> InternalCallResult 
-    where S: WorldStateStorage + Send + Sync + Clone + 'static
+    is_view: bool,
+) -> InternalCallResult
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     let mut ctx_locked = txn_in_env.lock().unwrap();
     let mut internal_call_result = InternalCallResult::default();
@@ -72,16 +75,18 @@ pub(crate) fn call_from_contract<S>(
     };
     internal_call_result.non_wasmer_gas += contract_module.gas_cost;
     drop(ctx_locked);
-    
+
     // limit the gas for child contract execution
-    tx_from_contract.gas_limit = tx_from_contract.gas_limit.saturating_sub(internal_call_result.non_wasmer_gas.values().0);
+    tx_from_contract.gas_limit = tx_from_contract
+        .gas_limit
+        .saturating_sub(internal_call_result.non_wasmer_gas.values().0);
 
     let instance = match contract_module.instantiate(
-        txn_in_env, 
-        call_counter, 
+        txn_in_env,
+        call_counter,
         is_view,
-        tx_from_contract, 
-        bd
+        tx_from_contract,
+        bd,
     ) {
         Ok(instance) => instance,
         Err(_) => {
@@ -89,7 +94,7 @@ pub(crate) fn call_from_contract<S>(
             return internal_call_result;
         }
     };
-    
+
     // Call the contract
     let (_, gas_consumed, call_error) = instance.call();
     internal_call_result.exec_gas = gas_consumed;
@@ -105,9 +110,10 @@ pub(crate) fn transfer_from_contract<S>(
     signer: PublicAddress,
     amount: u64,
     recipient: PublicAddress,
-    txn_in_env: Arc<Mutex<TransitionContext<S>>>
-) -> InternalCallResult 
-    where S: WorldStateStorage + Send + Sync + Clone
+    txn_in_env: Arc<Mutex<TransitionContext<S>>>,
+) -> InternalCallResult
+where
+    S: WorldStateStorage + Send + Sync + Clone,
 {
     let mut ctx_locked = txn_in_env.lock().unwrap();
     let mut internal_call_result = InternalCallResult::default();

@@ -1,14 +1,17 @@
 /*
-    Copyright © 2023, ParallelChain Lab 
+    Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
 //! Defines common data structures to be used inside this library, or from outside application.
 
-use std::ops::{Deref, DerefMut};
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 
-use pchain_types::{cryptography::{PublicAddress, Sha256Hash}, blockchain::{Transaction, Command}};
+use pchain_types::{
+    blockchain::{Command, Transaction},
+    cryptography::{PublicAddress, Sha256Hash},
+};
 
 /// BaseTx consists of common fields inside [Transaction].
 #[derive(Clone, Default)]
@@ -17,17 +20,17 @@ pub(crate) struct BaseTx {
     pub hash: Sha256Hash,
     pub nonce: u64,
     pub gas_limit: u64,
-    pub priority_fee_per_gas: u64,   
+    pub priority_fee_per_gas: u64,
 }
 
 impl From<&Transaction> for BaseTx {
     fn from(tx: &Transaction) -> Self {
         Self {
-            signer: tx.signer, 
-            hash: tx.hash, 
-            nonce: tx.nonce, 
-            gas_limit: tx.gas_limit, 
-            priority_fee_per_gas: tx.priority_fee_per_gas 
+            signer: tx.signer,
+            hash: tx.hash,
+            nonce: tx.nonce,
+            gas_limit: tx.gas_limit,
+            priority_fee_per_gas: tx.priority_fee_per_gas,
         }
     }
 }
@@ -39,7 +42,7 @@ pub(crate) struct CallTx {
     pub target: PublicAddress,
     pub method: String,
     pub arguments: Option<Vec<Vec<u8>>>,
-    pub amount: Option<u64>
+    pub amount: Option<u64>,
 }
 
 impl Deref for CallTx {
@@ -59,7 +62,7 @@ impl DerefMut for CallTx {
 #[derive(Clone, Debug)]
 pub(crate) struct DeferredCommand {
     pub contract_address: PublicAddress,
-    pub command: Command
+    pub command: Command,
 }
 
 /// Defines information that are supplied to state transition function.
@@ -67,7 +70,7 @@ pub(crate) struct DeferredCommand {
 pub struct BlockchainParams {
     /// Height of the Block
     pub this_block_number: u64,
-    /// Previous Block Hash 
+    /// Previous Block Hash
     pub prev_block_hash: Sha256Hash,
     /// Base fee in the Block
     pub this_base_fee: u64,
@@ -81,9 +84,9 @@ pub struct BlockchainParams {
     pub treasury_address: PublicAddress,
     /// The current view for this block, given from hotstuff_rs
     pub cur_view: u64,
-    /// Validator performance is measured by the number of proposed blocks for each validators. 
+    /// Validator performance is measured by the number of proposed blocks for each validators.
     /// It is optional because it is not needed in every transaction.
-    pub validator_performance: Option<ValidatorPerformance>
+    pub validator_performance: Option<ValidatorPerformance>,
 }
 
 /// Input for epoch transaction, which is a factor in Pool reward calculation
@@ -92,7 +95,7 @@ pub struct ValidatorPerformance {
     /// Number of blocks per epoch
     pub blocks_per_epoch: u32,
     /// A map from a pool address to block proposal statistics
-    pub stats: HashMap<PublicAddress, BlockProposalStats>
+    pub stats: HashMap<PublicAddress, BlockProposalStats>,
 }
 
 /// Statistics on Block Proposal
@@ -104,6 +107,8 @@ pub struct BlockProposalStats {
 
 impl BlockProposalStats {
     pub fn new(num_of_proposed_blocks: u32) -> Self {
-        Self { num_of_proposed_blocks }
+        Self {
+            num_of_proposed_blocks,
+        }
     }
 }
