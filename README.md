@@ -44,7 +44,7 @@ Constants:
 
 ## Versioning 
 
-The version of this library reflects the version of the ParallelChain Protocol which it implements. For example, the current version is 0.4.2, and this implements protocol version 0.4. Patch version increases are not guaranteed to be non-breaking.
+The version of this library reflects the version of the ParallelChain Protocol which it implements. For example, the current version is 0.4.4, and this implements protocol version 0.4. Patch version increases are not guaranteed to be non-breaking.
 
 ## Opening an issue
 

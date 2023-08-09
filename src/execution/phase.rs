@@ -45,14 +45,20 @@ where
     let gas_limit = state.tx.gas_limit;
     let base_fee = state.bd.this_base_fee;
     let priority_fee = state.tx.priority_fee_per_gas;
-    if (gas_limit * (base_fee + priority_fee)) > origin_balance {
-        return Err(TransitionError::NotEnoughBalanceForGasLimit);
-    }
+
+    // pre_charge = gas_limit * (base_fee + priority_fee)
+    let pre_charge = base_fee
+        .checked_add(priority_fee)
+        .and_then(|fee| gas_limit.checked_mul(fee) )
+        .ok_or(TransitionError::NotEnoughBalanceForGasLimit)?; // Overflow check
+
+    // pre_charged_balance = origin_balance - pre_charge
+    let pre_charged_balance = origin_balance
+        .checked_sub(pre_charge)
+        .ok_or(TransitionError::NotEnoughBalanceForGasLimit)?; // pre_charge > origin_balance
+
     // Apply change directly to World State
-    state.ws.with_commit().set_balance(
-        signer,
-        origin_balance - gas_limit * (base_fee + priority_fee),
-    );
+    state.ws.with_commit().set_balance(signer, pre_charged_balance);
 
     state.set_gas_consumed(init_gas);
     Ok(init_gas)

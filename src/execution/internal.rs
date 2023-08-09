@@ -56,7 +56,7 @@ where
         // Safety: the balance of deployed contracts are always Some.
         let (to_address_prev_balance, cost_change) = ctx_locked.balance(tx_from_contract.target);
         internal_call_result.non_wasmer_gas += cost_change;
-        let to_address_new_balance = to_address_prev_balance + value;
+        let to_address_new_balance = to_address_prev_balance.saturating_add(value);
         let cost_change = ctx_locked.set_balance(tx_from_contract.target, to_address_new_balance);
         internal_call_result.non_wasmer_gas += cost_change;
     }
@@ -135,7 +135,7 @@ where
     // 3. Credit amount to recipient.
     let (to_address_prev_balance, cost_change) = ctx_locked.balance(recipient);
     internal_call_result.non_wasmer_gas += cost_change;
-    let to_address_new_balance = to_address_prev_balance + amount;
+    let to_address_new_balance = to_address_prev_balance.saturating_add(amount);
     let cost_change = ctx_locked.set_balance(recipient, to_address_new_balance);
     internal_call_result.non_wasmer_gas += cost_change;
 

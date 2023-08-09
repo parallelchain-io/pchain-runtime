@@ -236,11 +236,11 @@ where
             TransitionError::NotEnoughBalanceForTransfer,
         ));
     }
-    state.set_balance(owner, owner_balance - amount);
+    state.set_balance(owner, owner_balance - amount); // Always deduct the amount specified in the transaction
 
     let mut deposits = NetworkAccount::deposits(&mut state, operator, owner);
     let deposit_balance = deposits.balance().unwrap();
-    deposits.set_balance(deposit_balance + amount);
+    deposits.set_balance(deposit_balance.saturating_add(amount)); // Ceiling to MAX for safety. Overflow should not happen in real situation.
 
     phase::finalize_gas_consumption(state)
 }
@@ -306,7 +306,7 @@ where
         NetworkAccount::deposits(&mut state, operator, owner).set_balance(new_deposit_balance);
     }
     let (owner_balance, _) = state.balance(owner);
-    state.set_balance(owner, owner_balance + deposit_balance - new_deposit_balance);
+    state.set_balance(owner, owner_balance.saturating_add(deposit_balance - new_deposit_balance)); // Ceiling to MAX for safety. Overflow should not happen in real situation.
 
     // 5. If the deposit's new balance is now too small to support its Stake in the next Epoch, cap the Stake's power at the new balance.
     if let Some(stake_power) = stake_of_pool(&mut state, operator, owner) {
@@ -564,7 +564,7 @@ where
         let stake_power = stake_power.unwrap_or(0);
         pool.set_operator_stake(Some(Stake {
             owner: operator,
-            power: stake_power + stake_power_to_increase,
+            power: stake_power.saturating_add(stake_power_to_increase),
         }));
         stake_power_to_increase
     } else {
@@ -573,7 +573,7 @@ where
             Some(stake_power) => {
                 delegated_stakes.change_key(StakeValue::new(Stake {
                     owner,
-                    power: stake_power + stake_power_to_increase,
+                    power: stake_power.saturating_add(stake_power_to_increase),
                 }));
                 stake_power_to_increase
             }
@@ -582,7 +582,7 @@ where
                     owner,
                     power: stake_power_to_increase,
                 })) {
-                    Ok(Some(replaced_stake)) => stake_power_to_increase - replaced_stake.power,
+                    Ok(Some(replaced_stake)) => stake_power_to_increase.saturating_sub(replaced_stake.power),
                     Ok(None) => stake_power_to_increase,
                     Err(_) => {
                         if exit_on_insert_fail {
@@ -595,7 +595,7 @@ where
         }
     };
 
-    let new_pool_power = pool_power + power_to_add;
+    let new_pool_power = pool_power.saturating_add(power_to_add);
     pool.set_power(new_pool_power);
     match NetworkAccount::nvp(state).get_by(&operator) {
         Some(mut pool_key) => {

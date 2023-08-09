@@ -9,6 +9,7 @@
 //! - the portion of gas fee burning into Tresury account ([TREASURY_CUT_OF_BASE_FEE])
 //! - the calculation of issuance to reward the network ([issuance_reward])
 //! - issuance rate ([ISSUANCE_RATE_FACTORS])
+//! - calculation of pool reward and stake reward
 
 /// Send 20% of gas to Treasury
 pub const TREASURY_CUT_OF_BASE_FEE: u64 = 20;
@@ -21,7 +22,12 @@ pub const TOTAL_BASE_FEE: u64 = 100;
 /// - Issuance_n = (0.0835 * 0.85^(n/365)) / 365 if epoch number < [ISSUANCE_STABLE_EPOCH].
 /// - Issuance_n = 0.0150 / 365 otherwise.
 ///
-/// Returns the value as tuple of (numerator, denominator).
+/// Returns the value as tuple of (numerator, denominator). i.e. value = numerator / denominator 
+/// where denominator is a non-zero value.
+/// 
+/// The return value is represented by two u128 numbers, instead of floating point number, for 
+/// preserving the information of frational part which could be lost in floating point representation. 
+/// It is up to the method caller to perform division or other numeric calculations.
 pub const fn issuance_reward(epoch_number: u64, amount: u64) -> (u128, u128) {
     if epoch_number as usize >= ISSUANCE_STABLE_EPOCH {
         // 15 = 0.015 mutliplied by 1_000
@@ -184,3 +190,84 @@ pub const ISSUANCE_RATE_FACTORS: [u64; ISSUANCE_STABLE_EPOCH] =
     2013,2012,2011,2010,2009,2009,2008,2007,2006,2005,2004,2003,2002,2001,2001,2000,1999,1998,1997,1996,1995,1994,1993,1993,1992,
     1991,1990,1989,1988,1987,1986,1985,1985,1984,1983,1982,1981,1980,1979,1978,1978,1977,1976,1975,1974,1973,1972,1971,1970,1970
 ];
+
+
+/// Calculate reward of a pool. It is fraction of the pool power to network power, and
+/// block performance. Baseline is calculated by: number of blocks per term / number of validators.
+///
+/// ```text
+/// Issuance * PoolStake * min(NumBlocksProposed/Baseline , 1)
+/// ```
+/// 
+/// ## Safety
+/// `num_of_proposed_blocks` should be reasonable amount to avoid overflow. It should be at maximum 8640 blocks per term in the protocol.
+pub const fn pool_reward(
+    current_epoch: u64,
+    pool_power: u64,
+    num_of_proposed_blocks: u32,
+    baseline: u32,
+) -> u64 {
+    // no reward if it is not expected to propose block
+    if baseline == 0 {
+        return 0;
+    }
+    // should not over reward
+    if num_of_proposed_blocks > baseline {
+        // Issuance * PoolStake * 1
+        let (numerator, denominator) = issuance_reward(current_epoch, pool_power);
+        return (numerator / denominator) as u64;
+    }
+    // Issuance * PoolStake * NumBlocksProposed / Baseline
+    let (numerator, denominator) = issuance_reward(current_epoch, pool_power);
+    ((numerator * num_of_proposed_blocks as u128) / (denominator * baseline as u128)) as u64
+}
+
+/// Return reward to the stakes and commission_fee. 
+/// 
+/// ## Safety
+/// - `commission_rate` is in percentage (i.e. <= 100).
+/// - `stake_power` should be less than `total_stakes`
+pub const fn stake_reward(
+    pool_reward: u64,
+    commission_rate: u8,
+    stake_power: u64,
+    total_stakes: u64,
+) -> (u64, u64) {
+    // no reward if there is no stakes at all
+    if total_stakes == 0 {
+        return (0, 0);
+    }
+    let reward = (pool_reward as u128 * stake_power as u128) / (total_stakes as u128);
+    let commission_fee = (commission_rate as u128 * pool_reward as u128 * stake_power as u128)
+        / (100 * total_stakes as u128);
+    (
+        (reward.saturating_sub(commission_fee)) as u64,
+        commission_fee as u64,
+    )
+}
+
+/// This test is mainly for checking whether the methods `pool_reward` and `stake_reward` panics on boundary inputs.
+/// It is expected to pass without panic.
+#[test]
+fn test_boundary_inputs() {
+    // Return zero if num_of_proposed_blocks is zero.
+    assert_eq!(0, pool_reward(0, 0, 0, 0));
+
+    // Situation 1: expected to produce 1 block but finally produce all blocks in a term (8640 blocks).
+    let max_pool_reward_no_muldiv = pool_reward(0, u64::MAX, 8640, 1); 
+
+    // Situation 2: produce all expected blocks in a term (8640 blocks).
+    let max_pool_reward = pool_reward(0, u64::MAX, 8640, 8640); 
+    
+    // Both should return same value.
+    assert_eq!(max_pool_reward_no_muldiv, max_pool_reward);
+    assert_eq!(4220008575766431, max_pool_reward);
+
+    // Return zero if total_stakes is zero.
+    assert_eq!((0,0), stake_reward(max_pool_reward, 100, 0, 0));
+
+    // Getting commission fee (100%) from all of the the max_pool_reward because stake_power = total_stakes.
+    let (reward_to_stake, commission_fee) = stake_reward(max_pool_reward, 100, u64::MAX, u64::MAX);
+    assert_eq!(0, reward_to_stake);
+    assert_eq!(max_pool_reward, commission_fee);
+}

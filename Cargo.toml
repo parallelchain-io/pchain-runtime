@@ -1,6 +1,6 @@
 [package]
 name = "pchain-runtime"
-version = "0.4.3"
+version = "0.4.4"
 authors = ["ParallelChain Lab <info@parallelchain.io>"]
 edition = "2021"
 description = "parallelchain-runtime: ParallelChain Mainnet Runtime for state transition in ParallelChain Mainnet"
@@ -33,11 +33,7 @@ wat = "1.0.43"
 
 [dev-dependencies]
 base64url = "0.1.0"
-borsh = "=0.10.2"
-ed25519-dalek = "1.0.1"
-hotstuff_rs = "0.2.0"
-rand = "0.7"
-rand_chacha = "0.2"
+borsh = "0.10.2"
 
 [profile.release]
 overflow-checks = true

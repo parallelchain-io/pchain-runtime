@@ -83,9 +83,9 @@ where
     }
 
     // Transfer Balance
-    state.set_balance(signer, origin_balance - amount);
+    state.set_balance(signer, origin_balance - amount); // Always deduct the amount specified in the transaction
     let (recipient_balance, _) = state.balance(recipient);
-    state.set_balance(recipient, recipient_balance + amount);
+    state.set_balance(recipient, recipient_balance.saturating_add(amount)); // Ceiling to MAX for safety. Overflow should not happen in real situation.
 
     phase::finalize_gas_consumption(state)
 }
@@ -115,9 +115,9 @@ where
         }
 
         // Transfer Balance
-        state.set_balance(signer, origin_balance - amount);
+        state.set_balance(signer, origin_balance - amount); // Always deduct the amount specified in the transaction
         let (target_balance, _) = state.balance(target);
-        state.set_balance(target, target_balance + amount);
+        state.set_balance(target, target_balance.saturating_add(amount)); // Ceiling to MAX for safety. Overflow should not happen in real situation.
     }
 
     // Instantiation of contract

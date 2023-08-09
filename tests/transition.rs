@@ -925,3 +925,55 @@ fn test_memory_limited_contract_module() {
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Failed);
 }
+
+/// Possible fail cases in PreCharge Phase:
+/// - transaction gas limit is smaller than minimum required gas
+/// - incorrect nonce
+/// - insufficient balance
+#[test]
+fn test_fail_in_pre_charge() {
+    let tx = TestData::transaction();
+    let tx_base_cost = tx_inclusion_cost(tx.serialize().len(), tx.commands.len());
+    let bd = TestData::block_params();
+
+    // initialize world state
+    let mut sws = SimulateWorldState::default();
+    let init_from_balance = 100_000_000;
+    sws.set_balance(tx.signer, init_from_balance);
+
+    // 1. gas limit is smaller than minimum required gas
+    let tx1 = Transaction {
+        gas_limit: tx_base_cost - 1,
+        ..tx.clone()
+    };
+    let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx1, bd.clone());
+    assert!(result.receipt.is_none());
+    assert_eq!(result.error, Some(TransitionError::PreExecutionGasExhausted));
+    let sws: SimulateWorldState = result.new_state.into();
+
+
+    // 2. nonce is incorrect
+    let tx2 = Transaction {
+        nonce: 1,
+        ..tx.clone()
+    };
+    let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx2, bd.clone());
+    assert!(result.receipt.is_none());
+    assert_eq!(result.error, Some(TransitionError::WrongNonce));
+    let sws: SimulateWorldState = result.new_state.into();
+
+    // 3. balance is not enough
+    let tx3 = Transaction {
+        priority_fee_per_gas: u64::MAX,
+        ..tx.clone()
+    };
+    let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx3, bd.clone());
+    assert!(result.receipt.is_none());
+    assert_eq!(result.error, Some(TransitionError::NotEnoughBalanceForGasLimit));
+    let sws: SimulateWorldState = result.new_state.into();
+
+    // check from_address balance (unchanged)
+    let new_from_balance = sws.get_balance(tx.signer);
+    assert_eq!(new_from_balance, init_from_balance);
+    assert_eq!(sws.get_nonce(tx.signer), 0);
+}

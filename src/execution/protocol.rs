@@ -21,7 +21,7 @@ use pchain_world_state::{
 };
 
 use crate::{
-    formulas::issuance_reward, read_write_set::ReadWriteSet, BlockProposalStats, ValidatorChanges,
+    formulas::{pool_reward, stake_reward}, read_write_set::ReadWriteSet, BlockProposalStats, ValidatorChanges,
 };
 
 use super::state::ExecutionState;
@@ -293,51 +293,4 @@ where
         self.rw_set
             .set_app_data_uncharged(address, AppKey::new(key.to_vec()), Vec::new());
     }
-}
-
-/// Calculate reward of a pool. It is fraction of the pool power to network power, and
-/// block performance. Baseline is calculated by: number of blocks per term / number of validators.
-///
-/// ```text
-/// Issuance * PoolStake * min(NumBlocksProposed/Baseline , 1)
-/// ```
-fn pool_reward(
-    current_epoch: u64,
-    pool_power: u64,
-    num_of_proposed_blocks: u32,
-    baseline: u32,
-) -> u64 {
-    // no reward if it is not expected to propose block
-    if baseline == 0 {
-        return 0;
-    }
-    // should not over reward
-    if num_of_proposed_blocks > baseline {
-        // Issuance * PoolStake * 1
-        let (numerator, denominator) = issuance_reward(current_epoch, pool_power);
-        return (numerator / denominator) as u64;
-    }
-    // Issuance * PoolStake * NumBlocksProposed / Baseline
-    let (numerator, denominator) = issuance_reward(current_epoch, pool_power);
-    ((numerator * num_of_proposed_blocks as u128) / (denominator * baseline as u128)) as u64
-}
-
-/// return reward to the stakes and commission_fee
-fn stake_reward(
-    pool_reward: u64,
-    commission_rate: u8,
-    stake_power: u64,
-    total_stakes: u64,
-) -> (u64, u64) {
-    // no reward if there is no stakes at all
-    if total_stakes == 0 {
-        return (0, 0);
-    }
-    let reward = (pool_reward as u128 * stake_power as u128) / (total_stakes as u128);
-    let commission_fee = (commission_rate as u128 * pool_reward as u128 * stake_power as u128)
-        / (100 * total_stakes as u128);
-    (
-        (reward.saturating_sub(commission_fee)) as u64,
-        commission_fee as u64,
-    )
 }
