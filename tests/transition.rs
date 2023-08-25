@@ -948,7 +948,10 @@ fn test_fail_in_pre_charge() {
     };
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx1, bd.clone());
     assert!(result.receipt.is_none());
-    assert_eq!(result.error, Some(TransitionError::PreExecutionGasExhausted));
+    assert_eq!(
+        result.error,
+        Some(TransitionError::PreExecutionGasExhausted)
+    );
     let sws: SimulateWorldState = result.new_state.into();
 
 
@@ -969,7 +972,10 @@ fn test_fail_in_pre_charge() {
     };
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx3, bd.clone());
     assert!(result.receipt.is_none());
-    assert_eq!(result.error, Some(TransitionError::NotEnoughBalanceForGasLimit));
+    assert_eq!(
+        result.error,
+        Some(TransitionError::NotEnoughBalanceForGasLimit)
+    );
     let sws: SimulateWorldState = result.new_state.into();
 
     // check from_address balance (unchanged)

@@ -172,19 +172,16 @@ pub(crate) fn execute_next_epoch_command<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    // There can only be one NextEpoch Command in a transaction.
-    if commands.len() != 1 || commands.first() != Some(&Command::NextEpoch) {
-        return TransitionResult {
-            new_state: state.ctx.rw_set.ws,
-            receipt: None,
-            error: Some(TransitionError::InvalidNextEpochCommand),
-            validator_changes: None,
-        };
-    }
-
     let signer = state.tx.signer;
-    let origin_nonce = state.ws.nonce(signer);
-    if state.tx.nonce != origin_nonce {
+
+    // Validate the input transaction:
+    // - There can only be one NextEpoch Command in a transaction.
+    // - Block performance is required for execution of next epoch transaction.
+    // - Transaction nonce matches with the nonce in state
+    if  commands.len() != 1 || commands.first() != Some(&Command::NextEpoch) ||
+        state.bd.validator_performance.is_none() ||
+        state.tx.nonce != state.ws.nonce(signer)
+    {
         return TransitionResult {
             new_state: state.ctx.rw_set.ws,
             receipt: None,

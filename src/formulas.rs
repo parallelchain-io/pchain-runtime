@@ -264,7 +264,7 @@ fn test_boundary_inputs() {
     assert_eq!(4220008575766431, max_pool_reward);
 
     // Return zero if total_stakes is zero.
-    assert_eq!((0,0), stake_reward(max_pool_reward, 100, 0, 0));
+    assert_eq!((0, 0), stake_reward(max_pool_reward, 100, 0, 0));
 
     // Getting commission fee (100%) from all of the the max_pool_reward because stake_power = total_stakes.
     let (reward_to_stake, commission_fee) = stake_reward(max_pool_reward, 100, u64::MAX, u64::MAX);
