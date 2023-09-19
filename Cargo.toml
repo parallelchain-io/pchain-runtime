@@ -29,11 +29,11 @@ wasmer-engine-universal = "=2.3.0"
 wasmer-middlewares = "=2.3.0"
 wasmer-vm = "=2.3.0"
 wasmer-wasi = "=2.3.0"
-wat = "1.0.43"
 
 [dev-dependencies]
 base64url = "0.1.0"
 borsh = "0.10.2"
+wat = "1.0.73"
 
 [profile.release]
 overflow-checks = true
