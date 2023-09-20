@@ -309,14 +309,14 @@ mod tests {
     use wasmer_compiler_singlepass::Singlepass;
 
     #[test]
-    fn chech_i64_add() {
+    fn check_i64_add() {
         let wasm = wat::parse_str(
             r#"
             (module
                 (func (export "sum") (param i64 i64) (result i64)
-                    get_local 0
-                    get_local 1
-                    i64.add
+                    (local.get 0)
+                    (local.get 1)
+                    (i64.add)
                 ))
             "#,
         )
@@ -336,8 +336,8 @@ mod tests {
             r#"
             (module
                 (func $to_float (param i64) (result f64)
-                    get_local 0
-                    f64.convert_u/i64
+                    local.get 0
+                    f64.convert_i64_u
                 ))
             "#,
         )
