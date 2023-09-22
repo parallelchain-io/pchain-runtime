@@ -43,18 +43,15 @@ where
     ) -> Result<(), FuncError> {
         let app_key = env.read_bytes(key_ptr, key_len)?;
         let app_key = AppKey::new(app_key);
-
         let new_value = env.read_bytes(val_ptr, val_len)?;
-
         let target_address = env.call_tx.target;
 
-        let env_ctx = env.context.lock().unwrap();
-        let mut rw_set = env_ctx.rw_set.lock().unwrap();
-        let cost_change = rw_set.set_app_data(target_address, app_key, new_value);
-        drop(rw_set);
+        let mut env_ctx = env.context.lock().unwrap();
+        env_ctx
+            .gas_meter
+            .ws_set_app_data(target_address, app_key, new_value);
         drop(env_ctx);
 
-        env.consume_non_wasm_gas(cost_change);
         Ok(())
     }
 
@@ -63,12 +60,10 @@ where
         let app_key = AppKey::new(app_key);
 
         let env_ctx = env.context.lock().unwrap();
-        let tx_ctx_lock = env_ctx.rw_set.lock().unwrap();
-        let (value, cost_change) = tx_ctx_lock.app_data(env.call_tx.target, app_key);
-        drop(tx_ctx_lock);
+        let value = env_ctx
+            .gas_meter
+            .ws_get_app_data(env.call_tx.target, app_key);
         drop(env_ctx);
-
-        env.consume_non_wasm_gas(cost_change);
 
         let ret_val = match value {
             Some(value) => env.write_bytes(value, val_ptr_ptr)? as i64,
@@ -88,12 +83,9 @@ where
         let app_key = AppKey::new(app_key);
 
         let env_ctx = env.context.lock().unwrap();
-        let rw_set = env_ctx.lock().unwrap();
-        let (value, cost_change) = rw_set.app_data(NETWORK_ADDRESS, app_key);
-        drop(rw_set);
-        drop(env_ctx);
+        let value = env_ctx.gas_meter.ws_get_app_data(NETWORK_ADDRESS, app_key);
 
-        env.consume_non_wasm_gas(cost_change);
+        drop(env_ctx);
 
         let ret_val = match value {
             Some(value) => env.write_bytes(value, val_ptr_ptr)? as i64,
@@ -105,12 +97,8 @@ where
 
     fn balance(env: &Env<S>) -> Result<u64, FuncError> {
         let env_ctx = env.context.lock().unwrap();
-        let rw_set = env_ctx.rw_set.lock().unwrap();
-        let (balance, cost_change) = rw_set.balance(env.call_tx.target);
-        drop(rw_set);
+        let balance = env_ctx.gas_meter.ws_get_balance(env.call_tx.target);
         drop(env_ctx);
-
-        env.consume_non_wasm_gas(cost_change);
         Ok(balance)
     }
 
@@ -444,11 +432,9 @@ where
     ) -> Result<(), FuncError> {
         let input_bytes = env.read_bytes(msg_ptr, msg_len)?;
 
-        env.consume_wasm_gas(gas::CRYPTO_SHA256_PER_BYTE * input_bytes.len() as u64);
-
-        let mut hasher = Sha256::new();
-        sha2::Digest::update(&mut hasher, input_bytes);
-        let digest = hasher.finalize().to_vec();
+        let ctx = env.context.lock().unwrap();
+        let digest = ctx.gas_meter.host_sha256(input_bytes);
+        drop(ctx);
 
         env.write_bytes(digest, digest_ptr_ptr)?;
         Ok(())
@@ -461,14 +447,10 @@ where
         digest_ptr_ptr: u32,
     ) -> Result<(), FuncError> {
         let input_bytes = env.read_bytes(msg_ptr, msg_len)?;
-        let mut output_bytes = [0u8; 32];
 
-        env.consume_wasm_gas(gas::CRYPTO_KECCAK256_PER_BYTE * input_bytes.len() as u64);
-
-        let mut keccak = Keccak::v256();
-        keccak.update(&input_bytes);
-        keccak.finalize(&mut output_bytes);
-        let digest = output_bytes.to_vec();
+        let ctx = env.context.lock().unwrap();
+        let digest = ctx.gas_meter.host_keccak256(input_bytes);
+        drop(ctx);
 
         env.write_bytes(digest, digest_ptr_ptr)?;
         Ok(())
@@ -482,11 +464,9 @@ where
     ) -> Result<(), FuncError> {
         let input_bytes = env.read_bytes(msg_ptr, msg_len)?;
 
-        env.consume_wasm_gas(gas::CRYPTO_RIPEMD160_PER_BYTE * input_bytes.len() as u64);
-
-        let mut hasher = Ripemd160::new();
-        hasher.update(&input_bytes);
-        let digest = hasher.finalize().to_vec();
+        let ctx = env.context.lock().unwrap();
+        let digest = ctx.gas_meter.host_ripemd(input_bytes);
+        drop(ctx);
 
         env.write_bytes(digest, digest_ptr_ptr)?;
         Ok(())
@@ -500,21 +480,11 @@ where
         address_ptr: u32,
     ) -> Result<i32, FuncError> {
         let message = env.read_bytes(msg_ptr, msg_len)?;
-
         let signature = env.read_bytes(signature_ptr, 64)?;
-
         let address = env.read_bytes(address_ptr, 32)?;
 
-        env.consume_wasm_gas(gas::crypto_verify_ed25519_signature_cost(message.len()));
-
-        let public_key =
-            ed25519_dalek::PublicKey::from_bytes(&address).map_err(|_| FuncError::Internal)?;
-
-        let dalek_signature =
-            ed25519_dalek::Signature::from_bytes(&signature).map_err(|_| FuncError::Internal)?;
-
-        let result = public_key.verify(&message, &dalek_signature).is_ok();
-
-        Ok(result as i32)
+        let ctx = env.context.lock().unwrap();
+        ctx.gas_meter
+            .host_verify_ed25519_signature(message, signature, address)
     }
 }

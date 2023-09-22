@@ -169,6 +169,7 @@ where
         )
     }
 
+    // TODO remove
     /// get the contract storage from readwrite set. It key is not found, then get from world state and then cache it.
     pub fn app_data(
         &self,
@@ -188,6 +189,7 @@ where
         }
     }
 
+    // TODO remove
     /// set value to contract storage. This operation does not write to world state immediately
     pub fn set_app_data(
         &mut self,

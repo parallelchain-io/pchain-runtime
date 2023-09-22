@@ -11,7 +11,13 @@ use pchain_world_state::{
     storage::WorldStateStorage,
 };
 
+use ed25519_dalek::Verifier;
+use ripemd::Ripemd160;
+use sha2::{Digest as sha256_digest, Sha256};
+use tiny_keccak::{Hasher as _, Keccak};
+
 use crate::{
+    contract::FuncError,
     cost::CostChange,
     gas,
     read_write_set::{CacheKey, CacheValue, ReadWriteSet},
@@ -79,6 +85,58 @@ where
     }
 
     //
+    // Facade methods for cryptographic operations on host machine callable by contracts
+    //
+    pub fn host_sha256(&self, input_bytes: Vec<u8>) -> Vec<u8> {
+        self.charge(CostChange::deduct(
+            gas::CRYPTO_SHA256_PER_BYTE * input_bytes.len() as u64,
+        ));
+        let mut hasher = Sha256::new();
+        hasher.update(input_bytes);
+        hasher.finalize().to_vec()
+    }
+
+    pub fn host_keccak256(&self, input_bytes: Vec<u8>) -> Vec<u8> {
+        self.charge(CostChange::deduct(
+            gas::CRYPTO_KECCAK256_PER_BYTE * input_bytes.len() as u64,
+        ));
+
+        let mut output_bytes = [0u8; 32];
+        let mut keccak = Keccak::v256();
+        keccak.update(&input_bytes);
+        keccak.finalize(&mut output_bytes);
+        output_bytes.to_vec()
+    }
+
+    pub fn host_ripemd(&self, input_bytes: Vec<u8>) -> Vec<u8> {
+        self.charge(CostChange::deduct(
+            gas::CRYPTO_RIPEMD160_PER_BYTE * input_bytes.len() as u64,
+        ));
+        let mut hasher = Ripemd160::new();
+        hasher.update(&input_bytes);
+        hasher.finalize().to_vec()
+    }
+
+    pub fn host_verify_ed25519_signature(
+        &self,
+        message: Vec<u8>,
+        signature: Vec<u8>,
+        pub_key: Vec<u8>,
+    ) -> Result<i32, FuncError> {
+        self.charge(CostChange::deduct(
+            gas::crypto_verify_ed25519_signature_cost(message.len()),
+        ));
+
+        let public_key =
+            ed25519_dalek::PublicKey::from_bytes(&pub_key).map_err(|_| FuncError::Internal)?;
+        let dalek_signature =
+            ed25519_dalek::Signature::from_bytes(&signature).map_err(|_| FuncError::Internal)?;
+        let is_ok = public_key.verify(&message, &dalek_signature).is_ok();
+
+        Ok(is_ok as i32)
+    }
+
+    //
     // Facade methods for World State methods that cost gas
     //
 
@@ -93,7 +151,13 @@ where
     /// Gets contract storage (TODO, app_data?) from the read-write set.
     pub fn ws_get_app_data(&self, address: PublicAddress, key: AppKey) -> Option<Vec<u8>> {
         match self.ws_get(CacheKey::App(address, key)) {
-            Some(CacheValue::App(value)) => Some(value),
+            Some(CacheValue::App(value)) => {
+                if value.is_empty() {
+                    None
+                } else {
+                    Some(value)
+                }
+            }
             None => None,
             _ => panic!("Retrieved data not of App variant"),
         }
@@ -102,8 +166,6 @@ where
     /// Check if App key has non-empty data
     pub fn ws_contains_app_data(&self, address: PublicAddress, app_key: AppKey) -> bool {
         let cache_key = CacheKey::App(address, app_key.clone());
-        // TODO consistent in charging
-        self.ws_charge_contains_cost(&cache_key);
 
         // check from RW set first
         self.ws_contains(&cache_key) || {
@@ -126,12 +188,16 @@ where
     //
     // Private Helpers
     //
-    fn ws_charge_contains_cost(&self, key: &CacheKey) {
-        *self.command_gas_used.borrow_mut() += CostChange::deduct(gas::contains_cost(key.len()));
+    fn charge(&self, cost_change: CostChange) {
+        *self.command_gas_used.borrow_mut() += cost_change;
     }
 
-    fn ws_charge_read_cost(&self, key: &CacheKey, value: Option<&CacheValue>) {
-        let cost_change = match key {
+    fn ws_get(&self, key: CacheKey) -> Option<CacheValue> {
+        let rw_set = self.rw_set.lock().unwrap();
+        let value = rw_set.get_new(&key);
+        drop(rw_set);
+
+        let get_cost = match key {
             CacheKey::ContractCode(_) => {
                 CostChange::deduct(gas::get_code_cost(value.as_ref().map_or(0, |v| v.len())))
             }
@@ -140,31 +206,24 @@ where
                 value.as_ref().map_or(0, |v| v.len()),
             )),
         };
-        *self.command_gas_used.borrow_mut() += cost_change
-    }
-
-    fn ws_charge_write_cost(&self, key_len: usize, old_val_len: usize, new_val_len: usize) {
-        let new_cost_change =
-                // old_val_len is obtained from Get so the cost of reading the key is already charged
-                CostChange::reward(gas::set_cost_delete_old_value(key_len, old_val_len, new_val_len)) +
-                CostChange::deduct(gas::set_cost_write_new_value(new_val_len)) +
-                CostChange::deduct(gas::set_cost_rehash(key_len));
-        *self.command_gas_used.borrow_mut() += new_cost_change;
-    }
-
-    fn ws_get(&self, key: CacheKey) -> Option<CacheValue> {
-        let rw_set = self.rw_set.lock().unwrap();
-        let value = rw_set.get_new(&key);
-        drop(rw_set);
-        self.ws_charge_read_cost(&key, value.as_ref());
+        self.charge(get_cost);
         value
     }
 
     fn ws_set(&mut self, key: CacheKey, value: CacheValue) {
         let key_len = key.len();
+
         let new_val_len = value.len();
         let old_val_len = self.ws_get(key.clone()).map_or(0, |v| v.len());
-        self.ws_charge_write_cost(key_len, old_val_len, new_val_len);
+        // old_val_len is obtained from Get so the cost of reading the key is already charged
+
+        let set_cost = CostChange::reward(gas::set_cost_delete_old_value(
+            key_len,
+            old_val_len,
+            new_val_len,
+        )) + CostChange::deduct(gas::set_cost_write_new_value(new_val_len))
+            + CostChange::deduct(gas::set_cost_rehash(key_len));
+        self.charge(set_cost);
 
         let mut rw_set = self.rw_set.lock().unwrap();
         rw_set.set_new(key, value);
@@ -172,7 +231,7 @@ where
     }
 
     fn ws_contains(&self, key: &CacheKey) -> bool {
-        // TODO slightly inconsistent, not charging here
+        self.charge(CostChange::deduct(gas::contains_cost(key.len())));
         let rw_set = self.rw_set.lock().unwrap();
         rw_set.contains_new(key)
     }
