@@ -93,7 +93,7 @@ where
     }
 
     // Create Pool
-    let mut pool = NetworkAccount::pools(&mut state, operator);
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if pool.exists() {
         return Err(phase::abort(state, TransitionError::PoolAlreadyExists));
     }
@@ -103,7 +103,8 @@ where
     pool.set_operator_stake(None);
 
     // Update NVP
-    let _ = NetworkAccount::nvp(&mut state).insert_extract(PoolKey { operator, power: 0 });
+    let _ = NetworkAccount::nvp(&mut state.ctx.gas_meter)
+        .insert_extract(PoolKey { operator, power: 0 });
 
     phase::finalize_gas_consumption(state)
 }
@@ -122,7 +123,7 @@ where
     }
 
     // Update Pool
-    let mut pool = NetworkAccount::pools(&mut state, operator);
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
         return Err(phase::abort(state, TransitionError::PoolNotExists));
     }
@@ -144,14 +145,14 @@ pub(crate) fn delete_pool<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    let pool = NetworkAccount::pools(&mut state, operator);
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
         return Err(phase::abort(state, TransitionError::PoolNotExists));
     }
 
-    NetworkAccount::nvp(&mut state).remove_item(&operator);
+    NetworkAccount::nvp(&mut state.ctx.gas_meter).remove_item(&operator);
 
-    NetworkAccount::pools(&mut state, operator).delete();
+    NetworkAccount::pools(&mut state.ctx.gas_meter, operator).delete();
 
     phase::finalize_gas_consumption(state)
 }
@@ -167,24 +168,28 @@ pub(crate) fn create_deposit<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    if !NetworkAccount::pools(&mut state, operator).exists() {
+    let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
+    if !pool.exists() {
         return Err(phase::abort(state, TransitionError::PoolNotExists));
     }
 
-    if NetworkAccount::deposits(&mut state, operator, owner).exists() {
+    if NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner).exists() {
         return Err(phase::abort(state, TransitionError::DepositsAlreadyExists));
     }
 
-    let (owner_balance, _) = state.balance(owner);
+    let owner_balance = state.ctx.gas_meter.ws_get_balance(owner);
     if owner_balance < balance {
         return Err(phase::abort(
             state,
             TransitionError::NotEnoughBalanceForTransfer,
         ));
     }
-    state.set_balance(owner, owner_balance - balance);
+    state
+        .ctx
+        .gas_meter
+        .ws_set_balance(owner, owner_balance - balance);
 
-    let mut deposits = NetworkAccount::deposits(&mut state, operator, owner);
+    let mut deposits = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
     deposits.set_balance(balance);
     deposits.set_auto_stake_rewards(auto_stake_rewards);
 
@@ -201,7 +206,7 @@ pub(crate) fn set_deposit_settings<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    let mut deposits = NetworkAccount::deposits(&mut state, operator, owner);
+    let mut deposits = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
     if !deposits.exists() {
         return Err(phase::abort(state, TransitionError::DepositsNotExists));
     }
@@ -225,20 +230,24 @@ pub(crate) fn topup_deposit<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    if !NetworkAccount::deposits(&mut state, operator, owner).exists() {
+    if !NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner).exists() {
         return Err(phase::abort(state, TransitionError::DepositsNotExists));
     }
 
-    let (owner_balance, _) = state.balance(owner);
+    let owner_balance = state.ctx.gas_meter.ws_get_balance(owner);
     if owner_balance < amount {
         return Err(phase::abort(
             state,
             TransitionError::NotEnoughBalanceForTransfer,
         ));
     }
-    state.set_balance(owner, owner_balance - amount); // Always deduct the amount specified in the transaction
 
-    let mut deposits = NetworkAccount::deposits(&mut state, operator, owner);
+    state
+        .ctx
+        .gas_meter
+        .ws_set_balance(owner, owner_balance - amount); // Always deduct the amount specified in the transaction
+
+    let mut deposits = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
     let deposit_balance = deposits.balance().unwrap();
     deposits.set_balance(deposit_balance.saturating_add(amount)); // Ceiling to MAX for safety. Overflow should not happen in real situation.
 
@@ -256,39 +265,37 @@ where
     S: WorldStateStorage + Send + Sync + Clone,
 {
     // 1. Check if there is any deposit to withdraw
-    let deposits = NetworkAccount::deposits(&mut state, operator, owner);
+    let deposits = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
     if !deposits.exists() {
         return Err(phase::abort(state, TransitionError::DepositsNotExists));
     }
     let deposit_balance = deposits.balance().unwrap();
 
     // 2. Compute withdrawal amount
-    let prev_epoch_locked_power =
-        NetworkAccount::pvp(&mut state)
-            .pool(operator)
-            .map_or(0, |mut pool| {
-                if operator == owner {
-                    pool.operator_stake()
-                        .map_or(0, |stake| stake.map_or(0, |s| s.power))
-                } else {
-                    pool.delegated_stakes()
-                        .get_by(&owner)
-                        .map_or(0, |stake| stake.power)
-                }
-            });
-    let cur_epoch_locked_power =
-        NetworkAccount::vp(&mut state)
-            .pool(operator)
-            .map_or(0, |mut pool| {
-                if operator == owner {
-                    pool.operator_stake()
-                        .map_or(0, |stake| stake.map_or(0, |s| s.power))
-                } else {
-                    pool.delegated_stakes()
-                        .get_by(&owner)
-                        .map_or(0, |stake| stake.power)
-                }
-            });
+    let prev_epoch_locked_power = NetworkAccount::pvp(&mut state.ctx.gas_meter)
+        .pool(operator)
+        .map_or(0, |mut pool| {
+            if operator == owner {
+                pool.operator_stake()
+                    .map_or(0, |stake| stake.map_or(0, |s| s.power))
+            } else {
+                pool.delegated_stakes()
+                    .get_by(&owner)
+                    .map_or(0, |stake| stake.power)
+            }
+        });
+    let cur_epoch_locked_power = NetworkAccount::vp(&mut state.ctx.gas_meter)
+        .pool(operator)
+        .map_or(0, |mut pool| {
+            if operator == owner {
+                pool.operator_stake()
+                    .map_or(0, |stake| stake.map_or(0, |s| s.power))
+            } else {
+                pool.delegated_stakes()
+                    .get_by(&owner)
+                    .map_or(0, |stake| stake.power)
+            }
+        });
     let locked_power = std::cmp::max(prev_epoch_locked_power, cur_epoch_locked_power);
     let withdrawal_amount = std::cmp::min(max_amount, deposit_balance.saturating_sub(locked_power));
     let new_deposit_balance = deposit_balance.saturating_sub(withdrawal_amount);
@@ -301,19 +308,26 @@ where
 
     // 4. Update the deposit's balance to reflect the withdrawal.
     if new_deposit_balance == 0 {
-        NetworkAccount::deposits(&mut state, operator, owner).delete();
+        NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner).delete();
     } else {
-        NetworkAccount::deposits(&mut state, operator, owner).set_balance(new_deposit_balance);
+        NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner)
+            .set_balance(new_deposit_balance);
     }
-    let (owner_balance, _) = state.balance(owner);
-    state.set_balance(owner, owner_balance.saturating_add(deposit_balance - new_deposit_balance)); // Ceiling to MAX for safety. Overflow should not happen in real situation.
+
+    let owner_balance = state.ctx.gas_meter.ws_get_balance(owner);
+    state.ctx.gas_meter.ws_set_balance(
+        owner,
+        owner_balance.saturating_add(deposit_balance - new_deposit_balance),
+    );
 
     // 5. If the deposit's new balance is now too small to support its Stake in the next Epoch, cap the Stake's power at the new balance.
-    if let Some(stake_power) = stake_of_pool(&mut state, operator, owner) {
+    if let Some(stake_power) = stake_of_pool(&mut state.ctx.gas_meter, operator, owner) {
         if new_deposit_balance < stake_power {
-            if let Some(prev_pool_power) = NetworkAccount::pools(&mut state, operator).power() {
+            if let Some(prev_pool_power) =
+                NetworkAccount::pools(&mut state.ctx.gas_meter, operator).power()
+            {
                 reduce_stake_power(
-                    &mut state,
+                    &mut state.ctx.gas_meter,
                     operator,
                     prev_pool_power,
                     owner,
@@ -350,22 +364,21 @@ where
     S: WorldStateStorage + Send + Sync + Clone,
 {
     // 1. Check if there is a Deposit to stake
-    if !NetworkAccount::deposits(&mut state, operator, owner).exists() {
+    let deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
+    if !deposit.exists() {
         return Err(phase::abort(state, TransitionError::DepositsNotExists));
     }
-    let deposit_balance = NetworkAccount::deposits(&mut state, operator, owner)
-        .balance()
-        .unwrap();
+    let deposit_balance = deposit.balance().unwrap();
 
     // 2. Check if there is a Pool to stake to.
-    let pool = NetworkAccount::pools(&mut state, operator);
+    let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
         return Err(phase::abort(state, TransitionError::PoolNotExists));
     }
     let prev_pool_power = pool.power().unwrap();
 
     // We use this to update the Pool's power after the power of one of its stakes get increased.
-    let stake_power = stake_of_pool(&mut state, operator, owner);
+    let stake_power = stake_of_pool(&mut state.ctx.gas_meter, operator, owner);
 
     let stake_power_to_increase = std::cmp::min(
         max_amount,
@@ -377,7 +390,7 @@ where
 
     // Update Stakes and the Pool's power and its position in the Next Validator Set.
     match increase_stake_power(
-        &mut state,
+        &mut state.ctx.gas_meter,
         operator,
         prev_pool_power,
         owner,
@@ -415,25 +428,25 @@ where
     S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone,
 {
     // 1. Check if there is a Deposit to unstake.
-    if !NetworkAccount::deposits(&mut state, operator, owner).exists() {
+    if !NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner).exists() {
         return Err(phase::abort(state, TransitionError::DepositsNotExists));
     }
 
     // 2. If there is no Pool, then there is no Stake to unstake.
-    let pool = NetworkAccount::pools(&mut state, operator);
+    let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
         return Err(phase::abort(state, TransitionError::PoolNotExists));
     }
     let prev_pool_power = pool.power().unwrap();
 
-    let stake_power = match stake_of_pool(&mut state, operator, owner) {
+    let stake_power = match stake_of_pool(&mut state.ctx.gas_meter, operator, owner) {
         Some(stake_power) => stake_power,
         None => return Err(phase::abort(state, TransitionError::PoolHasNoStakes)),
     };
 
     // 3. Reduce the Stake's power.
     let amount_unstaked = reduce_stake_power(
-        &mut state,
+        &mut state.ctx.gas_meter,
         operator,
         prev_pool_power,
         owner,
@@ -582,7 +595,9 @@ where
                     owner,
                     power: stake_power_to_increase,
                 })) {
-                    Ok(Some(replaced_stake)) => stake_power_to_increase.saturating_sub(replaced_stake.power),
+                    Ok(Some(replaced_stake)) => {
+                        stake_power_to_increase.saturating_sub(replaced_stake.power)
+                    }
                     Ok(None) => stake_power_to_increase,
                     Err(_) => {
                         if exit_on_insert_fail {

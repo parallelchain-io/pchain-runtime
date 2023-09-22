@@ -12,8 +12,8 @@ use pchain_types::{
 use pchain_world_state::network::constants::NETWORK_ADDRESS;
 
 use crate::common::{
-    compute_contract_address, ArgsBuilder, CallResult, SimulateWorldState, TestData,
-    CONTRACT_CACHE_FOLDER,
+    compute_contract_address, gas::extract_gas_used, ArgsBuilder, CallResult, SimulateWorldState,
+    TestData, CONTRACT_CACHE_FOLDER,
 };
 
 mod common;
@@ -41,6 +41,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
         .set_smart_contract_cache(Cache::new(Path::new(CONTRACT_CACHE_FOLDER)));
 
     let result = runtime.transition(sws.world_state, tx, bd.clone());
+    assert_eq!(extract_gas_used(&result), 121925230);
     assert_eq!(
         result.receipt.unwrap().last().unwrap().exit_status,
         ExitStatus::Success
@@ -92,6 +93,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 1279914);
     assert_eq!(
         result.receipt.unwrap().last().unwrap().exit_status,
         ExitStatus::Success
@@ -118,6 +120,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 1324005);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -141,6 +144,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 1259335);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
 
@@ -180,6 +184,8 @@ fn test_success_etoc_multiple_methods() {
     tx.commands = vec![ArgsBuilder::new().make_deploy(contract_code, 0)];
 
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    assert_eq!(extract_gas_used(&result), 121925230);
+
     assert_eq!(
         result.receipt.unwrap().last().unwrap().exit_status,
         ExitStatus::Success
@@ -205,6 +211,8 @@ fn test_success_etoc_multiple_methods() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 1258440);
+
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -228,6 +236,7 @@ fn test_success_etoc_multiple_methods() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 1279345);
     assert_eq!(
         result.receipt.unwrap().last().unwrap().exit_status,
         ExitStatus::Success
@@ -277,6 +286,8 @@ fn test_success_etoc_multiple_methods() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 1275515);
+
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -302,6 +313,7 @@ fn test_success_etoc_multiple_methods() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 1259021);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -335,6 +347,7 @@ fn test_success_etoc_multiple_methods() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 1260899);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -358,6 +371,7 @@ fn test_success_etoc_multiple_methods() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 1261720);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
 
@@ -395,6 +409,7 @@ fn test_success_etoc_set_all_contract_fields() {
         .make_deploy(contract_code, 0)];
 
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    assert_eq!(extract_gas_used(&result), 220290230);
     assert_eq!(
         result.receipt.unwrap().last().unwrap().exit_status,
         ExitStatus::Success
@@ -420,6 +435,7 @@ fn test_success_etoc_set_all_contract_fields() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 2495040);
     assert_eq!(
         result.receipt.unwrap().last().unwrap().exit_status,
         ExitStatus::Success
@@ -506,6 +522,7 @@ fn test_success_etoc_network_state() {
         .make_deploy(contract_code, 0)];
 
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    assert_eq!(extract_gas_used(&result), 220290230);
     assert_eq!(
         result.receipt.unwrap().last().unwrap().exit_status,
         ExitStatus::Success
@@ -530,6 +547,7 @@ fn test_success_etoc_network_state() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 2246202);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -621,6 +639,7 @@ fn test_success_etoc_network_state() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 2220638);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     assert_eq!(
@@ -667,6 +686,7 @@ fn test_failure_etoc_tx_with_invalid_argument_data_type() {
     tx.commands = vec![ArgsBuilder::new().make_deploy(contract_code, 0)];
 
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    assert_eq!(extract_gas_used(&result), 121925230);
     assert_eq!(
         result.receipt.unwrap().last().unwrap().exit_status,
         ExitStatus::Success
@@ -686,6 +706,7 @@ fn test_failure_etoc_tx_with_invalid_argument_data_type() {
         ..TestData::transaction()
     };
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    assert_eq!(extract_gas_used(&result), 1264607);
     assert_eq!(
         result.receipt.unwrap().last().unwrap().exit_status,
         ExitStatus::Failed
@@ -733,6 +754,7 @@ fn test_failure_etoc_tx_with_invalid_method_name() {
     };
 
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    assert_eq!(extract_gas_used(&result), 1255007);
     assert_eq!(
         result.receipt.unwrap().last().unwrap().exit_status,
         ExitStatus::Failed
@@ -785,6 +807,7 @@ fn test_success_etoc_crypto_functions() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 2216086);
     let receipt = result.receipt.unwrap().pop().unwrap();
     assert_eq!(receipt.exit_status, ExitStatus::Success);
     let hash: Vec<u8> = CallResult::parse(receipt.return_values).unwrap();
@@ -810,6 +833,7 @@ fn test_success_etoc_crypto_functions() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 2216087);
     let receipt = result.receipt.unwrap().pop().unwrap();
     assert_eq!(receipt.exit_status, ExitStatus::Success);
     let hash: Vec<u8> = CallResult::parse(receipt.return_values).unwrap();
@@ -835,6 +859,7 @@ fn test_success_etoc_crypto_functions() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 2215625);
     let receipt = result.receipt.unwrap().pop().unwrap();
     assert_eq!(receipt.exit_status, ExitStatus::Success);
     let hash: Vec<u8> = CallResult::parse(receipt.return_values).unwrap();
@@ -873,12 +898,14 @@ fn test_success_etoc_crypto_functions() {
         },
         bd.clone(),
     );
+
+    assert_eq!(extract_gas_used(&result), 3619156);
     let receipt = result.receipt.unwrap().pop().unwrap();
     assert_eq!(receipt.exit_status, ExitStatus::Success);
     let is_correct: bool = CallResult::parse(receipt.return_values).unwrap();
     assert!(is_correct);
 
-    // 4. Verify ed25519 - incorrect signature
+    // 5. Verify ed25519 - incorrect signature
     // let private = [0xA4_u8, 0x81, 0x53, 0xB8, 0x4B, 0x04, 0x4F, 0xC9, 0x51, 0x3A, 0x90, 0xE5, 0x26, 0xFB, 0xC7, 0x5C, 0x16, 0xEE, 0x0A, 0xE2, 0x98, 0x8B, 0xD4, 0x6D, 0x7B, 0x85, 0x0E, 0x10, 0x3F, 0x07, 0xD8, 0x3B];
     let public = [
         0x51_u8, 0x02, 0xE6, 0x26, 0x37, 0x2C, 0x31, 0x2B, 0x48, 0x1D, 0xA1, 0x88, 0xBB, 0x75,
@@ -899,6 +926,7 @@ fn test_success_etoc_crypto_functions() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 3619156);
     let receipt = result.receipt.unwrap().pop().unwrap();
     assert_eq!(receipt.exit_status, ExitStatus::Success);
     let is_correct: bool = CallResult::parse(receipt.return_values).unwrap();

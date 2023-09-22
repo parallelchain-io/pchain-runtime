@@ -25,23 +25,29 @@ use crate::{
 
 use super::state::ExecutionState;
 
+// TODO note that pre-charge isn't going through RWset, it goes directly into WS
+
 /// Pre-Charge is a Phase in State Transition. It transits state and returns gas consumption if success.
 pub(crate) fn pre_charge<S>(state: &mut ExecutionState<S>) -> Result<u64, TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     let init_gas = gas::tx_inclusion_cost(state.tx_size, state.commands_len);
+
     if state.tx.gas_limit < init_gas {
         return Err(TransitionError::PreExecutionGasExhausted);
     }
 
     let signer = state.tx.signer;
-    let origin_nonce = state.ws.nonce(signer);
+
+    let mut rw_set = state.rw_set.lock().unwrap();
+
+    let origin_nonce = rw_set.ws.nonce(signer);
     if state.tx.nonce != origin_nonce {
         return Err(TransitionError::WrongNonce);
     }
 
-    let origin_balance = state.ws.balance(state.tx.signer);
+    let origin_balance = rw_set.ws.balance(state.tx.signer);
     let gas_limit = state.tx.gas_limit;
     let base_fee = state.bd.this_base_fee;
     let priority_fee = state.tx.priority_fee_per_gas;
@@ -49,7 +55,7 @@ where
     // pre_charge = gas_limit * (base_fee + priority_fee)
     let pre_charge = base_fee
         .checked_add(priority_fee)
-        .and_then(|fee| gas_limit.checked_mul(fee) )
+        .and_then(|fee| gas_limit.checked_mul(fee))
         .ok_or(TransitionError::NotEnoughBalanceForGasLimit)?; // Overflow check
 
     // pre_charged_balance = origin_balance - pre_charge
@@ -58,9 +64,14 @@ where
         .ok_or(TransitionError::NotEnoughBalanceForGasLimit)?; // pre_charge > origin_balance
 
     // Apply change directly to World State
-    state.ws.with_commit().set_balance(signer, pre_charged_balance);
+    rw_set
+        .ws
+        .with_commit()
+        .set_balance(signer, pre_charged_balance);
+    drop(rw_set);
 
     state.set_gas_consumed(init_gas);
+
     Ok(init_gas)
 }
 
@@ -107,13 +118,15 @@ where
     let gas_used = std::cmp::min(state.gas_consumed(), state.tx.gas_limit); // Safety for avoiding overflow
     let gas_unused = state.tx.gas_limit.saturating_sub(gas_used);
 
+    let mut rw_set = state.rw_set.lock().unwrap();
+
     // Finalize signer's balance
-    let signer_balance = state.purge_balance(signer);
+    let signer_balance = rw_set.purge_balance(signer);
     let new_signer_balance = signer_balance + gas_unused * (base_fee + priority_fee);
 
     // Transfer priority fee to Proposer
     let proposer_address = state.bd.proposer_address;
-    let mut proposer_balance = state.purge_balance(proposer_address);
+    let mut proposer_balance = rw_set.purge_balance(proposer_address);
     if signer == proposer_address {
         proposer_balance = new_signer_balance;
     }
@@ -121,7 +134,7 @@ where
 
     // Burn the gas to Treasury account
     let treasury_address = state.bd.treasury_address;
-    let mut treasury_balance = state.purge_balance(treasury_address);
+    let mut treasury_balance = rw_set.purge_balance(treasury_address);
     if signer == treasury_address {
         treasury_balance = new_signer_balance;
     }
@@ -132,22 +145,23 @@ where
         .saturating_add((gas_used * base_fee * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE);
 
     // Commit updated balances
-    state
+    rw_set
         .ws
         .with_commit()
         .set_balance(signer, new_signer_balance);
-    state
+    rw_set
         .ws
         .with_commit()
         .set_balance(proposer_address, new_proposer_balance);
-    state
+    rw_set
         .ws
         .with_commit()
         .set_balance(treasury_address, new_treasury_balance);
 
     // Commit Signer's Nonce
-    let nonce = state.ws.nonce(signer).saturating_add(1);
-    state.ws.with_commit().set_nonce(signer, nonce);
+    let nonce = rw_set.ws.nonce(signer).saturating_add(1);
+    rw_set.ws.with_commit().set_nonce(signer, nonce);
+    drop(rw_set);
 
     state.set_gas_consumed(gas_used);
     StateChangesResult::new(state, transition_result)

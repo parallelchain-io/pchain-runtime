@@ -25,7 +25,9 @@ use pchain_types::{
 };
 use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
 use std::ops::{Deref, DerefMut};
+use std::sync::{Arc, Mutex};
 
+use crate::execution::runtime_gas_meter::RuntimeGasMeter;
 use crate::{
     contract::SmartContractContext,
     cost::CostChange,
@@ -191,9 +193,9 @@ where
     /// finalize generates TransitionResult
     pub(crate) fn finalize(self, command_receipts: Vec<CommandReceipt>) -> TransitionResult<S> {
         let error = self.error;
-        let rw_set = self.state.ctx.rw_set;
-
-        let new_state = rw_set.commit_to_world_state();
+        let rw_set = self.state.ctx.rw_set.lock().unwrap();
+        // TODO, remove the clone if not needed
+        let new_state = rw_set.clone().commit_to_world_state();
 
         TransitionResult {
             new_state,
@@ -218,10 +220,10 @@ pub struct ValidatorChanges {
 #[derive(Clone)]
 pub(crate) struct TransitionContext<S>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     /// Running data cache for Read-Write operations during state transition.
-    pub rw_set: ReadWriteSet<S>,
+    pub rw_set: Arc<Mutex<ReadWriteSet<S>>>,
 
     /// Smart contract context for execution
     pub sc_context: SmartContractContext,
@@ -241,6 +243,8 @@ where
     /// return_value is the value returned by a call transaction using the `return_value` SDK function. It is None if the
     /// execution has not/did not return anything.
     pub return_value: Option<Vec<u8>>,
+
+    pub gas_meter: RuntimeGasMeter<S>,
 }
 
 impl<S> TransitionContext<S>
@@ -248,8 +252,11 @@ where
     S: WorldStateStorage + Send + Sync + Clone,
 {
     pub fn new(ws: WorldState<S>) -> Self {
+        let rw_set = Arc::new(Mutex::new(ReadWriteSet::new(ws)));
+        let host_gm = RuntimeGasMeter::new(Arc::clone(&rw_set));
+
         Self {
-            rw_set: ReadWriteSet::new(ws),
+            rw_set,
             sc_context: SmartContractContext {
                 cache: None,
                 memory_limit: None,
@@ -259,6 +266,7 @@ where
             gas_used: 0,
             return_value: None,
             commands: Vec::new(),
+            gas_meter: host_gm,
         }
     }
 
@@ -275,18 +283,28 @@ where
     /// - read cost to storage
     /// - write cost to receipt (blockchain data)
     pub fn total_gas_to_be_consumed(&self) -> u64 {
+        let rw_set = self.rw_set.lock().unwrap();
+
+        // println!("/transition.rs:288 {:?}", self.gas_meter.gas_used);
+
         // Gas incurred to be charged
-        let chargeable_gas =
-            (self.rw_set.write_gas + self.receipt_write_gas + *self.rw_set.read_gas.borrow())
-                .values()
-                .0;
+        let chargeable_gas = (rw_set.write_gas
+            + self.receipt_write_gas
+            + *rw_set.read_gas.borrow()
+            + *self.gas_meter.command_gas_used.borrow()) // TODO remove all other gas meter instances
+        .values()
+        .0;
+        drop(rw_set);
         self.gas_consumed().saturating_add(chargeable_gas)
     }
 
     /// Discard the changes to world state
     pub fn revert_changes(&mut self) {
-        self.rw_set.reads.borrow_mut().clear();
-        self.rw_set.writes.clear();
+        // TODO should this go through the GasMeter facade, it's technically not a chargeable operation
+        let mut rw_set = self.rw_set.lock().unwrap();
+        rw_set.reads.borrow_mut().clear();
+        rw_set.writes.clear();
+        drop(rw_set);
     }
 
     /// Output the CommandReceipt and clear the intermediate context for next command execution.
@@ -303,13 +321,17 @@ where
                 .map_or(Vec::new(), std::convert::identity),
             logs: self.logs.clone(),
         };
+        let mut rw_set = self.rw_set.lock().unwrap();
         // 2. Clear data for next command execution
-        *self.rw_set.read_gas.borrow_mut() = CostChange::default();
-        self.rw_set.write_gas = CostChange::default();
+        *rw_set.read_gas.borrow_mut() = CostChange::default();
+        rw_set.write_gas = CostChange::default();
+        drop(rw_set);
         self.receipt_write_gas = CostChange::default();
         self.logs.clear();
         self.return_value = None;
         self.commands.clear();
+
+        self.gas_meter.finalize_command_gas();
         ret
     }
 
@@ -328,7 +350,7 @@ impl<S> Deref for TransitionContext<S>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    type Target = ReadWriteSet<S>;
+    type Target = Arc<Mutex<ReadWriteSet<S>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.rw_set

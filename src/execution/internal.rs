@@ -37,12 +37,14 @@ pub(crate) fn call_from_contract<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    let mut ctx_locked = txn_in_env.lock().unwrap();
+    let ctx_locked = txn_in_env.lock().unwrap();
+    let mut rw_set = ctx_locked.rw_set.lock().unwrap();
+
     let mut internal_call_result = InternalCallResult::default();
 
     // Transfer amount to address
     if let Some(value) = tx_from_contract.amount {
-        let (from_balance, cost_change) = ctx_locked.balance(tx_from_contract.signer);
+        let (from_balance, cost_change) = rw_set.balance(tx_from_contract.signer);
         internal_call_result.non_wasmer_gas += cost_change;
         if from_balance < value {
             internal_call_result.error = Some(contract::FuncError::InsufficientBalance);
@@ -50,14 +52,14 @@ where
         }
 
         let from_address_new_balance = from_balance - value;
-        let cost_change = ctx_locked.set_balance(tx_from_contract.signer, from_address_new_balance);
+        let cost_change = rw_set.set_balance(tx_from_contract.signer, from_address_new_balance);
         internal_call_result.non_wasmer_gas += cost_change;
 
         // Safety: the balance of deployed contracts are always Some.
-        let (to_address_prev_balance, cost_change) = ctx_locked.balance(tx_from_contract.target);
+        let (to_address_prev_balance, cost_change) = rw_set.balance(tx_from_contract.target);
         internal_call_result.non_wasmer_gas += cost_change;
         let to_address_new_balance = to_address_prev_balance.saturating_add(value);
-        let cost_change = ctx_locked.set_balance(tx_from_contract.target, to_address_new_balance);
+        let cost_change = rw_set.set_balance(tx_from_contract.target, to_address_new_balance);
         internal_call_result.non_wasmer_gas += cost_change;
     }
 
@@ -65,7 +67,7 @@ where
     let contract_module = match ContractModule::build_contract(
         tx_from_contract.target,
         &ctx_locked.sc_context,
-        &ctx_locked.rw_set,
+        &rw_set,
     ) {
         Ok(module) => module,
         Err(_) => {
@@ -74,12 +76,13 @@ where
         }
     };
     internal_call_result.non_wasmer_gas += contract_module.gas_cost;
-    drop(ctx_locked);
 
     // limit the gas for child contract execution
     tx_from_contract.gas_limit = tx_from_contract
         .gas_limit
         .saturating_sub(internal_call_result.non_wasmer_gas.values().0);
+    drop(rw_set);
+    drop(ctx_locked);
 
     let instance = match contract_module.instantiate(
         txn_in_env,
@@ -115,11 +118,12 @@ pub(crate) fn transfer_from_contract<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    let mut ctx_locked = txn_in_env.lock().unwrap();
+    let ctx_locked = txn_in_env.lock().unwrap();
+    let mut rw_set = ctx_locked.rw_set.lock().unwrap();
     let mut internal_call_result = InternalCallResult::default();
 
     // 1. Verify that the caller's balance is >= amount
-    let (from_balance, cost_change) = ctx_locked.balance(signer);
+    let (from_balance, cost_change) = rw_set.balance(signer);
     internal_call_result.non_wasmer_gas += cost_change;
 
     if from_balance < amount {
@@ -129,14 +133,16 @@ where
 
     // 2. Debit amount from from_address.
     let from_address_new_balance = from_balance - amount;
-    let cost_change = ctx_locked.set_balance(signer, from_address_new_balance);
+    let cost_change = rw_set.set_balance(signer, from_address_new_balance);
     internal_call_result.non_wasmer_gas += cost_change;
 
     // 3. Credit amount to recipient.
-    let (to_address_prev_balance, cost_change) = ctx_locked.balance(recipient);
+    let (to_address_prev_balance, cost_change) = rw_set.balance(recipient);
     internal_call_result.non_wasmer_gas += cost_change;
     let to_address_new_balance = to_address_prev_balance.saturating_add(amount);
-    let cost_change = ctx_locked.set_balance(recipient, to_address_new_balance);
+    let cost_change = rw_set.set_balance(recipient, to_address_new_balance);
+    drop(rw_set);
+
     internal_call_result.non_wasmer_gas += cost_change;
 
     internal_call_result

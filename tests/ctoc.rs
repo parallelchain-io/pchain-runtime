@@ -2,7 +2,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use pchain_types::blockchain::{ExitStatus, Transaction};
 
 use crate::common::{
-    compute_contract_address, ArgsBuilder, CallResult, SimulateWorldState, TestData,
+    compute_contract_address, gas::extract_gas_used, ArgsBuilder, CallResult, SimulateWorldState,
+    TestData,
 };
 
 mod common;
@@ -35,6 +36,7 @@ fn test_ctoc_api() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 2262500);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -56,6 +58,7 @@ fn test_ctoc_api() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 4467014);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -90,6 +93,7 @@ fn test_ctoc_api() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 4483108);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -127,6 +131,7 @@ fn test_ctoc_use_contract() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 3473496);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -165,6 +170,7 @@ fn test_ctoc_use_contract() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 3489103);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let _: SimulateWorldState = result.new_state.into();
@@ -220,6 +226,7 @@ fn test_ctoc_with_insufficient_gas_limit() {
         tx.commands.len(),
     );
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    assert_eq!(extract_gas_used(&result), 6862810);
     let receipt = result.receipt.unwrap();
     assert_eq!(
         receipt.last().unwrap().exit_status,
@@ -286,6 +293,7 @@ fn deploy_two_contracts(
     tx.gas_limit = 300_000_000;
 
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    assert_eq!(extract_gas_used(&result), 220290230);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();

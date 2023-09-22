@@ -48,11 +48,12 @@ where
 
         let target_address = env.call_tx.target;
 
-        let cost_change =
-            env.context
-                .lock()
-                .unwrap()
-                .set_app_data(target_address, app_key, new_value);
+        let env_ctx = env.context.lock().unwrap();
+        let mut rw_set = env_ctx.rw_set.lock().unwrap();
+        let cost_change = rw_set.set_app_data(target_address, app_key, new_value);
+        drop(rw_set);
+        drop(env_ctx);
+
         env.consume_non_wasm_gas(cost_change);
         Ok(())
     }
@@ -61,9 +62,11 @@ where
         let app_key = env.read_bytes(key_ptr, key_len)?;
         let app_key = AppKey::new(app_key);
 
-        let tx_ctx_lock = env.context.lock().unwrap();
+        let env_ctx = env.context.lock().unwrap();
+        let tx_ctx_lock = env_ctx.rw_set.lock().unwrap();
         let (value, cost_change) = tx_ctx_lock.app_data(env.call_tx.target, app_key);
         drop(tx_ctx_lock);
+        drop(env_ctx);
 
         env.consume_non_wasm_gas(cost_change);
 
@@ -84,9 +87,11 @@ where
         let app_key = env.read_bytes(key_ptr, key_len)?;
         let app_key = AppKey::new(app_key);
 
-        let tx_ctx_lock = env.context.lock().unwrap();
-        let (value, cost_change) = tx_ctx_lock.app_data(NETWORK_ADDRESS, app_key);
-        drop(tx_ctx_lock);
+        let env_ctx = env.context.lock().unwrap();
+        let rw_set = env_ctx.lock().unwrap();
+        let (value, cost_change) = rw_set.app_data(NETWORK_ADDRESS, app_key);
+        drop(rw_set);
+        drop(env_ctx);
 
         env.consume_non_wasm_gas(cost_change);
 
@@ -99,7 +104,12 @@ where
     }
 
     fn balance(env: &Env<S>) -> Result<u64, FuncError> {
-        let (balance, cost_change) = env.context.lock().unwrap().balance(env.call_tx.target);
+        let env_ctx = env.context.lock().unwrap();
+        let rw_set = env_ctx.rw_set.lock().unwrap();
+        let (balance, cost_change) = rw_set.balance(env.call_tx.target);
+        drop(rw_set);
+        drop(env_ctx);
+
         env.consume_non_wasm_gas(cost_change);
         Ok(balance)
     }

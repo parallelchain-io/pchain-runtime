@@ -5,6 +5,9 @@ pub use contract::*;
 
 #[cfg(test)]
 #[allow(dead_code)]
+pub mod gas;
+#[cfg(test)]
+#[allow(dead_code)]
 pub mod test_data;
 pub use test_data::*;
 

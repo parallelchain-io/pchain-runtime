@@ -1,6 +1,8 @@
 use pchain_types::blockchain::{ExitStatus, Transaction};
 
-use crate::common::{compute_contract_address, ArgsBuilder, SimulateWorldState, TestData};
+use crate::common::{
+    compute_contract_address, gas::extract_gas_used, ArgsBuilder, SimulateWorldState, TestData,
+};
 
 mod common;
 
@@ -50,6 +52,7 @@ fn test_success_ctoe() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 2281166);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -71,6 +74,7 @@ fn test_success_ctoe() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 2281166);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -111,6 +115,7 @@ fn test_ctoe_tx_with_insufficient_balance() {
     };
 
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    assert_eq!(extract_gas_used(&result), 220290230);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -132,6 +137,7 @@ fn test_ctoe_tx_with_insufficient_balance() {
         },
         bd.clone(),
     );
+    assert_eq!(extract_gas_used(&result), 2246021);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Failed);
 }

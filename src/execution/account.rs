@@ -72,9 +72,8 @@ where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     let signer = state.tx.signer;
+    let origin_balance = state.ctx.gas_meter.ws_get_balance(signer);
 
-    // Check Balance
-    let (origin_balance, _) = state.balance(signer);
     if origin_balance < amount {
         return Err(phase::abort(
             state,
@@ -82,10 +81,18 @@ where
         ));
     }
 
-    // Transfer Balance
-    state.set_balance(signer, origin_balance - amount); // Always deduct the amount specified in the transaction
-    let (recipient_balance, _) = state.balance(recipient);
-    state.set_balance(recipient, recipient_balance.saturating_add(amount)); // Ceiling to MAX for safety. Overflow should not happen in real situation.
+    // Always deduct the amount specified in the transaction
+    state
+        .ctx
+        .gas_meter
+        .ws_set_balance(signer, origin_balance - amount);
+    let recipient_balance = state.ctx.gas_meter.ws_get_balance(recipient);
+
+    // Ceiling to MAX for safety. Overflow should not happen in real situation.
+    state
+        .ctx
+        .gas_meter
+        .ws_set_balance(recipient, recipient_balance.saturating_add(amount));
 
     phase::finalize_gas_consumption(state)
 }
@@ -105,8 +112,10 @@ where
     if let Some(amount) = amount {
         let signer = state.tx.signer;
 
+        let rw_set = state.rw_set.lock().unwrap();
         // Check Balance
-        let (origin_balance, _) = state.balance(signer);
+        let (origin_balance, _) = rw_set.balance(signer);
+        drop(rw_set);
         if origin_balance < amount {
             return Err(phase::abort(
                 state,
@@ -115,9 +124,10 @@ where
         }
 
         // Transfer Balance
-        state.set_balance(signer, origin_balance - amount); // Always deduct the amount specified in the transaction
-        let (target_balance, _) = state.balance(target);
-        state.set_balance(target, target_balance.saturating_add(amount)); // Ceiling to MAX for safety. Overflow should not happen in real situation.
+        let mut rw_set = state.rw_set.lock().unwrap();
+        rw_set.set_balance(signer, origin_balance - amount); // Always deduct the amount specified in the transaction
+        let (target_balance, _) = rw_set.balance(target);
+        rw_set.set_balance(target, target_balance.saturating_add(amount)); // Ceiling to MAX for safety. Overflow should not happen in real situation.
     }
 
     // Instantiation of contract
@@ -159,8 +169,11 @@ where
     where
         S: WorldStateStorage + Send + Sync + Clone + 'static,
     {
+        let rw_set = state.rw_set.lock().unwrap();
+        let cbi_ver = rw_set.cbi_version(target);
+        drop(rw_set);
         // check CBI version is None
-        match state.cbi_version(target) {
+        match cbi_ver {
             (Some(version), _) if !contract::is_cbi_compatible(version) => {
                 return Err((state, TransitionError::InvalidCBI))
             }
@@ -170,8 +183,10 @@ where
 
         // ONLY load contract after checking CBI version. (To ensure the loaded contract is deployed SUCCESSFULLY,
         // otherwise, it is possible to load the cached contract in previous transaction)
-        let module = match ContractModule::build_contract(target, &state.sc_context, &state.rw_set)
-        {
+        let rw_set = state.rw_set.lock().unwrap();
+        let build_contract = ContractModule::build_contract(target, &state.sc_context, &rw_set);
+        drop(rw_set);
+        let module = match build_contract {
             Ok(module) => module,
             Err(_) => return Err((state, TransitionError::NoContractcode)),
         };
@@ -286,8 +301,12 @@ where
             return Err((state, DeployError::InvalidDeployTransactionData));
         }
 
+        let rw_set = state.rw_set.lock().unwrap();
+
         // Check if CBIVersion is already set for this address
-        let (exist_cbi_version, _) = state.cbi_version(contract_address);
+        let (exist_cbi_version, _) = rw_set.cbi_version(contract_address);
+        drop(rw_set);
+
         if exist_cbi_version.is_some() {
             return Err((state, DeployError::CBIVersionAlreadySet));
         }
@@ -322,8 +341,11 @@ where
         // Write contract code with CBI version.
         let contract_code = self.contract.clone();
         let cbi_version = self.cbi_version;
-        self.set_code(contract_address, contract_code);
-        self.set_cbi_version(contract_address, cbi_version);
+
+        let mut rw_set = self.state.rw_set.lock().unwrap();
+        rw_set.set_code(contract_address, contract_code);
+        rw_set.set_cbi_version(contract_address, cbi_version);
+        drop(rw_set);
 
         if self.tx.gas_limit < self.total_gas_to_be_consumed() {
             return Err((

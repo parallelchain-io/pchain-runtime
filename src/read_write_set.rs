@@ -67,6 +67,7 @@ where
         }
     }
 
+    // TODO remove
     /// get the balance from readwrite set. It key is not found, then get from world state and then cache it.
     pub fn balance(&self, address: PublicAddress) -> (u64, CostChange) {
         match self.get(CacheKey::Balance(address)) {
@@ -75,6 +76,7 @@ where
         }
     }
 
+    // TODO remove
     /// set balance to write set. This operation does not write to world state immediately
     pub fn set_balance(&mut self, address: PublicAddress, balance: u64) -> CostChange {
         self.set(CacheKey::Balance(address), CacheValue::Balance(balance))
@@ -208,6 +210,21 @@ where
             .insert(CacheKey::App(address, app_key), CacheValue::App(value));
     }
 
+    pub fn contains_new(&self, key: &CacheKey) -> bool {
+        self.writes.get(key).filter(|v| v.len() != 0).is_some()
+            || self
+                .reads
+                .borrow()
+                .get(key)
+                .filter(|v| v.is_some())
+                .is_some()
+    }
+
+    pub fn contains_in_storage_new(&self, address: PublicAddress, app_key: &AppKey) -> bool {
+        self.ws.contains().storage_value(&address, app_key)
+    }
+
+    // TODO remove
     /// check if App Key already exists
     pub fn contains_app_data(&self, address: PublicAddress, app_key: AppKey) -> bool {
         let cache_key = CacheKey::App(address, app_key.clone());
@@ -283,6 +300,25 @@ where
             .or_else(|| account_storage_state.get(&app_key))
     }
 
+    pub fn get_new(&self, key: &CacheKey) -> Option<CacheValue> {
+        if let Some(value) = self.writes.get(key) {
+            return Some(value.clone());
+        }
+
+        // 2. Return the value that was read eariler in the transaction
+        if let Some(value) = self.reads.borrow().get(key) {
+            return value.clone();
+        }
+
+        // 3. Get the value from world state
+        let value = key.get_from_world_state(&self.ws);
+
+        // 4. Cache to reads
+        self.reads.borrow_mut().insert(key.clone(), value.clone());
+        value
+    }
+
+    // TODO remove
     /// Lowest level of get operation. It gets latest value from readwrite set. It key is not found, then get from world state and then cache it.
     fn get(&self, key: CacheKey) -> (Option<CacheValue>, CostChange) {
         // 1. Return the value that was written earlier in the transaction ('read-your-write' semantics).
@@ -307,6 +343,10 @@ where
         (value, cost_change)
     }
 
+    pub fn set_new(&mut self, key: CacheKey, value: CacheValue) {
+        self.writes.insert(key, value);
+    }
+
     /// lowest level of set operation. It inserts to Write Set and returns the gas cost for this set operation.
     fn set(&mut self, key: CacheKey, value: CacheValue) -> CostChange {
         let key_len = key.len();
@@ -322,6 +362,7 @@ where
         self.charge_write_cost(key_len, old_val_len, new_val_len)
     }
 
+    // TODO remove
     fn charge_read_cost(&self, key: &CacheKey, value: Option<&CacheValue>) -> CostChange {
         let cost_change = match key {
             CacheKey::ContractCode(_) => {
@@ -388,7 +429,7 @@ impl CacheKey {
     }
 
     /// get_from_world_state gets value from world state according to CacheKey
-    fn get_from_world_state<S>(&self, ws: &WorldState<S>) -> Option<CacheValue>
+    pub fn get_from_world_state<S>(&self, ws: &WorldState<S>) -> Option<CacheValue>
     where
         S: WorldStateStorage + Send + Sync + Clone,
     {

@@ -5,7 +5,10 @@
 
 //! Implementation of executing [Protocol Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#protocol-commands).
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{
@@ -21,7 +24,9 @@ use pchain_world_state::{
 };
 
 use crate::{
-    formulas::{pool_reward, stake_reward}, read_write_set::ReadWriteSet, BlockProposalStats, ValidatorChanges,
+    formulas::{pool_reward, stake_reward},
+    read_write_set::ReadWriteSet,
+    BlockProposalStats, ValidatorChanges,
 };
 
 use super::state::ExecutionState;
@@ -34,7 +39,14 @@ where
     let block_performance = state.bd.validator_performance.clone().unwrap();
 
     let new_validator_set = {
-        let acc_state = state.ws.account_storage_state(NETWORK_ADDRESS).unwrap();
+        let acc_state = state
+            .rw_set
+            .lock()
+            .unwrap()
+            .ws
+            .account_storage_state(NETWORK_ADDRESS)
+            .unwrap();
+
         let mut state = NetworkAccountWorldState::new(&mut state, acc_state);
 
         let mut pools_in_vp = Vec::new();
@@ -241,15 +253,15 @@ where
 /// Write opertions would store to read write set.
 /// Different with [state::ExecutionState] which also implements Trait [NetworkAccountStorage],
 /// it does not charge gas for opertaions.
-pub(crate) struct NetworkAccountWorldState<'a, S>
+pub(crate) struct NetworkAccountWorldState<S>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
     account_storage_state: AccountStorageState<S>,
-    rw_set: &'a mut ReadWriteSet<S>,
+    rw_set: Arc<Mutex<ReadWriteSet<S>>>,
 }
 
-impl<'a, S> NetworkAccountWorldState<'a, S>
+impl<'a, S> NetworkAccountWorldState<S>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -259,24 +271,26 @@ where
     ) -> Self {
         Self {
             account_storage_state,
-            rw_set: &mut state.ctx.rw_set,
+            rw_set: Arc::clone(&state.rw_set),
         }
     }
 }
 
-impl<'a, S> NetworkAccountStorage for NetworkAccountWorldState<'a, S>
+impl<'a, S> NetworkAccountStorage for NetworkAccountWorldState<S>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
     fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.rw_set.app_data_from_account_storage_state(
+        let rw_set = self.rw_set.lock().unwrap();
+        rw_set.app_data_from_account_storage_state(
             &self.account_storage_state,
             AppKey::new(key.to_vec()),
         )
     }
 
     fn contains(&self, key: &[u8]) -> bool {
-        self.rw_set.contains_app_data_from_account_storage_state(
+        let rw_set = self.rw_set.lock().unwrap();
+        rw_set.contains_app_data_from_account_storage_state(
             &self.account_storage_state,
             AppKey::new(key.to_vec()),
         )
@@ -284,13 +298,14 @@ where
 
     fn set(&mut self, key: &[u8], value: Vec<u8>) {
         let address = self.account_storage_state.address();
-        self.rw_set
-            .set_app_data_uncharged(address, AppKey::new(key.to_vec()), value);
+        let mut rw_set = self.rw_set.lock().unwrap();
+
+        rw_set.set_app_data_uncharged(address, AppKey::new(key.to_vec()), value);
     }
 
     fn delete(&mut self, key: &[u8]) {
         let address = self.account_storage_state.address();
-        self.rw_set
-            .set_app_data_uncharged(address, AppKey::new(key.to_vec()), Vec::new());
+        let mut rw_set = self.rw_set.lock().unwrap();
+        rw_set.set_app_data_uncharged(address, AppKey::new(key.to_vec()), Vec::new());
     }
 }
