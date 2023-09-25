@@ -10,11 +10,7 @@
 
 use std::ops::{Deref, DerefMut};
 
-use pchain_world_state::{
-    keys::AppKey,
-    network::{constants::NETWORK_ADDRESS, network_account::NetworkAccountStorage},
-    storage::WorldStateStorage,
-};
+use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{transition::TransitionContext, types::BaseTx, BlockchainParams};
 
@@ -63,32 +59,32 @@ where
 }
 
 // TODO confirm removal
-/// ExecutionState implements NetworkAccountStorage with Read Write operations that:
-/// - Gas is charged in every Get/Contains/Set
-/// - Account Storage State (for app data) is opened in every Set to contract storage
-impl<S> NetworkAccountStorage for ExecutionState<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone,
-{
-    fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        let rw_set = self.rw_set.lock().unwrap();
-        rw_set
-            .app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()))
-            .0
-    }
+// /// ExecutionState implements NetworkAccountStorage with Read Write operations that:
+// /// - Gas is charged in every Get/Contains/Set
+// /// - Account Storage State (for app data) is opened in every Set to contract storage
+// impl<S> NetworkAccountStorage for ExecutionState<S>
+// where
+//     S: WorldStateStorage + Send + Sync + Clone,
+// {
+//     fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
+//         let rw_set = self.rw_set.lock().unwrap();
+//         rw_set
+//             .app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()))
+//             .0
+//     }
 
-    fn contains(&self, key: &[u8]) -> bool {
-        let rw_set = self.rw_set.lock().unwrap();
-        rw_set.contains_app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()))
-    }
+//     fn contains(&self, key: &[u8]) -> bool {
+//         let rw_set = self.rw_set.lock().unwrap();
+//         rw_set.contains_app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()))
+//     }
 
-    fn set(&mut self, key: &[u8], value: Vec<u8>) {
-        let mut rw_set = self.rw_set.lock().unwrap();
-        rw_set.set_app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()), value);
-    }
+//     fn set(&mut self, key: &[u8], value: Vec<u8>) {
+//         let mut rw_set = self.rw_set.lock().unwrap();
+//         rw_set.set_app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()), value);
+//     }
 
-    fn delete(&mut self, key: &[u8]) {
-        let mut rw_set = self.rw_set.lock().unwrap();
-        rw_set.set_app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()), Vec::new());
-    }
-}
+//     fn delete(&mut self, key: &[u8]) {
+//         let mut rw_set = self.rw_set.lock().unwrap();
+//         rw_set.set_app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()), Vec::new());
+//     }
+// }

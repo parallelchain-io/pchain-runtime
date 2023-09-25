@@ -37,52 +37,47 @@ pub(crate) fn call_from_contract<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    let ctx_locked = txn_in_env.lock().unwrap();
-    let mut rw_set = ctx_locked.rw_set.lock().unwrap();
-
+    let mut ctx_locked = txn_in_env.lock().unwrap();
     let mut internal_call_result = InternalCallResult::default();
 
     // Transfer amount to address
     if let Some(value) = tx_from_contract.amount {
-        let (from_balance, cost_change) = rw_set.balance(tx_from_contract.signer);
-        internal_call_result.non_wasmer_gas += cost_change;
+        let from_balance = ctx_locked.gas_meter.ws_get_balance(tx_from_contract.signer);
         if from_balance < value {
             internal_call_result.error = Some(contract::FuncError::InsufficientBalance);
             return internal_call_result;
         }
-
         let from_address_new_balance = from_balance - value;
-        let cost_change = rw_set.set_balance(tx_from_contract.signer, from_address_new_balance);
-        internal_call_result.non_wasmer_gas += cost_change;
+        ctx_locked
+            .gas_meter
+            .ws_set_balance(tx_from_contract.signer, from_address_new_balance);
 
         // Safety: the balance of deployed contracts are always Some.
-        let (to_address_prev_balance, cost_change) = rw_set.balance(tx_from_contract.target);
-        internal_call_result.non_wasmer_gas += cost_change;
+        let to_address_prev_balance = ctx_locked.gas_meter.ws_get_balance(tx_from_contract.target);
         let to_address_new_balance = to_address_prev_balance.saturating_add(value);
-        let cost_change = rw_set.set_balance(tx_from_contract.target, to_address_new_balance);
-        internal_call_result.non_wasmer_gas += cost_change;
+        ctx_locked
+            .gas_meter
+            .ws_set_balance(tx_from_contract.target, to_address_new_balance);
     }
 
     // Instantiate contract.
-    let contract_module = match ContractModule::build_contract(
-        tx_from_contract.target,
-        &ctx_locked.sc_context,
-        &rw_set,
-    ) {
+    let contract_module = match ContractModule::build_contract(tx_from_contract.target, &ctx_locked)
+    {
         Ok(module) => module,
         Err(_) => {
             internal_call_result.error = Some(contract::FuncError::ContractNotFound);
             return internal_call_result;
         }
     };
-    internal_call_result.non_wasmer_gas += contract_module.gas_cost;
+    drop(ctx_locked);
+
+    // TODO check any impact of this
+    // internal_call_result.non_wasmer_gas += contract_module.gas_cost;
 
     // limit the gas for child contract execution
     tx_from_contract.gas_limit = tx_from_contract
         .gas_limit
         .saturating_sub(internal_call_result.non_wasmer_gas.values().0);
-    drop(rw_set);
-    drop(ctx_locked);
 
     let instance = match contract_module.instantiate(
         txn_in_env,
@@ -118,14 +113,11 @@ pub(crate) fn transfer_from_contract<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    let ctx_locked = txn_in_env.lock().unwrap();
-    let mut rw_set = ctx_locked.rw_set.lock().unwrap();
+    let mut ctx_locked = txn_in_env.lock().unwrap();
     let mut internal_call_result = InternalCallResult::default();
 
     // 1. Verify that the caller's balance is >= amount
-    let (from_balance, cost_change) = rw_set.balance(signer);
-    internal_call_result.non_wasmer_gas += cost_change;
-
+    let from_balance = ctx_locked.gas_meter.ws_get_balance(signer);
     if from_balance < amount {
         internal_call_result.error = Some(contract::FuncError::InsufficientBalance);
         return internal_call_result;
@@ -133,17 +125,16 @@ where
 
     // 2. Debit amount from from_address.
     let from_address_new_balance = from_balance - amount;
-    let cost_change = rw_set.set_balance(signer, from_address_new_balance);
-    internal_call_result.non_wasmer_gas += cost_change;
+    ctx_locked
+        .gas_meter
+        .ws_set_balance(signer, from_address_new_balance);
 
     // 3. Credit amount to recipient.
-    let (to_address_prev_balance, cost_change) = rw_set.balance(recipient);
-    internal_call_result.non_wasmer_gas += cost_change;
+    let to_address_prev_balance = ctx_locked.gas_meter.ws_get_balance(recipient);
     let to_address_new_balance = to_address_prev_balance.saturating_add(amount);
-    let cost_change = rw_set.set_balance(recipient, to_address_new_balance);
-    drop(rw_set);
-
-    internal_call_result.non_wasmer_gas += cost_change;
+    ctx_locked
+        .gas_meter
+        .ws_set_balance(recipient, to_address_new_balance);
 
     internal_call_result
 }

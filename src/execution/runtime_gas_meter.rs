@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use pchain_types::cryptography::PublicAddress;
+use pchain_types::{blockchain::Log, cryptography::PublicAddress};
 use pchain_world_state::{
     keys::AppKey,
     network::{constants::NETWORK_ADDRESS, network_account::NetworkAccountStorage},
@@ -17,7 +17,7 @@ use sha2::{Digest as sha256_digest, Sha256};
 use tiny_keccak::{Hasher as _, Keccak};
 
 use crate::{
-    contract::FuncError,
+    contract::{self, FuncError, SmartContractContext},
     cost::CostChange,
     gas,
     read_write_set::{CacheKey, CacheValue, ReadWriteSet},
@@ -137,17 +137,40 @@ where
     }
 
     //
+    // Facade methods for Transaction Storage methods that cost gas
+    //
+
+    // TODO decide whether to return error
+    pub fn store_txn_post_execution_log(&self, log_store: &mut Vec<Log>, log_to_store: Log) {
+        self.charge(CostChange::deduct(gas::blockchain_log_cost(
+            log_to_store.topic.len(),
+            log_to_store.value.len(),
+        )));
+        log_store.push(log_to_store);
+    }
+
+    //
     // Facade methods for World State methods that cost gas
     //
 
-    /// Get the balance from read-write set. It balance is not found, gets from WS and caches it.
-    pub fn ws_get_balance(&self, address: PublicAddress) -> u64 {
-        match self.ws_get(CacheKey::Balance(address)) {
-            Some(CacheValue::Balance(value)) => value,
-            _ => panic!(),
+    //
+    // CONTAINS methods
+    //
+    /// Check if App key has non-empty data
+    pub fn ws_contains_app_data(&self, address: PublicAddress, app_key: AppKey) -> bool {
+        let cache_key = CacheKey::App(address, app_key.clone());
+
+        // check from RW set first
+        self.ws_contains(&cache_key) || {
+            // if not found, check from storage
+            let rw_set = self.rw_set.lock().unwrap();
+            rw_set.contains_in_storage_uncharged(address, &app_key)
         }
     }
 
+    //
+    // GET methods
+    //
     /// Gets contract storage (TODO, app_data?) from the read-write set.
     pub fn ws_get_app_data(&self, address: PublicAddress, key: AppKey) -> Option<Vec<u8>> {
         match self.ws_get(CacheKey::App(address, key)) {
@@ -163,19 +186,65 @@ where
         }
     }
 
-    /// Check if App key has non-empty data
-    pub fn ws_contains_app_data(&self, address: PublicAddress, app_key: AppKey) -> bool {
-        let cache_key = CacheKey::App(address, app_key.clone());
-
-        // check from RW set first
-        self.ws_contains(&cache_key) || {
-            // TODO this should be consistently wrapped?
-            // if not found, check from storage
-            let rw_set = self.rw_set.lock().unwrap();
-            rw_set.contains_in_storage_new(address, &app_key)
+    /// Get the balance from read-write set. It balance is not found, gets from WS and caches it.
+    pub fn ws_get_balance(&self, address: PublicAddress) -> u64 {
+        match self.ws_get(CacheKey::Balance(address)) {
+            Some(CacheValue::Balance(value)) => value,
+            _ => panic!(),
         }
     }
 
+    pub fn ws_get_cached_contract(
+        &self,
+        address: PublicAddress,
+        sc_context: &SmartContractContext,
+    ) -> Option<(contract::Module, wasmer::Store)> {
+        // charge contract cache and charge
+        let wasmer_store = sc_context.instantiate_store();
+        let cached_module = match &sc_context.cache {
+            Some(sc_cache) => contract::Module::from_cache(address, sc_cache, &wasmer_store),
+            None => None,
+        };
+        if let Some(module) = cached_module {
+            let contract_get_cost = CostChange::deduct(gas::get_code_cost(module.bytes_length()));
+            self.charge(contract_get_cost);
+            return Some((module, wasmer_store));
+        }
+
+        // else check ws and charge
+        let contract_code = match self.ws_get(CacheKey::ContractCode(address)) {
+            Some(CacheValue::ContractCode(value)) => value,
+            None => return None,
+            _ => panic!("Retrieved data not of ContractCode variant"),
+        };
+        let module = match contract::Module::from_wasm_bytecode_unchecked(
+            contract::CBI_VERSION,
+            &contract_code,
+            &wasmer_store,
+        ) {
+            Ok(module) => {
+                // cache to sc_cache
+                if let Some(sc_cache) = &sc_context.cache {
+                    module.cache_to(address, &mut sc_cache.clone());
+                }
+                module
+            }
+            Err(_) => return None,
+        };
+        Some((module, wasmer_store))
+    }
+
+    pub fn ws_get_cbi_version(&self, address: PublicAddress) -> Option<u32> {
+        match self.ws_get(CacheKey::CBIVersion(address)) {
+            Some(CacheValue::CBIVersion(value)) => Some(value),
+            None => None,
+            _ => panic!(),
+        }
+    }
+
+    //
+    // SET methods
+    //
     pub fn ws_set_app_data(&mut self, address: PublicAddress, app_key: AppKey, value: Vec<u8>) {
         self.ws_set(CacheKey::App(address, app_key), CacheValue::App(value))
     }
@@ -183,6 +252,22 @@ where
     /// Sets balance in the write set. It does not write to WS immediately.
     pub fn ws_set_balance(&mut self, address: PublicAddress, value: u64) {
         self.ws_set(CacheKey::Balance(address), CacheValue::Balance(value))
+    }
+
+    /// Sets CBI version in the write set. It does not write to WS immediately.
+    pub fn ws_set_cbi_version(&mut self, address: PublicAddress, cbi_version: u32) {
+        self.ws_set(
+            CacheKey::CBIVersion(address),
+            CacheValue::CBIVersion(cbi_version),
+        )
+    }
+
+    /// Sets contract bytecode in the write set. It does not write to WS immediately.
+    pub fn ws_set_code(&mut self, address: PublicAddress, code: Vec<u8>) {
+        self.ws_set(
+            CacheKey::ContractCode(address),
+            CacheValue::ContractCode(code),
+        )
     }
 
     //
@@ -194,7 +279,7 @@ where
 
     fn ws_get(&self, key: CacheKey) -> Option<CacheValue> {
         let rw_set = self.rw_set.lock().unwrap();
-        let value = rw_set.get_new(&key);
+        let value = rw_set.get_uncharged(&key);
         drop(rw_set);
 
         let get_cost = match key {
@@ -226,13 +311,13 @@ where
         self.charge(set_cost);
 
         let mut rw_set = self.rw_set.lock().unwrap();
-        rw_set.set_new(key, value);
+        rw_set.set_uncharged(key, value);
         drop(rw_set);
     }
 
     fn ws_contains(&self, key: &CacheKey) -> bool {
         self.charge(CostChange::deduct(gas::contains_cost(key.len())));
         let rw_set = self.rw_set.lock().unwrap();
-        rw_set.contains_new(key)
+        rw_set.contains_uncharged(key)
     }
 }

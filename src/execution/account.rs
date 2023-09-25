@@ -112,10 +112,8 @@ where
     if let Some(amount) = amount {
         let signer = state.tx.signer;
 
-        let rw_set = state.rw_set.lock().unwrap();
-        // Check Balance
-        let (origin_balance, _) = rw_set.balance(signer);
-        drop(rw_set);
+        // check balance
+        let origin_balance = state.ctx.gas_meter.ws_get_balance(signer);
         if origin_balance < amount {
             return Err(phase::abort(
                 state,
@@ -123,11 +121,18 @@ where
             ));
         }
 
-        // Transfer Balance
-        let mut rw_set = state.rw_set.lock().unwrap();
-        rw_set.set_balance(signer, origin_balance - amount); // Always deduct the amount specified in the transaction
-        let (target_balance, _) = rw_set.balance(target);
-        rw_set.set_balance(target, target_balance.saturating_add(amount)); // Ceiling to MAX for safety. Overflow should not happen in real situation.
+        // Always deduct the amount specified in the transaction
+        state
+            .ctx
+            .gas_meter
+            .ws_set_balance(signer, origin_balance - amount);
+        let target_balance = state.ctx.gas_meter.ws_get_balance(target);
+
+        // Ceiling to MAX for safety. Overflow should not happen in real situation.
+        state
+            .ctx
+            .gas_meter
+            .ws_set_balance(target, target_balance.saturating_add(amount));
     }
 
     // Instantiation of contract
@@ -169,23 +174,19 @@ where
     where
         S: WorldStateStorage + Send + Sync + Clone + 'static,
     {
-        let rw_set = state.rw_set.lock().unwrap();
-        let cbi_ver = rw_set.cbi_version(target);
-        drop(rw_set);
         // check CBI version is None
+        let cbi_ver = state.ctx.gas_meter.ws_get_cbi_version(target);
         match cbi_ver {
-            (Some(version), _) if !contract::is_cbi_compatible(version) => {
+            Some(version) if !contract::is_cbi_compatible(version) => {
                 return Err((state, TransitionError::InvalidCBI))
             }
-            (None, _) => return Err((state, TransitionError::InvalidCBI)),
+            None => return Err((state, TransitionError::InvalidCBI)),
             _ => {}
         }
 
         // ONLY load contract after checking CBI version. (To ensure the loaded contract is deployed SUCCESSFULLY,
         // otherwise, it is possible to load the cached contract in previous transaction)
-        let rw_set = state.rw_set.lock().unwrap();
-        let build_contract = ContractModule::build_contract(target, &state.sc_context, &rw_set);
-        drop(rw_set);
+        let build_contract = ContractModule::build_contract(target, &state.ctx);
         let module = match build_contract {
             Ok(module) => module,
             Err(_) => return Err((state, TransitionError::NoContractcode)),
@@ -301,12 +302,7 @@ where
             return Err((state, DeployError::InvalidDeployTransactionData));
         }
 
-        let rw_set = state.rw_set.lock().unwrap();
-
-        // Check if CBIVersion is already set for this address
-        let (exist_cbi_version, _) = rw_set.cbi_version(contract_address);
-        drop(rw_set);
-
+        let exist_cbi_version = state.ctx.gas_meter.ws_get_cbi_version(contract_address);
         if exist_cbi_version.is_some() {
             return Err((state, DeployError::CBIVersionAlreadySet));
         }
@@ -342,10 +338,10 @@ where
         let contract_code = self.contract.clone();
         let cbi_version = self.cbi_version;
 
-        let mut rw_set = self.state.rw_set.lock().unwrap();
-        rw_set.set_code(contract_address, contract_code);
-        rw_set.set_cbi_version(contract_address, cbi_version);
-        drop(rw_set);
+        let ctx = &mut self.state.ctx;
+        ctx.gas_meter.ws_set_code(contract_address, contract_code);
+        ctx.gas_meter
+            .ws_set_cbi_version(contract_address, cbi_version);
 
         if self.tx.gas_limit < self.total_gas_to_be_consumed() {
             return Err((

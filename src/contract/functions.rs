@@ -5,7 +5,6 @@
 
 //! Implementation for host functions used for contract methods according to [crate::contract::cbi].
 
-use ed25519_dalek::Verifier;
 use pchain_types::{
     blockchain::{Command, Log},
     runtime::CallInput,
@@ -14,9 +13,6 @@ use pchain_types::{
 use pchain_world_state::{
     keys::AppKey, network::constants::NETWORK_ADDRESS, storage::WorldStateStorage,
 };
-use ripemd::Ripemd160;
-use sha2::{Digest as sha256_digest, Sha256};
-use tiny_keccak::{Hasher as _, Keccak};
 
 use crate::{
     contract::{ContractBinaryInterface, FuncError},
@@ -164,6 +160,8 @@ where
 
         // check exhaustion before writing receipt data to ensure
         // the data is not written to receipt after gas exhaustion
+
+        // TODO put back this behaviour
         env.consume_non_wasm_gas(cost_change);
         if env.get_wasmer_remaining_points() == 0 {
             return Err(FuncError::GasExhaustionError);

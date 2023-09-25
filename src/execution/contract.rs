@@ -14,10 +14,8 @@ use wasmer::Store;
 use crate::{
     contract::{
         self, ContractBinaryFunctions, ContractValidateError, MethodCallError, ModuleBuildError,
-        SmartContractContext,
     },
     cost::CostChange,
-    read_write_set::ReadWriteSet,
     transition::TransitionContext,
     types::CallTx,
     wasmer::{wasmer_env, wasmer_store},
@@ -54,24 +52,26 @@ impl ContractModule {
 
     pub(crate) fn build_contract<S>(
         contract_address: PublicAddress,
-        sc_ctx: &SmartContractContext,
-        rw_set: &ReadWriteSet<S>,
+        transition_ctx: &TransitionContext<S>,
     ) -> Result<Self, ()>
     where
         S: WorldStateStorage + Send + Sync + Clone + 'static,
     {
-        let (module, store, gas_cost) = {
-            let (result, gas_cost) = rw_set.code_from_sc_cache(contract_address, sc_ctx);
-            match result {
-                Some((module, store)) => (module, store, gas_cost),
+        let (module, store) = {
+            match transition_ctx
+                .gas_meter
+                .ws_get_cached_contract(contract_address, &transition_ctx.sc_context)
+            {
+                Some((module, store)) => (module, store),
                 None => return Err(()),
             }
         };
 
+        // TODO eventually remove cost change
         Ok(Self {
             store,
             module,
-            gas_cost,
+            gas_cost: CostChange::default(),
         })
     }
 
@@ -143,6 +143,7 @@ where
         let call_result = unsafe { self.instance.call_method() };
 
         let non_wasmer_gas_amount = self.environment.get_non_wasm_gas_amount();
+        println!("My non-wasmer gas amount is {}", non_wasmer_gas_amount);
 
         // drop the variable of wasmer remaining gas
         self.environment.drop_wasmer_remaining_points();
@@ -158,6 +159,8 @@ where
             .gas_limit
             .saturating_sub(remaining_gas)
             .saturating_sub(non_wasmer_gas_amount); // add back the non_wasmer gas because it is already accounted in read write set.
+
+        println!("My total gas amount is {}", total_gas);
 
         // Get the updated TransitionContext
         let ctx = self.environment.context.lock().unwrap().clone();

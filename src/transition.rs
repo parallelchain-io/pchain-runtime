@@ -283,28 +283,17 @@ where
     /// - read cost to storage
     /// - write cost to receipt (blockchain data)
     pub fn total_gas_to_be_consumed(&self) -> u64 {
-        let rw_set = self.rw_set.lock().unwrap();
-
-        // println!("/transition.rs:288 {:?}", self.gas_meter.gas_used);
-
         // Gas incurred to be charged
-        let chargeable_gas = (rw_set.write_gas
-            + self.receipt_write_gas
-            + *rw_set.read_gas.borrow()
-            + *self.gas_meter.command_gas_used.borrow()) // TODO remove all other gas meter instances
-        .values()
-        .0;
-        drop(rw_set);
+        let chargeable_gas = (self.receipt_write_gas + *self.gas_meter.command_gas_used.borrow()) // TODO remove all other gas meter instances
+            .values()
+            .0;
         self.gas_consumed().saturating_add(chargeable_gas)
     }
 
     /// Discard the changes to world state
     pub fn revert_changes(&mut self) {
-        // TODO should this go through the GasMeter facade, it's technically not a chargeable operation
         let mut rw_set = self.rw_set.lock().unwrap();
-        rw_set.reads.borrow_mut().clear();
-        rw_set.writes.clear();
-        drop(rw_set);
+        rw_set.revert();
     }
 
     /// Output the CommandReceipt and clear the intermediate context for next command execution.
@@ -321,11 +310,7 @@ where
                 .map_or(Vec::new(), std::convert::identity),
             logs: self.logs.clone(),
         };
-        let mut rw_set = self.rw_set.lock().unwrap();
         // 2. Clear data for next command execution
-        *rw_set.read_gas.borrow_mut() = CostChange::default();
-        rw_set.write_gas = CostChange::default();
-        drop(rw_set);
         self.receipt_write_gas = CostChange::default();
         self.logs.clear();
         self.return_value = None;

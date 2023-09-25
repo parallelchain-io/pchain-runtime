@@ -1001,9 +1001,9 @@ mod test {
     fn test_stake_deposit_delegated_stakes_nvp_change_key() {
         let mut state = create_state(None);
         create_full_pools_in_nvp(&mut state, false, false);
-        let pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
+        let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
         assert_eq!(pool.power().unwrap(), 100_000);
-        let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_A, ACCOUNT_B);
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_B);
         deposit.set_balance(6_300_000);
         deposit.set_auto_stake_rewards(false);
 
@@ -1032,21 +1032,27 @@ mod test {
         assert_eq!(extract_gas_used(&ret), 1308410);
 
         let mut state = create_state(Some(ret.new_state));
-        let pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
+        let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
         assert_eq!(pool.power().unwrap(), 6_400_000);
         assert_eq!(
-            NetworkAccount::nvp(&mut state).length(),
+            NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
             TEST_MAX_VALIDATOR_SET_SIZE as u32
         );
         assert_eq!(
-            NetworkAccount::nvp(&mut state).get(0).unwrap().operator,
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .operator,
             [
                 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                 1, 1, 1, 1
             ]
         );
         assert_eq!(
-            NetworkAccount::nvp(&mut state).get(0).unwrap().power,
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .power,
             200_000
         );
     }
@@ -1058,12 +1064,12 @@ mod test {
     fn test_stake_deposit_delegated_stakes_nvp_insert() {
         let mut state = create_state(None);
         create_full_pools_in_nvp(&mut state, false, false);
-        let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_B);
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_B);
         pool.set_operator(ACCOUNT_B);
         pool.set_commission_rate(1);
         pool.set_power(0);
         pool.set_operator_stake(None);
-        let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_B, ACCOUNT_C);
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_B, ACCOUNT_C);
         deposit.set_balance(6_500_000);
         deposit.set_auto_stake_rewards(false);
 
@@ -1093,21 +1099,29 @@ mod test {
         let mut state = create_state(Some(ret.new_state));
 
         assert_eq!(
-            NetworkAccount::nvp(&mut state).length(),
+            NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
             TEST_MAX_VALIDATOR_SET_SIZE as u32
         );
         assert_eq!(
-            NetworkAccount::nvp(&mut state).get(0).unwrap().operator,
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .operator,
             [
                 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                 1, 1, 1, 1
             ]
         );
         assert_eq!(
-            NetworkAccount::nvp(&mut state).get(0).unwrap().power,
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .power,
             200_000
         );
-        let pool_in_nvp = NetworkAccount::nvp(&mut state).get_by(&ACCOUNT_B).unwrap();
+        let pool_in_nvp = NetworkAccount::nvp(&mut state.ctx.gas_meter)
+            .get_by(&ACCOUNT_B)
+            .unwrap();
         assert_eq!(
             (pool_in_nvp.operator, pool_in_nvp.power),
             (ACCOUNT_B, 6_500_000)
@@ -1123,7 +1137,7 @@ mod test {
     fn test_stake_deposit_delegated_stakes_insert() {
         let mut state = create_state(None);
         create_full_stakes_in_pool(&mut state, ACCOUNT_A);
-        let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_A, ACCOUNT_C);
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_C);
         deposit.set_balance(250_000);
         deposit.set_auto_stake_rewards(false);
 
@@ -1132,7 +1146,7 @@ mod test {
         drop(rw_set);
 
         let mut state = create_state(Some(ws));
-        let prev_pool_power = NetworkAccount::pools(&mut state, ACCOUNT_A)
+        let prev_pool_power = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
             .power()
             .unwrap();
         let commands = vec![Command::StakeDeposit(StakeDepositInput {
@@ -1155,7 +1169,7 @@ mod test {
         assert_eq!(extract_gas_used(&ret), 2811240);
 
         let mut state = create_state(Some(ret.new_state));
-        let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
         let cur_pool_power = pool.power().unwrap();
         assert_eq!(cur_pool_power, prev_pool_power + 50_000);
         let delegated_stakes = pool.delegated_stakes();

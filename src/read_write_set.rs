@@ -27,13 +27,8 @@ use pchain_world_state::{
     states::{AccountStorageState, WorldState},
     storage::WorldStateStorage,
 };
-use wasmer::Store;
 
-use crate::{
-    contract::{self, Module, SmartContractContext},
-    cost::CostChange,
-    gas,
-};
+use crate::gas;
 
 /// ReadWriteSet defines data cache for Read-Write opertaions during state transition.
 #[derive(Clone)]
@@ -47,10 +42,6 @@ where
     pub writes: HashMap<CacheKey, CacheValue>,
     /// reads stores key-value pairs from Read operations. It is de facto the original data read from world state.
     pub reads: RefCell<HashMap<CacheKey, Option<CacheValue>>>,
-    /// write_gas is protocol defined cost that to-be-charged write operation has been executed
-    pub write_gas: CostChange,
-    /// read_gas is protocol defined cost that to-be-charged read operation has been executed
-    pub read_gas: RefCell<CostChange>,
 }
 
 impl<S> ReadWriteSet<S>
@@ -62,142 +53,25 @@ where
             ws,
             writes: HashMap::new(),
             reads: RefCell::new(HashMap::new()),
-            write_gas: CostChange::default(),
-            read_gas: RefCell::new(CostChange::default()),
         }
     }
 
-    // TODO remove
-    /// get the balance from readwrite set. It key is not found, then get from world state and then cache it.
-    pub fn balance(&self, address: PublicAddress) -> (u64, CostChange) {
-        match self.get(CacheKey::Balance(address)) {
-            (Some(CacheValue::Balance(value)), cost) => (value, cost),
-            _ => panic!(),
-        }
-    }
-
-    // TODO remove
-    /// set balance to write set. This operation does not write to world state immediately
-    pub fn set_balance(&mut self, address: PublicAddress, balance: u64) -> CostChange {
-        self.set(CacheKey::Balance(address), CacheValue::Balance(balance))
-    }
-
-    /// remove cached writes and return the value
+    /// remove cached writes and return the value,
+    /// gas free operation, only used for accouting during charge phase
     pub fn purge_balance(&mut self, address: PublicAddress) -> u64 {
-        let (balance, _) = self.balance(address);
+        let balance = match self.get_uncharged(&CacheKey::Balance(address)) {
+            Some(CacheValue::Balance(value)) => value,
+            _ => panic!(),
+        };
         let key = CacheKey::Balance(address);
         self.writes.remove(&key);
         balance
     }
 
-    /// get the contract code from readwrite set. It key is not found, then get from world state and then cache it.
-    pub fn code(&self, address: PublicAddress) -> (Option<Vec<u8>>, CostChange) {
-        match self.get(CacheKey::ContractCode(address)) {
-            (Some(CacheValue::ContractCode(value)), cost) => (Some(value), cost),
-            (None, cost) => (None, cost),
-            _ => panic!(),
-        }
-    }
-
-    /// get the contract code from smart contract cache. It it is not found, then get from read write set, i.e. code()
-    pub fn code_from_sc_cache(
-        &self,
-        address: PublicAddress,
-        sc_context: &SmartContractContext,
-    ) -> (Option<(Module, Store)>, CostChange) {
-        let wasmer_store = sc_context.instantiate_store();
-        let cached_module = match &sc_context.cache {
-            Some(sc_cache) => contract::Module::from_cache(address, sc_cache, &wasmer_store),
-            None => None,
-        };
-
-        // found from Smart Contract Cache
-        if let Some(module) = cached_module {
-            let cost_change = CostChange::deduct(gas::get_code_cost(module.bytes_length()));
-            *self.read_gas.borrow_mut() += cost_change;
-            return (Some((module, wasmer_store)), cost_change);
-        }
-
-        // found from read write set or world state
-        let (bytes, cost_change) = self.code(address);
-        let contract_code = match bytes {
-            Some(bs) => bs,
-            None => return (None, cost_change),
-        };
-
-        // build module
-        let module = match contract::Module::from_wasm_bytecode_unchecked(
-            contract::CBI_VERSION,
-            &contract_code,
-            &wasmer_store,
-        ) {
-            Ok(module) => {
-                // cache to sc_cache
-                if let Some(sc_cache) = &sc_context.cache {
-                    module.cache_to(address, &mut sc_cache.clone());
-                }
-                module
-            }
-            Err(_) => return (None, cost_change),
-        };
-
-        (Some((module, wasmer_store)), cost_change)
-    }
-
-    /// set contract bytecode. This operation does not write to world state immediately
-    pub fn set_code(&mut self, address: PublicAddress, code: Vec<u8>) -> CostChange {
-        self.set(
-            CacheKey::ContractCode(address),
-            CacheValue::ContractCode(code),
-        )
-    }
-
-    /// get the CBI version of the contract
-    pub fn cbi_version(&self, address: PublicAddress) -> (Option<u32>, CostChange) {
-        match self.get(CacheKey::CBIVersion(address)) {
-            (Some(CacheValue::CBIVersion(value)), cost) => (Some(value), cost),
-            (None, cost) => (None, cost),
-            _ => panic!(),
-        }
-    }
-
-    /// set cbi version. This operation does not write to world state immediately
-    pub fn set_cbi_version(&mut self, address: PublicAddress, cbi_version: u32) -> CostChange {
-        self.set(
-            CacheKey::CBIVersion(address),
-            CacheValue::CBIVersion(cbi_version),
-        )
-    }
-
-    // TODO remove
-    /// get the contract storage from readwrite set. It key is not found, then get from world state and then cache it.
-    pub fn app_data(
-        &self,
-        address: PublicAddress,
-        app_key: AppKey,
-    ) -> (Option<Vec<u8>>, CostChange) {
-        match self.get(CacheKey::App(address, app_key)) {
-            (Some(CacheValue::App(value)), cost) => {
-                if value.is_empty() {
-                    (None, cost)
-                } else {
-                    (Some(value), cost)
-                }
-            }
-            (None, cost) => (None, cost),
-            _ => panic!(),
-        }
-    }
-
-    // TODO remove
-    /// set value to contract storage. This operation does not write to world state immediately
-    pub fn set_app_data(
-        &mut self,
-        address: PublicAddress,
-        app_key: AppKey,
-        value: Vec<u8>,
-    ) -> CostChange {
-        self.set(CacheKey::App(address, app_key), CacheValue::App(value))
+    /// reverts changes to read-write set
+    pub fn revert(&mut self) {
+        self.reads.borrow_mut().clear();
+        self.writes.clear();
     }
 
     /// set value to contract storage. This operation does not write to world state immediately.
@@ -208,44 +82,7 @@ where
         app_key: AppKey,
         value: Vec<u8>,
     ) {
-        self.writes
-            .insert(CacheKey::App(address, app_key), CacheValue::App(value));
-    }
-
-    pub fn contains_new(&self, key: &CacheKey) -> bool {
-        self.writes.get(key).filter(|v| v.len() != 0).is_some()
-            || self
-                .reads
-                .borrow()
-                .get(key)
-                .filter(|v| v.is_some())
-                .is_some()
-    }
-
-    pub fn contains_in_storage_new(&self, address: PublicAddress, app_key: &AppKey) -> bool {
-        self.ws.contains().storage_value(&address, app_key)
-    }
-
-    // TODO remove
-    /// check if App Key already exists
-    pub fn contains_app_data(&self, address: PublicAddress, app_key: AppKey) -> bool {
-        let cache_key = CacheKey::App(address, app_key.clone());
-
-        // charge gas for contains and charge gas
-        *self.read_gas.borrow_mut() += CostChange::deduct(gas::contains_cost(cache_key.len()));
-
-        // check from the value that was previously written/read
-        self.writes
-            .get(&cache_key)
-            .filter(|v| v.len() != 0)
-            .is_some()
-            || self
-                .reads
-                .borrow()
-                .get(&cache_key)
-                .filter(|v| v.is_some())
-                .is_some()
-            || self.ws.contains().storage_value(&address, &app_key)
+        self.set_uncharged(CacheKey::App(address, app_key), CacheValue::App(value));
     }
 
     /// check if App Key already exists. It is gas-free operation.
@@ -302,7 +139,29 @@ where
             .or_else(|| account_storage_state.get(&app_key))
     }
 
-    pub fn get_new(&self, key: &CacheKey) -> Option<CacheValue> {
+    // Low Level Operations
+    /// Check if readwrite set contains this key.
+    /// Not charged here as all charging is performed by RuntimeGasMeter.
+    pub fn contains_uncharged(&self, key: &CacheKey) -> bool {
+        self.writes.get(key).filter(|v| v.len() != 0).is_some()
+            || self
+                .reads
+                .borrow()
+                .get(key)
+                .filter(|v| v.is_some())
+                .is_some()
+    }
+
+    /// Check if storage contains this key.
+    /// Not charged here as all charging is performed by RuntimeGasMeter.
+    pub fn contains_in_storage_uncharged(&self, address: PublicAddress, app_key: &AppKey) -> bool {
+        self.ws.contains().storage_value(&address, app_key)
+    }
+
+    /// Get latest value from readwrite set. If not found, get from world state and then cache it.
+    /// Not charged here as all charging is performed by RuntimeGasMeter.
+    pub fn get_uncharged(&self, key: &CacheKey) -> Option<CacheValue> {
+        // 1. Return the value that was written earlier in the transaction ('read-your-write' semantics)
         if let Some(value) = self.writes.get(key) {
             return Some(value.clone());
         }
@@ -320,78 +179,10 @@ where
         value
     }
 
-    // TODO remove
-    /// Lowest level of get operation. It gets latest value from readwrite set. It key is not found, then get from world state and then cache it.
-    fn get(&self, key: CacheKey) -> (Option<CacheValue>, CostChange) {
-        // 1. Return the value that was written earlier in the transaction ('read-your-write' semantics).
-        if let Some(value) = self.writes.get(&key) {
-            let cost_change = self.charge_read_cost(&key, Some(value));
-            return (Some(value.clone()), cost_change);
-        }
-
-        // 2. Return the value that was read eariler in the transaction
-        if let Some(value) = self.reads.borrow().get(&key) {
-            let cost_change = self.charge_read_cost(&key, value.as_ref());
-            return (value.clone(), cost_change);
-        }
-
-        // 3. Get the value from world state
-        let value = key.get_from_world_state(&self.ws);
-        let cost_change = self.charge_read_cost(&key, value.as_ref());
-
-        // 4. Cache to reads
-        self.reads.borrow_mut().insert(key, value.clone());
-
-        (value, cost_change)
-    }
-
-    pub fn set_new(&mut self, key: CacheKey, value: CacheValue) {
+    /// Insert to write set.
+    /// Not charged here as all charging is performed by RuntimeGasMeter.
+    pub fn set_uncharged(&mut self, key: CacheKey, value: CacheValue) {
         self.writes.insert(key, value);
-    }
-
-    /// lowest level of set operation. It inserts to Write Set and returns the gas cost for this set operation.
-    fn set(&mut self, key: CacheKey, value: CacheValue) -> CostChange {
-        let key_len = key.len();
-        let new_val_len = value.len();
-
-        // 1. Get the length of original value and Charge for read cost
-        let old_val_len = self.get(key.clone()).0.map_or(0, |v| v.len());
-
-        // 2. Insert to write set
-        self.writes.insert(key, value);
-
-        // 3. Calculate gas cost
-        self.charge_write_cost(key_len, old_val_len, new_val_len)
-    }
-
-    // TODO remove
-    fn charge_read_cost(&self, key: &CacheKey, value: Option<&CacheValue>) -> CostChange {
-        let cost_change = match key {
-            CacheKey::ContractCode(_) => {
-                CostChange::deduct(gas::get_code_cost(value.as_ref().map_or(0, |v| v.len())))
-            }
-            _ => CostChange::deduct(gas::get_cost(
-                key.len(),
-                value.as_ref().map_or(0, |v| v.len()),
-            )),
-        };
-        *self.read_gas.borrow_mut() += cost_change;
-        cost_change
-    }
-
-    fn charge_write_cost(
-        &mut self,
-        key_len: usize,
-        old_val_len: usize,
-        new_val_len: usize,
-    ) -> CostChange {
-        let new_cost_change =
-            // old_val_len is obtained from Get so the cost of reading the key is already charged
-            CostChange::reward(gas::set_cost_delete_old_value(key_len, old_val_len, new_val_len)) +
-            CostChange::deduct(gas::set_cost_write_new_value(new_val_len)) +
-            CostChange::deduct(gas::set_cost_rehash(key_len));
-        self.write_gas += new_cost_change;
-        new_cost_change
     }
 
     pub fn commit_to_world_state(self) -> WorldState<S> {
@@ -405,6 +196,7 @@ where
     }
 }
 
+// TODO maybe move this elsewhere, some coupling with Gas calculation
 /// CacheKey is the key for state changes cache in Runtime. It is different with world state Key or App Key for
 /// being useful in:
 /// - data read write cache
