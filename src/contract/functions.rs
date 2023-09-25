@@ -252,8 +252,9 @@ where
         match result.error {
             None => {
                 println!(
-                    "----------Error in CTOC call, zeroing out command_return_value----------"
+                    "---------TODO---Error in CTOC call, zeroing out command_return_value----------"
                 );
+                // TODO verify
                 let mut tx_ctx_locked = env.context.lock().unwrap();
                 let res = tx_ctx_locked.gas_meter.command_return_value.clone();
 

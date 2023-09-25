@@ -194,7 +194,6 @@ where
     pub(crate) fn finalize(self, command_receipts: Vec<CommandReceipt>) -> TransitionResult<S> {
         let error = self.error;
         let rw_set = self.state.ctx.rw_set.lock().unwrap();
-        // TODO, remove the clone if not needed
         let new_state = rw_set.clone().commit_to_world_state();
 
         TransitionResult {

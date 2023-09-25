@@ -143,7 +143,6 @@ where
         let call_result = unsafe { self.instance.call_method() };
 
         let non_wasmer_gas_amount = self.environment.get_non_wasm_gas_amount();
-        println!("My non-wasmer gas amount is {}", non_wasmer_gas_amount);
 
         // drop the variable of wasmer remaining gas
         self.environment.drop_wasmer_remaining_points();
@@ -159,8 +158,6 @@ where
             .gas_limit
             .saturating_sub(remaining_gas)
             .saturating_sub(non_wasmer_gas_amount); // add back the non_wasmer gas because it is already accounted in read write set.
-
-        println!("My total gas amount is {}", total_gas);
 
         // Get the updated TransitionContext
         let ctx = self.environment.context.lock().unwrap().clone();

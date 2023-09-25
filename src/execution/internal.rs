@@ -71,9 +71,6 @@ where
     };
     drop(ctx_locked);
 
-    // TODO check any impact of this
-    // internal_call_result.non_wasmer_gas += contract_module.gas_cost;
-
     // limit the gas for child contract execution
     tx_from_contract.gas_limit = tx_from_contract
         .gas_limit
