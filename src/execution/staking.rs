@@ -340,16 +340,10 @@ where
 
     // 5. Set the withdrawal amount to return_value
     let return_value = withdrawal_amount.to_le_bytes().to_vec();
-    state.receipt_write_gas +=
-        CostChange::deduct(gas::blockchain_return_values_cost(return_value.len()));
-    if state.tx.gas_limit < state.total_gas_to_be_consumed() {
-        return Err(phase::abort(
-            state,
-            TransitionError::ExecutionProperGasExhausted,
-        ));
-    }
-    state.return_value = Some(return_value);
-
+    state
+        .ctx
+        .gas_meter
+        .store_txn_post_execution_return_value(return_value);
     phase::finalize_gas_consumption(state)
 }
 
@@ -404,15 +398,10 @@ where
 
     // Set the staked amount to return_value
     let return_value = stake_power_to_increase.to_le_bytes().to_vec();
-    state.receipt_write_gas +=
-        CostChange::deduct(gas::blockchain_return_values_cost(return_value.len()));
-    if state.tx.gas_limit < state.total_gas_to_be_consumed() {
-        return Err(phase::abort(
-            state,
-            TransitionError::ExecutionProperGasExhausted,
-        ));
-    }
-    state.return_value = Some(return_value);
+    state
+        .ctx
+        .gas_meter
+        .store_txn_post_execution_return_value(return_value);
 
     phase::finalize_gas_consumption(state)
 }
@@ -456,15 +445,10 @@ where
 
     // 4. set the unstaked amount to return_value
     let return_value = amount_unstaked.to_le_bytes().to_vec();
-    state.receipt_write_gas +=
-        CostChange::deduct(gas::blockchain_return_values_cost(return_value.len()));
-    if state.tx.gas_limit < state.total_gas_to_be_consumed() {
-        return Err(phase::abort(
-            state,
-            TransitionError::ExecutionProperGasExhausted,
-        ));
-    }
-    state.return_value = Some(return_value);
+    state
+        .ctx
+        .gas_meter
+        .store_txn_post_execution_return_value(return_value);
 
     phase::finalize_gas_consumption(state)
 }

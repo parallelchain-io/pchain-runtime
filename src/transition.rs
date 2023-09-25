@@ -20,7 +20,7 @@
 
 use pchain_types::serialization::Serializable;
 use pchain_types::{
-    blockchain::{Command, CommandReceipt, ExitStatus, Log, Receipt, Transaction},
+    blockchain::{Command, CommandReceipt, ExitStatus, Receipt, Transaction},
     cryptography::PublicAddress,
 };
 use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
@@ -234,16 +234,13 @@ where
     /// Gas consumed in transaction, no matter whether the transaction succeeds or fails.
     gas_used: u64,
 
-    /// the gas charged for adding logs and setting return value in receipt.
-    pub receipt_write_gas: CostChange,
+    // TODO remove
+    // /// the gas charged for adding logs and setting return value in receipt.
+    // pub receipt_write_gas: CostChange,
 
-    /// logs stores the list of events emitted by an execution ordered in the order of emission.
-    pub logs: Vec<Log>,
-
-    /// return_value is the value returned by a call transaction using the `return_value` SDK function. It is None if the
-    /// execution has not/did not return anything.
-    pub return_value: Option<Vec<u8>>,
-
+    // /// return_value is the value returned by a call transaction using the `return_value` SDK function. It is None if the
+    // /// execution has not/did not return anything.
+    // // pub return_value: Option<Vec<u8>>,
     pub gas_meter: RuntimeGasMeter<S>,
 }
 
@@ -261,10 +258,11 @@ where
                 cache: None,
                 memory_limit: None,
             },
-            receipt_write_gas: CostChange::default(),
-            logs: Vec::new(),
+            // TODO
+            // receipt_write_gas: CostChange::default(),
+            // logs: Vec::new(),
             gas_used: 0,
-            return_value: None,
+            // return_value: None,
             commands: Vec::new(),
             gas_meter: host_gm,
         }
@@ -284,9 +282,7 @@ where
     /// - write cost to receipt (blockchain data)
     pub fn total_gas_to_be_consumed(&self) -> u64 {
         // Gas incurred to be charged
-        let chargeable_gas = (self.receipt_write_gas + *self.gas_meter.command_gas_used.borrow()) // TODO remove all other gas meter instances
-            .values()
-            .0;
+        let chargeable_gas = (*self.gas_meter.command_gas_used.borrow()).values().0;
         self.gas_consumed().saturating_add(chargeable_gas)
     }
 
@@ -305,15 +301,17 @@ where
             gas_used: self.gas_used.saturating_sub(prev_gas_used),
             // Intentionally retain return_values and logs even if exit_status is failed
             return_values: self
-                .return_value
+                .gas_meter
+                .command_return_value
                 .clone()
                 .map_or(Vec::new(), std::convert::identity),
-            logs: self.logs.clone(),
+            logs: self.gas_meter.command_logs.clone(),
         };
         // 2. Clear data for next command execution
-        self.receipt_write_gas = CostChange::default();
-        self.logs.clear();
-        self.return_value = None;
+        // TODO
+        // self.receipt_write_gas = CostChange::default();
+        // self.logs.clear();
+        // self.return_value = None;
         self.commands.clear();
 
         self.gas_meter.finalize_command_gas();

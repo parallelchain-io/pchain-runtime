@@ -1208,826 +1208,872 @@ mod test {
         assert_eq!(extract_gas_used(&ret), 18920);
     }
 
-    // // Prepare: pool (account c), with maximum number of stakes in world state, stakes (account b) is the minimum value.
-    // // Prepare: deposits (account b) to pool (account c)
-    // // Commands (account b): Stake Deposit (to be included in delegated stakes, but not the minimum one)
-    // #[test]
-    // fn test_stake_deposit_delegated_stakes_change_key() {
-    //     let mut state = create_state(None);
-    //     create_full_stakes_in_pool(&mut state, ACCOUNT_C);
-    //     let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_C, ACCOUNT_B);
-    //     deposit.set_balance(310_000);
-    //     deposit.set_auto_stake_rewards(false);
-
-    //     let ws = state.ctx.rw_set.commit_to_world_state();
-
-    //     let mut state = create_state(Some(ws));
-    //     let prev_pool_power = NetworkAccount::pools(&mut state, ACCOUNT_C)
-    //         .power()
-    //         .unwrap();
-    //     let commands = vec![Command::StakeDeposit(StakeDepositInput {
-    //         operator: ACCOUNT_C,
-    //         max_amount: 110_000,
-    //     })];
-    //     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     assert_eq!(
-    //         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
-    //         110_000_u64.to_le_bytes().to_vec()
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-    //     let mut state = create_state(Some(ret.new_state));
-
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_C);
-    //     let cur_pool_power = pool.power().unwrap();
-    //     assert_eq!(cur_pool_power, prev_pool_power + 110_000);
-    //     let min_stake = pool.delegated_stakes().get(0).unwrap();
-    //     assert_eq!(min_stake.power, 300_000);
-    //     assert_eq!(
-    //         min_stake.owner,
-    //         [
-    //             3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    //             2, 2, 2, 2
-    //         ]
-    //     );
-    // }
-
-    // // Prepare: pool (account a) in world state, with delegated stakes of account b
-    // // Prepare: deposits (account b) to pool (account a)
-    // // Commands (account b): Stake Deposit (to increase the stake in the delegated stakes)
-    // #[test]
-    // fn test_stake_deposit_delegated_stakes_existing() {
-    //     let mut state = create_state(None);
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
-    //     pool.set_operator(ACCOUNT_A);
-    //     pool.set_power(100_000);
-    //     pool.set_commission_rate(1);
-    //     pool.set_operator_stake(None);
-    //     pool.delegated_stakes()
-    //         .insert(StakeValue::new(Stake {
-    //             owner: ACCOUNT_B,
-    //             power: 50_000,
-    //         }))
-    //         .unwrap();
-    //     let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_A, ACCOUNT_B);
-    //     deposit.set_balance(100_000);
-    //     deposit.set_auto_stake_rewards(false);
-
-    //     let ws = state.ctx.rw_set.commit_to_world_state();
-
-    //     let mut state = create_state(Some(ws));
-    //     let commands = vec![Command::StakeDeposit(StakeDepositInput {
-    //         operator: ACCOUNT_A,
-    //         max_amount: 40_000,
-    //     })];
-    //     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     assert_eq!(
-    //         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
-    //         40_000_u64.to_le_bytes().to_vec()
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-
-    //     let mut state = create_state(Some(ret.new_state));
-
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
-    //     assert_eq!(pool.power().unwrap(), 140_000);
-    //     let delegated_stake = pool.delegated_stakes();
-    //     let delegated_stake = delegated_stake.get_by(&ACCOUNT_B).unwrap();
-    //     assert_eq!(delegated_stake.power, 90_000);
-    // }
-
-    // // Prepare: pool (account a) in world state
-    // // Prepare: deposits (account a) to pool (account a)
-    // // Commands (account a): Stake Deposit
-    // #[test]
-    // fn test_stake_deposit_same_owner() {
-    //     let mut state = create_state(None);
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
-    //     pool.set_operator(ACCOUNT_A);
-    //     pool.set_power(100_000);
-    //     pool.set_commission_rate(1);
-    //     pool.set_operator_stake(None);
-    //     let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_A, ACCOUNT_A);
-    //     deposit.set_balance(150_000);
-    //     deposit.set_auto_stake_rewards(false);
-
-    //     let ws = state.ctx.rw_set.commit_to_world_state();
-
-    //     let state = create_state(Some(ws));
-    //     let ret = execute_commands(
-    //         state,
-    //         vec![Command::StakeDeposit(StakeDepositInput {
-    //             operator: ACCOUNT_A,
-    //             max_amount: 20_000,
-    //         })],
-    //     );
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     assert_eq!(
-    //         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
-    //         20_000_u64.to_le_bytes().to_vec()
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-
-    //     let mut state = create_state(Some(ret.new_state));
-
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
-    //     let operator_state = pool.operator_stake().unwrap().unwrap();
-    //     assert_eq!(operator_state.power, 20_000);
-    //     assert_eq!(pool.power().unwrap(), 120_000);
-    //     let delegated_stake = pool.delegated_stakes();
-    //     assert_eq!(delegated_stake.length(), 0);
-    // }
-
-    // // Prepare: set maximum number of pools in world state, pool (account a) has the minimum power.
-    // // Prepare: deposits (account a) to pool (account a)
-    // // Commands (account a): Stake Deposit (to increase the power of pool (account a))
-    // #[test]
-    // fn test_stake_deposit_same_owner_nvp_change_key() {
-    //     let mut state = create_state(None);
-    //     create_full_pools_in_nvp(&mut state, false, false);
-    //     let pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
-    //     assert_eq!(pool.power().unwrap(), 100_000);
-    //     let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_A, ACCOUNT_A);
-    //     deposit.set_balance(210_000);
-    //     deposit.set_auto_stake_rewards(false);
-
-    //     let ws = state.ctx.rw_set.commit_to_world_state();
-
-    //     let mut state = create_state(Some(ws));
-    //     let commands = vec![Command::StakeDeposit(StakeDepositInput {
-    //         operator: ACCOUNT_A,
-    //         max_amount: 110_000,
-    //     })];
-    //     set_tx(&mut state, ACCOUNT_A, 0, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     assert_eq!(
-    //         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
-    //         110_000_u64.to_le_bytes().to_vec()
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-
-    //     let mut state = create_state(Some(ret.new_state));
-
-    //     let pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
-    //     assert_eq!(pool.power().unwrap(), 210_000);
-    //     assert_eq!(pool.operator_stake().unwrap().unwrap().power, 210_000);
-    //     assert_eq!(
-    //         NetworkAccount::nvp(&mut state).length(),
-    //         TEST_MAX_VALIDATOR_SET_SIZE as u32
-    //     );
-    //     assert_eq!(
-    //         NetworkAccount::nvp(&mut state).get(0).unwrap().operator,
-    //         [
-    //             2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    //             1, 1, 1, 1
-    //         ]
-    //     );
-    //     assert_eq!(
-    //         NetworkAccount::nvp(&mut state).get(0).unwrap().power,
-    //         200_000
-    //     );
-    // }
-
-    // // Prepare: set maximum number of pools in world state, pool (account c) is not inside nvp.
-    // // Prepare: deposits (account c) to pool (account c)
-    // // Commands (account c): Stake Deposit (to increase the power of pool (account c) to be included in nvp)
-    // #[test]
-    // fn test_stake_deposit_same_owner_nvp_insert() {
-    //     let mut state = create_state(None);
-    //     create_full_pools_in_nvp(&mut state, false, false);
-    //     assert!(NetworkAccount::pools(&mut state, ACCOUNT_C)
-    //         .operator()
-    //         .is_none());
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_C);
-    //     pool.set_operator(ACCOUNT_C);
-    //     pool.set_commission_rate(1);
-    //     pool.set_power(0);
-    //     pool.set_operator_stake(None);
-    //     let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_C, ACCOUNT_C);
-    //     deposit.set_balance(150_000);
-    //     deposit.set_auto_stake_rewards(false);
-
-    //     let ws = state.ctx.rw_set.commit_to_world_state();
-
-    //     let mut state = create_state(Some(ws));
-    //     let commands = vec![Command::StakeDeposit(StakeDepositInput {
-    //         operator: ACCOUNT_C,
-    //         max_amount: 150_000,
-    //     })];
-    //     set_tx(&mut state, ACCOUNT_C, 0, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     assert_eq!(
-    //         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
-    //         150_000_u64.to_le_bytes().to_vec()
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-
-    //     let mut state = create_state(Some(ret.new_state));
-
-    //     let pool = NetworkAccount::pools(&mut state, ACCOUNT_C);
-    //     assert_eq!(pool.power().unwrap(), 150_000);
-    //     assert_eq!(pool.operator_stake().unwrap().unwrap().power, 150_000);
-    //     assert_eq!(
-    //         NetworkAccount::nvp(&mut state).length(),
-    //         TEST_MAX_VALIDATOR_SET_SIZE as u32
-    //     );
-    //     assert_eq!(
-    //         NetworkAccount::nvp(&mut state).get(0).unwrap().operator,
-    //         ACCOUNT_C
-    //     );
-    //     assert_eq!(
-    //         NetworkAccount::nvp(&mut state).get(0).unwrap().power,
-    //         150_000
-    //     );
-    // }
-
-    // // Prepare: pool (account a) in world state, with non-zero value of Operator Stake
-    // // Prepare: deposits (account a) to pool (account a)
-    // // Commands (account a): Stake Deposit
-    // #[test]
-    // fn test_stake_deposit_same_owner_existing() {
-    //     let mut state = create_state(None);
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
-    //     pool.set_operator(ACCOUNT_A);
-    //     pool.set_power(100_000);
-    //     pool.set_commission_rate(1);
-    //     pool.set_operator_stake(Some(Stake {
-    //         owner: ACCOUNT_A,
-    //         power: 80_000,
-    //     }));
-    //     let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_A, ACCOUNT_A);
-    //     deposit.set_balance(100_000);
-    //     deposit.set_auto_stake_rewards(false);
-
-    //     let ws = state.ctx.rw_set.commit_to_world_state();
-
-    //     let state = create_state(Some(ws));
-    //     let ret = execute_commands(
-    //         state,
-    //         vec![Command::StakeDeposit(StakeDepositInput {
-    //             operator: ACCOUNT_A,
-    //             max_amount: 10_000,
-    //         })],
-    //     );
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     assert_eq!(
-    //         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
-    //         10_000_u64.to_le_bytes().to_vec()
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-
-    //     let mut state = create_state(Some(ret.new_state));
-
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
-    //     let operator_state = pool.operator_stake().unwrap().unwrap();
-    //     assert_eq!(operator_state.power, 90_000);
-    //     assert_eq!(pool.power().unwrap(), 110_000);
-    //     let delegated_stake = pool.delegated_stakes();
-    //     assert_eq!(delegated_stake.length(), 0);
-    // }
-
-    // // Prepare: pool (account a) in world state, with delegated stakes of account b
-    // // Prepare: deposits (account b) to pool (account a)
-    // // Commands (account b): Unstake Deposit
-    // // Exception:
-    // // - Stakes not exists
-    // // - Pool has no delegated stake
-    // // - Pool not exists
-    // #[test]
-    // fn test_unstake_deposit_delegated_stakes() {
-    //     let mut state = create_state(None);
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
-    //     pool.set_operator(ACCOUNT_A);
-    //     pool.set_power(100_000);
-    //     pool.set_commission_rate(1);
-    //     pool.set_operator_stake(None);
-    //     pool.delegated_stakes()
-    //         .insert(StakeValue::new(Stake {
-    //             owner: ACCOUNT_B,
-    //             power: 50_000,
-    //         }))
-    //         .unwrap();
-    //     let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_A, ACCOUNT_B);
-    //     deposit.set_balance(100_000);
-    //     deposit.set_auto_stake_rewards(false);
-
-    //     let ws = state.ctx.rw_set.commit_to_world_state();
-
-    //     let mut state = create_state(Some(ws));
-    //     let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
-    //         operator: ACCOUNT_A,
-    //         max_amount: 40_000,
-    //     })];
-    //     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     assert_eq!(
-    //         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
-    //         40_000_u64.to_le_bytes().to_vec()
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-
-    //     let mut state = create_state(Some(ret.new_state));
-
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
-    //     assert_eq!(pool.power().unwrap(), 60_000);
-    //     let delegated_stake = pool.delegated_stakes();
-    //     let delegated_stake = delegated_stake.get_by(&ACCOUNT_B).unwrap();
-    //     assert_eq!(delegated_stake.power, 10_000);
-
-    //     ///// Exceptions: /////
-
-    //     let mut state = create_state(Some(state.ws.to_owned()));
-    //     let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
-    //         operator: ACCOUNT_C,
-    //         max_amount: 40_000,
-    //     })];
-    //     set_tx(&mut state, ACCOUNT_B, 1, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(ret.error, Some(TransitionError::DepositsNotExists));
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-
-    //     // create Pool and deposit first
-    //     let mut state = create_state(Some(ret.new_state));
-    //     let commands = vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })];
-    //     set_tx(&mut state, ACCOUNT_C, 0, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-    //     let mut state = create_state(Some(ret.new_state));
-    //     let commands = vec![Command::CreateDeposit(CreateDepositInput {
-    //         operator: ACCOUNT_C,
-    //         balance: 10_000,
-    //         auto_stake_rewards: false,
-    //     })];
-    //     set_tx(&mut state, ACCOUNT_B, 2, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-    //     // and then UnstakeDeposit
-    //     let mut state = create_state(Some(ret.new_state));
-    //     let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
-    //         operator: ACCOUNT_C,
-    //         max_amount: 10_000,
-    //     })];
-    //     set_tx(&mut state, ACCOUNT_B, 3, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(ret.error, Some(TransitionError::PoolHasNoStakes));
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-
-    //     // delete pool first
-    //     let state = create_state(Some(ret.new_state));
-    //     let ret = execute_commands(state, vec![Command::DeletePool]);
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-    //     // then UnstakeDeposit
-    //     let mut state = create_state(Some(ret.new_state));
-    //     let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
-    //         operator: ACCOUNT_A,
-    //         max_amount: 10_000,
-    //     })];
-    //     set_tx(&mut state, ACCOUNT_B, 4, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-    // }
-
-    // // Prepare: pool (account a) in world state, with delegated stakes of account X, X has the biggest stake
-    // // Prepare: deposits (account X) to pool (account a)
-    // // Commands (account X): Unstake Deposit
-    // #[test]
-    // fn test_unstake_deposit_delegated_stakes_remove() {
-    //     let mut state = create_state(None);
-    //     create_full_deposits_in_pool(&mut state, ACCOUNT_A, false);
-    //     create_full_stakes_in_pool(&mut state, ACCOUNT_A);
-    //     let biggest = [
-    //         129u8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    //         2, 2, 2, 2,
-    //     ];
-    //     state.set_balance(biggest, 500_000_000);
-    //     let origin_pool_power = NetworkAccount::pools(&mut state, ACCOUNT_A)
-    //         .power()
-    //         .unwrap();
-    //     let stake = NetworkAccount::pools(&mut state, ACCOUNT_A)
-    //         .delegated_stakes()
-    //         .get_by(&biggest)
-    //         .unwrap();
-
-    //     let ws = state.ctx.rw_set.commit_to_world_state();
-
-    //     let mut state = create_state(Some(ws));
-    //     let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
-    //         operator: ACCOUNT_A,
-    //         max_amount: stake.power,
-    //     })];
-    //     set_tx(&mut state, biggest, 0, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     assert_eq!(
-    //         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
-    //         stake.power.to_le_bytes().to_vec()
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-
-    //     let mut state = create_state(Some(ret.new_state));
-
-    //     let new_pool_power = NetworkAccount::pools(&mut state, ACCOUNT_A)
-    //         .power()
-    //         .unwrap();
-    //     assert_eq!(origin_pool_power - new_pool_power, stake.power);
-    //     let stakers = NetworkAccount::pools(&mut state, ACCOUNT_A)
-    //         .delegated_stakes()
-    //         .unordered_values();
-    //     assert!(!stakers.iter().any(|v| v.owner == biggest));
-    //     assert!(NetworkAccount::pools(&mut state, ACCOUNT_A)
-    //         .delegated_stakes()
-    //         .get_by(&biggest)
-    //         .is_none());
-    // }
-
-    // // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with delegated stakes of account b
-    // // Prepare: deposits (account b) to pool (account t)
-    // // Commands (account b): Unstake Deposit (to decrease the power of pool (account t))
-    // #[test]
-    // fn test_unstake_deposit_delegated_stakes_nvp_change_key() {
-    //     const ACCOUNT_T: [u8; 32] = [
-    //         2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    //         1, 1, 1,
-    //     ];
-    //     let mut state = create_state(None);
-    //     create_full_pools_in_nvp(&mut state, false, false);
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_T);
-    //     assert_eq!(pool.power().unwrap(), 200_000);
-    //     pool.delegated_stakes()
-    //         .insert(StakeValue::new(Stake {
-    //             owner: ACCOUNT_B,
-    //             power: 150_000,
-    //         }))
-    //         .unwrap();
-    //     let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_T, ACCOUNT_B);
-    //     deposit.set_balance(200_000);
-    //     deposit.set_auto_stake_rewards(false);
-
-    //     let ws = state.ctx.rw_set.commit_to_world_state();
-
-    //     let mut state = create_state(Some(ws));
-    //     let commands = vec![
-    //         Command::UnstakeDeposit(UnstakeDepositInput {
-    //             operator: ACCOUNT_T,
-    //             max_amount: 150_000 + 1,
-    //         }), // unstake more than staked
-    //     ];
-    //     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     assert_eq!(
-    //         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
-    //         150_000_u64.to_le_bytes().to_vec()
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-
-    //     let mut state = create_state(Some(ret.new_state));
-
-    //     let pool = NetworkAccount::pools(&mut state, ACCOUNT_T);
-    //     assert_eq!(pool.power().unwrap(), 50_000);
-    //     assert_eq!(
-    //         NetworkAccount::nvp(&mut state).length(),
-    //         TEST_MAX_VALIDATOR_SET_SIZE as u32
-    //     );
-    //     assert_eq!(
-    //         NetworkAccount::nvp(&mut state).get(0).unwrap().operator,
-    //         ACCOUNT_T
-    //     );
-    //     assert_eq!(
-    //         NetworkAccount::nvp(&mut state).get(0).unwrap().power,
-    //         50_000
-    //     );
-    // }
-
-    // // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with delegated stakes of account b
-    // // Prepare: deposits (account b) to pool (account t)
-    // // Commands (account b): Unstake Deposit (to empty the power of pool (account t), and to be kicked out from nvp)
-    // #[test]
-    // fn test_unstake_deposit_delegated_stakes_nvp_remove() {
-    //     const ACCOUNT_T: [u8; 32] = [
-    //         2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    //         1, 1, 1,
-    //     ];
-    //     let mut state = create_state(None);
-    //     create_full_pools_in_nvp(&mut state, false, false);
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_T);
-    //     assert_eq!(pool.power().unwrap(), 200_000);
-    //     pool.delegated_stakes()
-    //         .insert(StakeValue::new(Stake {
-    //             owner: ACCOUNT_B,
-    //             power: 200_000,
-    //         }))
-    //         .unwrap();
-    //     let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_T, ACCOUNT_B);
-    //     deposit.set_balance(200_000);
-    //     deposit.set_auto_stake_rewards(false);
-
-    //     let ws = state.ctx.rw_set.commit_to_world_state();
-
-    //     let mut state = create_state(Some(ws));
-    //     let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
-    //         operator: ACCOUNT_T,
-    //         max_amount: 200_000,
-    //     })];
-    //     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     assert_eq!(
-    //         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
-    //         200_000_u64.to_le_bytes().to_vec()
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-
-    //     let mut state = create_state(Some(ret.new_state));
-
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_T);
-    //     assert_eq!(pool.power().unwrap(), 0);
-    //     assert!(pool.delegated_stakes().get_by(&ACCOUNT_B).is_none());
-    //     assert_eq!(
-    //         NetworkAccount::nvp(&mut state).length(),
-    //         TEST_MAX_VALIDATOR_SET_SIZE as u32 - 1
-    //     );
-    //     assert_ne!(
-    //         NetworkAccount::nvp(&mut state).get(0).unwrap().operator,
-    //         ACCOUNT_T
-    //     );
-    // }
-
-    // // Prepare: pool (account a) in world state, with non-zero value of Operator Stake
-    // // Prepare: deposits (account a) to pool (account a)
-    // // Commands (account a): Unstake Deposit
-    // // Exception:
-    // // - Pool has no operator stake
-    // #[test]
-    // fn test_unstake_deposit_same_owner() {
-    //     let mut state = create_state(None);
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
-    //     pool.set_operator(ACCOUNT_A);
-    //     pool.set_power(100_000);
-    //     pool.set_commission_rate(1);
-    //     pool.set_operator_stake(Some(Stake {
-    //         owner: ACCOUNT_A,
-    //         power: 100_000,
-    //     }));
-    //     let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_A, ACCOUNT_A);
-    //     deposit.set_balance(150_000);
-    //     deposit.set_auto_stake_rewards(false);
-
-    //     let ws = state.ctx.rw_set.commit_to_world_state();
-
-    //     let state = create_state(Some(ws));
-    //     let ret = execute_commands(
-    //         state,
-    //         vec![Command::UnstakeDeposit(UnstakeDepositInput {
-    //             operator: ACCOUNT_A,
-    //             max_amount: 100_000,
-    //         })],
-    //     );
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     assert_eq!(
-    //         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
-    //         100_000_u64.to_le_bytes().to_vec()
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-
-    //     let mut state = create_state(Some(ret.new_state));
-
-    //     let pool = NetworkAccount::pools(&mut state, ACCOUNT_A);
-    //     assert_eq!(pool.power().unwrap(), 0);
-    //     assert!(pool.operator_stake().unwrap().is_none());
-
-    //     ///// Exceptions: /////
-
-    //     let mut state = create_state(Some(state.ws.to_owned()));
-    //     state.tx.nonce = 1;
-    //     let ret = execute_commands(
-    //         state,
-    //         vec![Command::UnstakeDeposit(UnstakeDepositInput {
-    //             operator: ACCOUNT_A,
-    //             max_amount: 50_000,
-    //         })],
-    //     );
-    //     assert_eq!(ret.error, Some(TransitionError::PoolHasNoStakes));
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-    // }
-
-    // // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with non-zero value of Operator Stake
-    // // Prepare: deposits (account t) to pool (account t)
-    // // Commands (account t): Unstake Deposit (to decrease the power of pool (account t))
-    // #[test]
-    // fn test_unstake_deposit_same_owner_nvp_change_key() {
-    //     const ACCOUNT_T: [u8; 32] = [
-    //         2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    //         1, 1, 1,
-    //     ];
-    //     let mut state = create_state(None);
-    //     create_full_pools_in_nvp(&mut state, false, false);
-    //     let mut pool = NetworkAccount::pools(&mut state, ACCOUNT_T);
-    //     assert_eq!(pool.power().unwrap(), 200_000);
-    //     pool.set_operator_stake(Some(Stake {
-    //         owner: ACCOUNT_T,
-    //         power: 200_000,
-    //     }));
-    //     let mut deposit = NetworkAccount::deposits(&mut state, ACCOUNT_T, ACCOUNT_T);
-    //     deposit.set_balance(200_000);
-    //     deposit.set_auto_stake_rewards(false);
-
-    //     state
-    //         .ctx
-    //         .rw_set
-    //         .ws
-    //         .cached()
-    //         .set_balance(ACCOUNT_T, 500_000_000);
-    //     let ws = state.ctx.rw_set.commit_to_world_state();
-
-    //     let mut state = create_state(Some(ws));
-    //     let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
-    //         operator: ACCOUNT_T,
-    //         max_amount: 190_000,
-    //     })];
-    //     set_tx(&mut state, ACCOUNT_T, 0, &commands);
-    //     let ret = execute_commands(state, commands);
-    //     assert_eq!(
-    //         (
-    //             &ret.error,
-    //             &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
-    //         ),
-    //         (&None, &ExitStatus::Success)
-    //     );
-    //     assert_eq!(
-    //         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
-    //         190_000_u64.to_le_bytes().to_vec()
-    //     );
-    //     println!(
-    //         "gas_consumed {}",
-    //         ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-    //     );
-
-    //     let mut state = create_state(Some(ret.new_state));
-
-    //     let pool = NetworkAccount::pools(&mut state, ACCOUNT_T);
-    //     assert_eq!(pool.power().unwrap(), 10_000);
-    //     assert_eq!(
-    //         NetworkAccount::nvp(&mut state).length(),
-    //         TEST_MAX_VALIDATOR_SET_SIZE as u32
-    //     );
-    //     assert_eq!(
-    //         NetworkAccount::nvp(&mut state).get(0).unwrap().operator,
-    //         ACCOUNT_T
-    //     );
-    //     assert_eq!(
-    //         NetworkAccount::nvp(&mut state).get(0).unwrap().power,
-    //         10_000
-    //     );
-    // }
+    // Prepare: pool (account c), with maximum number of stakes in world state, stakes (account b) is the minimum value.
+    // Prepare: deposits (account b) to pool (account c)
+    // Commands (account b): Stake Deposit (to be included in delegated stakes, but not the minimum one)
+    #[test]
+    fn test_stake_deposit_delegated_stakes_change_key() {
+        let mut state = create_state(None);
+        create_full_stakes_in_pool(&mut state, ACCOUNT_C);
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_C, ACCOUNT_B);
+        deposit.set_balance(310_000);
+        deposit.set_auto_stake_rewards(false);
+
+        let rw_set = state.ctx.rw_set.lock().unwrap();
+        let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
+
+        let mut state = create_state(Some(ws));
+        let prev_pool_power = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_C)
+            .power()
+            .unwrap();
+        let commands = vec![Command::StakeDeposit(StakeDepositInput {
+            operator: ACCOUNT_C,
+            max_amount: 110_000,
+        })];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        assert_eq!(
+            ret.receipt.as_ref().unwrap().last().unwrap().return_values,
+            110_000_u64.to_le_bytes().to_vec()
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+        let mut state = create_state(Some(ret.new_state));
+
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_C);
+        let cur_pool_power = pool.power().unwrap();
+        assert_eq!(cur_pool_power, prev_pool_power + 110_000);
+        let min_stake = pool.delegated_stakes().get(0).unwrap();
+        assert_eq!(min_stake.power, 300_000);
+        assert_eq!(
+            min_stake.owner,
+            [
+                3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2
+            ]
+        );
+    }
+
+    // Prepare: pool (account a) in world state, with delegated stakes of account b
+    // Prepare: deposits (account b) to pool (account a)
+    // Commands (account b): Stake Deposit (to increase the stake in the delegated stakes)
+    #[test]
+    fn test_stake_deposit_delegated_stakes_existing() {
+        let mut state = create_state(None);
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+        pool.set_operator(ACCOUNT_A);
+        pool.set_power(100_000);
+        pool.set_commission_rate(1);
+        pool.set_operator_stake(None);
+        pool.delegated_stakes()
+            .insert(StakeValue::new(Stake {
+                owner: ACCOUNT_B,
+                power: 50_000,
+            }))
+            .unwrap();
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_B);
+        deposit.set_balance(100_000);
+        deposit.set_auto_stake_rewards(false);
+
+        let rw_set = state.ctx.rw_set.lock().unwrap();
+        let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
+
+        let mut state = create_state(Some(ws));
+        let commands = vec![Command::StakeDeposit(StakeDepositInput {
+            operator: ACCOUNT_A,
+            max_amount: 40_000,
+        })];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        assert_eq!(
+            ret.receipt.as_ref().unwrap().last().unwrap().return_values,
+            40_000_u64.to_le_bytes().to_vec()
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+
+        let mut state = create_state(Some(ret.new_state));
+
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+        assert_eq!(pool.power().unwrap(), 140_000);
+        let delegated_stake = pool.delegated_stakes();
+        let delegated_stake = delegated_stake.get_by(&ACCOUNT_B).unwrap();
+        assert_eq!(delegated_stake.power, 90_000);
+    }
+
+    // Prepare: pool (account a) in world state
+    // Prepare: deposits (account a) to pool (account a)
+    // Commands (account a): Stake Deposit
+    #[test]
+    fn test_stake_deposit_same_owner() {
+        let mut state = create_state(None);
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+        pool.set_operator(ACCOUNT_A);
+        pool.set_power(100_000);
+        pool.set_commission_rate(1);
+        pool.set_operator_stake(None);
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_A);
+        deposit.set_balance(150_000);
+        deposit.set_auto_stake_rewards(false);
+
+        let rw_set = state.ctx.rw_set.lock().unwrap();
+        let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
+
+        let state = create_state(Some(ws));
+        let ret = execute_commands(
+            state,
+            vec![Command::StakeDeposit(StakeDepositInput {
+                operator: ACCOUNT_A,
+                max_amount: 20_000,
+            })],
+        );
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        assert_eq!(
+            ret.receipt.as_ref().unwrap().last().unwrap().return_values,
+            20_000_u64.to_le_bytes().to_vec()
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+
+        let mut state = create_state(Some(ret.new_state));
+
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+        let operator_state = pool.operator_stake().unwrap().unwrap();
+        assert_eq!(operator_state.power, 20_000);
+        assert_eq!(pool.power().unwrap(), 120_000);
+        let delegated_stake = pool.delegated_stakes();
+        assert_eq!(delegated_stake.length(), 0);
+    }
+
+    // Prepare: set maximum number of pools in world state, pool (account a) has the minimum power.
+    // Prepare: deposits (account a) to pool (account a)
+    // Commands (account a): Stake Deposit (to increase the power of pool (account a))
+    #[test]
+    fn test_stake_deposit_same_owner_nvp_change_key() {
+        let mut state = create_state(None);
+        create_full_pools_in_nvp(&mut state, false, false);
+        let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+        assert_eq!(pool.power().unwrap(), 100_000);
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_A);
+        deposit.set_balance(210_000);
+        deposit.set_auto_stake_rewards(false);
+
+        let rw_set = state.ctx.rw_set.lock().unwrap();
+        let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
+
+        let mut state = create_state(Some(ws));
+        let commands = vec![Command::StakeDeposit(StakeDepositInput {
+            operator: ACCOUNT_A,
+            max_amount: 110_000,
+        })];
+        set_tx(&mut state, ACCOUNT_A, 0, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        assert_eq!(
+            ret.receipt.as_ref().unwrap().last().unwrap().return_values,
+            110_000_u64.to_le_bytes().to_vec()
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+
+        let mut state = create_state(Some(ret.new_state));
+
+        let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+        assert_eq!(pool.power().unwrap(), 210_000);
+        assert_eq!(pool.operator_stake().unwrap().unwrap().power, 210_000);
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
+            TEST_MAX_VALIDATOR_SET_SIZE as u32
+        );
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .operator,
+            [
+                2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1
+            ]
+        );
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .power,
+            200_000
+        );
+    }
+
+    // Prepare: set maximum number of pools in world state, pool (account c) is not inside nvp.
+    // Prepare: deposits (account c) to pool (account c)
+    // Commands (account c): Stake Deposit (to increase the power of pool (account c) to be included in nvp)
+    #[test]
+    fn test_stake_deposit_same_owner_nvp_insert() {
+        let mut state = create_state(None);
+        create_full_pools_in_nvp(&mut state, false, false);
+        assert!(NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_C)
+            .operator()
+            .is_none());
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_C);
+        pool.set_operator(ACCOUNT_C);
+        pool.set_commission_rate(1);
+        pool.set_power(0);
+        pool.set_operator_stake(None);
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_C, ACCOUNT_C);
+        deposit.set_balance(150_000);
+        deposit.set_auto_stake_rewards(false);
+
+        let rw_set = state.ctx.rw_set.lock().unwrap();
+        let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
+
+        let mut state = create_state(Some(ws));
+        let commands = vec![Command::StakeDeposit(StakeDepositInput {
+            operator: ACCOUNT_C,
+            max_amount: 150_000,
+        })];
+        set_tx(&mut state, ACCOUNT_C, 0, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        assert_eq!(
+            ret.receipt.as_ref().unwrap().last().unwrap().return_values,
+            150_000_u64.to_le_bytes().to_vec()
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+
+        let mut state = create_state(Some(ret.new_state));
+
+        let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_C);
+        assert_eq!(pool.power().unwrap(), 150_000);
+        assert_eq!(pool.operator_stake().unwrap().unwrap().power, 150_000);
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
+            TEST_MAX_VALIDATOR_SET_SIZE as u32
+        );
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .operator,
+            ACCOUNT_C
+        );
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .power,
+            150_000
+        );
+    }
+
+    // Prepare: pool (account a) in world state, with non-zero value of Operator Stake
+    // Prepare: deposits (account a) to pool (account a)
+    // Commands (account a): Stake Deposit
+    #[test]
+    fn test_stake_deposit_same_owner_existing() {
+        let mut state = create_state(None);
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+        pool.set_operator(ACCOUNT_A);
+        pool.set_power(100_000);
+        pool.set_commission_rate(1);
+        pool.set_operator_stake(Some(Stake {
+            owner: ACCOUNT_A,
+            power: 80_000,
+        }));
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_A);
+        deposit.set_balance(100_000);
+        deposit.set_auto_stake_rewards(false);
+
+        let rw_set = state.ctx.rw_set.lock().unwrap();
+        let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
+
+        let state = create_state(Some(ws));
+        let ret = execute_commands(
+            state,
+            vec![Command::StakeDeposit(StakeDepositInput {
+                operator: ACCOUNT_A,
+                max_amount: 10_000,
+            })],
+        );
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        assert_eq!(
+            ret.receipt.as_ref().unwrap().last().unwrap().return_values,
+            10_000_u64.to_le_bytes().to_vec()
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+
+        let mut state = create_state(Some(ret.new_state));
+
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+        let operator_state = pool.operator_stake().unwrap().unwrap();
+        assert_eq!(operator_state.power, 90_000);
+        assert_eq!(pool.power().unwrap(), 110_000);
+        let delegated_stake = pool.delegated_stakes();
+        assert_eq!(delegated_stake.length(), 0);
+    }
+
+    // Prepare: pool (account a) in world state, with delegated stakes of account b
+    // Prepare: deposits (account b) to pool (account a)
+    // Commands (account b): Unstake Deposit
+    // Exception:
+    // - Stakes not exists
+    // - Pool has no delegated stake
+    // - Pool not exists
+    #[test]
+    fn test_unstake_deposit_delegated_stakes() {
+        let mut state = create_state(None);
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+        pool.set_operator(ACCOUNT_A);
+        pool.set_power(100_000);
+        pool.set_commission_rate(1);
+        pool.set_operator_stake(None);
+        pool.delegated_stakes()
+            .insert(StakeValue::new(Stake {
+                owner: ACCOUNT_B,
+                power: 50_000,
+            }))
+            .unwrap();
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_B);
+        deposit.set_balance(100_000);
+        deposit.set_auto_stake_rewards(false);
+
+        let rw_set = state.ctx.rw_set.lock().unwrap();
+        let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
+
+        let mut state = create_state(Some(ws));
+        let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
+            operator: ACCOUNT_A,
+            max_amount: 40_000,
+        })];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        assert_eq!(
+            ret.receipt.as_ref().unwrap().last().unwrap().return_values,
+            40_000_u64.to_le_bytes().to_vec()
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+
+        let mut state = create_state(Some(ret.new_state));
+
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+        assert_eq!(pool.power().unwrap(), 60_000);
+        let delegated_stake = pool.delegated_stakes();
+        let delegated_stake = delegated_stake.get_by(&ACCOUNT_B).unwrap();
+        assert_eq!(delegated_stake.power, 10_000);
+
+        ///// Exceptions: /////
+        let rw_set = state.ctx.rw_set.lock().unwrap();
+        let mut state = create_state(Some(rw_set.ws.to_owned()));
+        let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
+            operator: ACCOUNT_C,
+            max_amount: 40_000,
+        })];
+        set_tx(&mut state, ACCOUNT_B, 1, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(ret.error, Some(TransitionError::DepositsNotExists));
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+
+        // create Pool and deposit first
+        let mut state = create_state(Some(ret.new_state));
+        let commands = vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })];
+        set_tx(&mut state, ACCOUNT_C, 0, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+        let mut state = create_state(Some(ret.new_state));
+        let commands = vec![Command::CreateDeposit(CreateDepositInput {
+            operator: ACCOUNT_C,
+            balance: 10_000,
+            auto_stake_rewards: false,
+        })];
+        set_tx(&mut state, ACCOUNT_B, 2, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+        // and then UnstakeDeposit
+        let mut state = create_state(Some(ret.new_state));
+        let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
+            operator: ACCOUNT_C,
+            max_amount: 10_000,
+        })];
+        set_tx(&mut state, ACCOUNT_B, 3, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(ret.error, Some(TransitionError::PoolHasNoStakes));
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+
+        // delete pool first
+        let state = create_state(Some(ret.new_state));
+        let ret = execute_commands(state, vec![Command::DeletePool]);
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+        // then UnstakeDeposit
+        let mut state = create_state(Some(ret.new_state));
+        let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
+            operator: ACCOUNT_A,
+            max_amount: 10_000,
+        })];
+        set_tx(&mut state, ACCOUNT_B, 4, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+    }
+
+    // Prepare: pool (account a) in world state, with delegated stakes of account X, X has the biggest stake
+    // Prepare: deposits (account X) to pool (account a)
+    // Commands (account X): Unstake Deposit
+    #[test]
+    fn test_unstake_deposit_delegated_stakes_remove() {
+        let mut state = create_state(None);
+        create_full_deposits_in_pool(&mut state, ACCOUNT_A, false);
+        create_full_stakes_in_pool(&mut state, ACCOUNT_A);
+        let biggest = [
+            129u8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            2, 2, 2, 2,
+        ];
+        state.ctx.gas_meter.ws_set_balance(biggest, 500_000_000);
+        let origin_pool_power = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
+            .power()
+            .unwrap();
+        let stake = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
+            .delegated_stakes()
+            .get_by(&biggest)
+            .unwrap();
+
+        let rw_set = state.ctx.rw_set.lock().unwrap();
+        let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
+
+        let mut state = create_state(Some(ws));
+        let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
+            operator: ACCOUNT_A,
+            max_amount: stake.power,
+        })];
+        set_tx(&mut state, biggest, 0, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        assert_eq!(
+            ret.receipt.as_ref().unwrap().last().unwrap().return_values,
+            stake.power.to_le_bytes().to_vec()
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+
+        let mut state = create_state(Some(ret.new_state));
+
+        let new_pool_power = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
+            .power()
+            .unwrap();
+        assert_eq!(origin_pool_power - new_pool_power, stake.power);
+        let stakers = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
+            .delegated_stakes()
+            .unordered_values();
+        assert!(!stakers.iter().any(|v| v.owner == biggest));
+        assert!(NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
+            .delegated_stakes()
+            .get_by(&biggest)
+            .is_none());
+    }
+
+    // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with delegated stakes of account b
+    // Prepare: deposits (account b) to pool (account t)
+    // Commands (account b): Unstake Deposit (to decrease the power of pool (account t))
+    #[test]
+    fn test_unstake_deposit_delegated_stakes_nvp_change_key() {
+        const ACCOUNT_T: [u8; 32] = [
+            2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1,
+        ];
+        let mut state = create_state(None);
+        create_full_pools_in_nvp(&mut state, false, false);
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
+        assert_eq!(pool.power().unwrap(), 200_000);
+        pool.delegated_stakes()
+            .insert(StakeValue::new(Stake {
+                owner: ACCOUNT_B,
+                power: 150_000,
+            }))
+            .unwrap();
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_T, ACCOUNT_B);
+        deposit.set_balance(200_000);
+        deposit.set_auto_stake_rewards(false);
+
+        let rw_set = state.ctx.rw_set.lock().unwrap();
+        let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
+
+        let mut state = create_state(Some(ws));
+        let commands = vec![
+            Command::UnstakeDeposit(UnstakeDepositInput {
+                operator: ACCOUNT_T,
+                max_amount: 150_000 + 1,
+            }), // unstake more than staked
+        ];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        assert_eq!(
+            ret.receipt.as_ref().unwrap().last().unwrap().return_values,
+            150_000_u64.to_le_bytes().to_vec()
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+
+        let mut state = create_state(Some(ret.new_state));
+
+        let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
+        assert_eq!(pool.power().unwrap(), 50_000);
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
+            TEST_MAX_VALIDATOR_SET_SIZE as u32
+        );
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .operator,
+            ACCOUNT_T
+        );
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .power,
+            50_000
+        );
+    }
+
+    // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with delegated stakes of account b
+    // Prepare: deposits (account b) to pool (account t)
+    // Commands (account b): Unstake Deposit (to empty the power of pool (account t), and to be kicked out from nvp)
+    #[test]
+    fn test_unstake_deposit_delegated_stakes_nvp_remove() {
+        const ACCOUNT_T: [u8; 32] = [
+            2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1,
+        ];
+        let mut state = create_state(None);
+        create_full_pools_in_nvp(&mut state, false, false);
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
+        assert_eq!(pool.power().unwrap(), 200_000);
+        pool.delegated_stakes()
+            .insert(StakeValue::new(Stake {
+                owner: ACCOUNT_B,
+                power: 200_000,
+            }))
+            .unwrap();
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_T, ACCOUNT_B);
+        deposit.set_balance(200_000);
+        deposit.set_auto_stake_rewards(false);
+
+        let rw_set = state.ctx.rw_set.lock().unwrap();
+        let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
+        let mut state = create_state(Some(ws));
+        let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
+            operator: ACCOUNT_T,
+            max_amount: 200_000,
+        })];
+        set_tx(&mut state, ACCOUNT_B, 0, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        assert_eq!(
+            ret.receipt.as_ref().unwrap().last().unwrap().return_values,
+            200_000_u64.to_le_bytes().to_vec()
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+
+        let mut state = create_state(Some(ret.new_state));
+
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
+        assert_eq!(pool.power().unwrap(), 0);
+        assert!(pool.delegated_stakes().get_by(&ACCOUNT_B).is_none());
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
+            TEST_MAX_VALIDATOR_SET_SIZE as u32 - 1
+        );
+        assert_ne!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .operator,
+            ACCOUNT_T
+        );
+    }
+
+    // Prepare: pool (account a) in world state, with non-zero value of Operator Stake
+    // Prepare: deposits (account a) to pool (account a)
+    // Commands (account a): Unstake Deposit
+    // Exception:
+    // - Pool has no operator stake
+    #[test]
+    fn test_unstake_deposit_same_owner() {
+        let mut state = create_state(None);
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+        pool.set_operator(ACCOUNT_A);
+        pool.set_power(100_000);
+        pool.set_commission_rate(1);
+        pool.set_operator_stake(Some(Stake {
+            owner: ACCOUNT_A,
+            power: 100_000,
+        }));
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_A);
+        deposit.set_balance(150_000);
+        deposit.set_auto_stake_rewards(false);
+
+        let rw_set = state.ctx.rw_set.lock().unwrap();
+        let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
+
+        let state = create_state(Some(ws));
+        let ret = execute_commands(
+            state,
+            vec![Command::UnstakeDeposit(UnstakeDepositInput {
+                operator: ACCOUNT_A,
+                max_amount: 100_000,
+            })],
+        );
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        assert_eq!(
+            ret.receipt.as_ref().unwrap().last().unwrap().return_values,
+            100_000_u64.to_le_bytes().to_vec()
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+
+        let mut state = create_state(Some(ret.new_state));
+
+        let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+        assert_eq!(pool.power().unwrap(), 0);
+        assert!(pool.operator_stake().unwrap().is_none());
+
+        ///// Exceptions: /////
+
+        let rw_set = state.ctx.rw_set.lock().unwrap();
+        let mut state = create_state(Some(rw_set.ws.to_owned()));
+        state.tx.nonce = 1;
+        let ret = execute_commands(
+            state,
+            vec![Command::UnstakeDeposit(UnstakeDepositInput {
+                operator: ACCOUNT_A,
+                max_amount: 50_000,
+            })],
+        );
+        assert_eq!(ret.error, Some(TransitionError::PoolHasNoStakes));
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+    }
+
+    // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with non-zero value of Operator Stake
+    // Prepare: deposits (account t) to pool (account t)
+    // Commands (account t): Unstake Deposit (to decrease the power of pool (account t))
+    #[test]
+    fn test_unstake_deposit_same_owner_nvp_change_key() {
+        const ACCOUNT_T: [u8; 32] = [
+            2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1,
+        ];
+        let mut state = create_state(None);
+        create_full_pools_in_nvp(&mut state, false, false);
+        let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
+        assert_eq!(pool.power().unwrap(), 200_000);
+        pool.set_operator_stake(Some(Stake {
+            owner: ACCOUNT_T,
+            power: 200_000,
+        }));
+        let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_T, ACCOUNT_T);
+        deposit.set_balance(200_000);
+        deposit.set_auto_stake_rewards(false);
+
+        let mut rw_set = state.ctx.rw_set.lock().unwrap();
+        rw_set.ws.cached().set_balance(ACCOUNT_T, 500_000_000);
+        let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
+
+        let mut state = create_state(Some(ws));
+        let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
+            operator: ACCOUNT_T,
+            max_amount: 190_000,
+        })];
+        set_tx(&mut state, ACCOUNT_T, 0, &commands);
+        let ret = execute_commands(state, commands);
+        assert_eq!(
+            (
+                &ret.error,
+                &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            ),
+            (&None, &ExitStatus::Success)
+        );
+        assert_eq!(
+            ret.receipt.as_ref().unwrap().last().unwrap().return_values,
+            190_000_u64.to_le_bytes().to_vec()
+        );
+        println!(
+            "gas_consumed {}",
+            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
+        );
+
+        let mut state = create_state(Some(ret.new_state));
+
+        let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
+        assert_eq!(pool.power().unwrap(), 10_000);
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
+            TEST_MAX_VALIDATOR_SET_SIZE as u32
+        );
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .operator,
+            ACCOUNT_T
+        );
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .power,
+            10_000
+        );
+    }
 
     // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with non-zero value of Operator Stake
     // Prepare: deposits (account t) to pool (account t)

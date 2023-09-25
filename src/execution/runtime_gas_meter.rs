@@ -33,6 +33,14 @@ where
     pub gas_limit: u64,
     pub total_gas_used: RefCell<CostChange>,
     pub command_gas_used: RefCell<CostChange>,
+
+    /// stores the list of events from exeuting a command, ordered by the sequence of emission
+    pub command_logs: Vec<Log>,
+
+    /// value returned by a call transaction using the `return_value` SDK function.
+    /// It is None if the execution has not/did not return anything.
+    pub command_return_value: Option<Vec<u8>>,
+
     rw_set: Arc<Mutex<ReadWriteSet<S>>>,
 }
 
@@ -70,6 +78,8 @@ where
             gas_limit: 1_000_000_000_u64,
             total_gas_used: RefCell::new(CostChange::default()),
             command_gas_used: RefCell::new(CostChange::default()),
+            command_logs: Vec::new(),
+            command_return_value: None,
         }
     }
 
@@ -82,6 +92,11 @@ where
         let mut total_gas_used = self.total_gas_used.borrow_mut();
         *total_gas_used += *command_gas_used;
         *command_gas_used = CostChange::default();
+        // TODO does error flow come here?
+
+        // TODO is this doing too much?
+        self.command_logs.clear();
+        self.command_return_value = None;
     }
 
     //
@@ -141,12 +156,39 @@ where
     //
 
     // TODO decide whether to return error
-    pub fn store_txn_post_execution_log(&self, log_store: &mut Vec<Log>, log_to_store: Log) {
+    // TODO check when total gas is exceeded
+    pub fn store_txn_post_execution_log(&mut self, log_to_store: Log) {
         self.charge(CostChange::deduct(gas::blockchain_log_cost(
             log_to_store.topic.len(),
             log_to_store.value.len(),
         )));
-        log_store.push(log_to_store);
+
+        // env.consume_non_wasm_gas(cost_change);
+        // if env.get_wasmer_remaining_points() == 0 {
+        //     return Err(FuncError::GasExhaustionError);
+        // }
+
+        self.command_logs.push(log_to_store);
+    }
+
+    pub fn store_txn_post_execution_return_value(&mut self, ret_val: Vec<u8>) {
+        self.charge(CostChange::deduct(gas::blockchain_return_values_cost(
+            ret_val.len(),
+        )));
+        // TODO
+        // if state.tx.gas_limit < state.total_gas_to_be_consumed() {
+        //     return Err(phase::abort(
+        //         state,
+        //         TransitionError::ExecutionProperGasExhausted,
+        //     ));
+        // }
+
+        // env.consume_non_wasm_gas(cost_change);
+        // if env.get_wasmer_remaining_points() == 0 {
+        //     return Err(FuncError::GasExhaustionError);
+        // }
+
+        self.command_return_value = Some(ret_val);
     }
 
     //

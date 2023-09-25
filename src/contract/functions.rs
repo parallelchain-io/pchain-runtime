@@ -152,45 +152,51 @@ where
         let serialized_log = env.read_bytes(log_ptr, log_len)?;
         let log = Log::deserialize(&serialized_log).map_err(|e| FuncError::Runtime(e.into()))?;
 
-        let cost_change =
-            CostChange::deduct(gas::blockchain_log_cost(log.topic.len(), log.value.len()));
-        let mut tx_ctx_lock = env.context.lock().unwrap();
-        tx_ctx_lock.receipt_write_gas += cost_change;
-        drop(tx_ctx_lock);
+        let mut ctx = env.context.lock().unwrap();
+        ctx.gas_meter.store_txn_post_execution_log(log);
+        Ok(())
+
+        // let cost_change =
+        //     CostChange::deduct(gas::blockchain_log_cost(log.topic.len(), log.value.len()));
+        // let mut tx_ctx_lock = env.context.lock().unwrap();
+        // tx_ctx_lock.receipt_write_gas += cost_change;
+        // drop(tx_ctx_lock);
 
         // check exhaustion before writing receipt data to ensure
         // the data is not written to receipt after gas exhaustion
 
         // TODO put back this behaviour
-        env.consume_non_wasm_gas(cost_change);
-        if env.get_wasmer_remaining_points() == 0 {
-            return Err(FuncError::GasExhaustionError);
-        }
+        // env.consume_non_wasm_gas(cost_change);
+        // if env.get_wasmer_remaining_points() == 0 {
+        //     return Err(FuncError::GasExhaustionError);
+        // }
 
-        env.context.lock().unwrap().logs.push(log);
-
-        Ok(())
+        // env.context.lock().unwrap().logs.push(log);
     }
 
     fn return_value(env: &Env<S>, value_ptr: u32, value_len: u32) -> Result<(), FuncError> {
         let value = env.read_bytes(value_ptr, value_len)?;
 
-        let cost_change = CostChange::deduct(gas::blockchain_return_values_cost(value.len()));
-        let mut tx_ctx_lock = env.context.lock().unwrap();
-        tx_ctx_lock.receipt_write_gas += cost_change;
-        drop(tx_ctx_lock);
+        let mut ctx = env.context.lock().unwrap();
+        ctx.gas_meter.store_txn_post_execution_return_value(value);
+        Ok(())
+
+        // let cost_change = CostChange::deduct(gas::blockchain_return_values_cost(value.len()));
+        // let mut tx_ctx_lock = env.context.lock().unwrap();
+        // tx_ctx_lock.receipt_write_gas += cost_change;
+        // drop(tx_ctx_lock);
 
         // check exhaustion before writing receipt data to ensure
         // the data is not written to receipt after gas exhaustion
-        env.consume_non_wasm_gas(cost_change);
-        if env.get_wasmer_remaining_points() == 0 {
-            return Err(FuncError::GasExhaustionError);
-        }
 
-        env.context.lock().unwrap().return_value =
-            if value.is_empty() { None } else { Some(value) };
+        // TODO put back this behaviour
+        // env.consume_non_wasm_gas(cost_change);
+        // if env.get_wasmer_remaining_points() == 0 {
+        //     return Err(FuncError::GasExhaustionError);
+        // }
 
-        Ok(())
+        // env.context.lock().unwrap().return_value =
+        //     if value.is_empty() { None } else { Some(value) };
     }
 
     fn call(
@@ -245,11 +251,14 @@ where
 
         match result.error {
             None => {
+                println!(
+                    "----------Error in CTOC call, zeroing out command_return_value----------"
+                );
                 let mut tx_ctx_locked = env.context.lock().unwrap();
-                let res = tx_ctx_locked.return_value.clone();
+                let res = tx_ctx_locked.gas_meter.command_return_value.clone();
 
                 // clear child result in parent's execution context. No cost because the return value is not written to block.
-                tx_ctx_locked.return_value = None;
+                tx_ctx_locked.gas_meter.command_return_value = None;
 
                 if let Some(res) = res {
                     return env.write_bytes(res, return_ptr_ptr);
