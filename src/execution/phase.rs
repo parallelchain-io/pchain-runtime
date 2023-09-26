@@ -25,8 +25,6 @@ use crate::{
 
 use super::state::ExecutionState;
 
-// TODO note that pre-charge isn't going through RWset, it goes directly into WS
-
 /// Pre-Charge is a Phase in State Transition. It transits state and returns gas consumption if success.
 pub(crate) fn pre_charge<S>(state: &mut ExecutionState<S>) -> Result<(), TransitionError>
 where
@@ -36,6 +34,10 @@ where
         .ctx
         .gas_meter
         .store_txn_pre_exec_inclusion_cost(state.tx_size, state.commands_len);
+
+    if state.tx.gas_limit < state.ctx.gas_meter.get_total_gas_used() {
+        return Err(TransitionError::PreExecutionGasExhausted);
+    }
 
     // note, remaining reads/ writes are performed directly on WS
     // not through GasMeter, hence not chargeable
@@ -81,10 +83,10 @@ pub(crate) fn finalize_gas_consumption<S>(
 where
     S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    // TODO move this checking limit elswhere, this method is basically pointless
-    // its purpose was to come after every command and perform gas checking
-    let gas_used = state.total_gas_to_be_consumed();
-    if state.tx.gas_limit < gas_used {
+    // TODO 6 - check GasExhausted against centralized `gas_limit` field instead of other fields
+    // should centralize gas checking in GasMeter
+    // may need to tackle with lifecycle change
+    if state.tx.gas_limit < state.ctx.gas_meter.get_total_gas_used() {
         return Err(abort(state, TransitionError::ExecutionProperGasExhausted));
     }
     Ok(state)
@@ -99,10 +101,12 @@ where
     S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static,
 {
     state.revert_changes();
-    let gas_used = std::cmp::min(state.tx.gas_limit, state.total_gas_to_be_consumed());
+    let gas_used = std::cmp::min(state.tx.gas_limit, state.ctx.gas_meter.get_total_gas_used());
 
-    // TODO i don't uds why need to clamp the gas consumption, only needed when peforming Charge
-    // keep temporarily
+    // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
+    //
+    // technically the Charge phase resolves this again by doing min comparison
+    // why need to store?
     state.ctx.gas_meter.total_gas_used_clamped = gas_used;
 
     charge(state, Some(transition_err))
@@ -119,8 +123,7 @@ where
     let signer = state.tx.signer;
     let base_fee = state.bd.this_base_fee;
     let priority_fee = state.tx.priority_fee_per_gas;
-    let gas_used = std::cmp::min(state.gas_meter.get_gas_total(), state.tx.gas_limit); // Safety for avoiding overflow
-    println!("gas_used: {:?}", gas_used);
+    let gas_used = std::cmp::min(state.gas_meter.get_total_gas_used(), state.tx.gas_limit); // Safety for avoiding overflow
     let gas_unused = state.tx.gas_limit.saturating_sub(gas_used);
 
     let mut rw_set = state.rw_set.lock().unwrap();
@@ -168,7 +171,10 @@ where
     rw_set.ws.with_commit().set_nonce(signer, nonce);
     drop(rw_set);
 
-    // TODO i think this line has no use... but just to be safe, let's save it somewhere
+    // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
+    // CY: this looks like it's really not being used, even though the old code was saving it to state
+    //
+    // old code
     // state.set_gas_consumed(gas_used);
     state.gas_meter.total_gas_used_clamped = gas_used;
 

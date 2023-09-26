@@ -41,7 +41,7 @@ impl Instance {
         // method call
         let execution_result = method.call();
 
-        // TODO - instead, here we want to replace it with GasMeter - checking_remaining_gas()
+        // TODO 6 - check GasExhausted against centralized GasMeter `gas_limit` field instead of other fields
         // remaining_gas after method call
         let remaining_gas = match wasmer_middlewares::metering::get_remaining_points(&self.0) {
             wasmer_middlewares::metering::MeteringPoints::Exhausted => 0,

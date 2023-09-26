@@ -617,8 +617,9 @@ fn test_success_etoc_network_state() {
         .unwrap();
     assert_eq!(deposit_balance, 1235u64.to_le_bytes().to_vec());
 
-    // TODO, this portion of the test is actually not passing
-    // because of pools.delegated_stake() having issues with the IndexHeap lookup
+    // TODO 3 - fix possible issue with NetworkAccountStorage IndedHeap lookup
+    // seems to cause because of pools.delegated_stake() to behave wrongly
+
     // 3. Issue Network commands to withdraw
     // let network_command_5 = Command::UnstakeDeposit(UnstakeDepositInput {
     //     operator: origin_address,

@@ -58,7 +58,9 @@ where
     }
 }
 
-// TODO confirm removal
+// TODO 3 - fix possible issue with NetworkAccountStorage IndedHeap lookup
+// keeping here for ref, delete after fix
+
 // /// ExecutionState implements NetworkAccountStorage with Read Write operations that:
 // /// - Gas is charged in every Get/Contains/Set
 // /// - Account Storage State (for app data) is opened in every Set to contract storage

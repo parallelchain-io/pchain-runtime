@@ -32,7 +32,7 @@ where
 {
     pub gas_limit: u64,
 
-    pub total_gas_used_clamped: u64, // TODO remove
+    pub total_gas_used_clamped: u64, // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
 
     /// cumulative gas used for all executed commands
     total_command_gas_used: u64,
@@ -80,11 +80,12 @@ impl<'a, S> RuntimeGasMeter<S>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    // TODO consider whether Arc is really needed, or can it removed after refactoring
-    pub fn new(rw_set: Arc<Mutex<ReadWriteSet<S>>>) -> Self {
+    // TODO CLEAN consider whether Arc/Mutex is really needed, or should the Arc/Mutex really be on TransitionContext parent
+    pub fn new(rw_set: Arc<Mutex<ReadWriteSet<S>>>, gas_limit: u64) -> Self {
         Self {
             rw_set,
-            gas_limit: 1_000_000_000_u64, // TODO remove hardcode, we are not chcecking against this limit now
+            gas_limit,
+            // TODO 6 - check GasExhausted against centralized GasMeter `gas_limit` field instead of other fields
             total_command_gas_used: 0,
             txn_inclusion_gas: 0,
             total_gas_used_clamped: 0,
@@ -116,16 +117,21 @@ where
 
         self.total_command_gas_used = self.total_command_gas_used.saturating_add(net_cmd_gas_used);
 
-        // TODO does error flow come here?
-        // TODO is this doing too much? Better to separate?
+        // TODO CLEAN is this doing too much? Better to separate?
         self.command_logs.clear();
         self.command_return_value = None;
     }
 
     /// returns total gas for the transaction
-    pub fn get_gas_total(&self) -> u64 {
+    pub fn get_total_gas_used(&self) -> u64 {
+        let pending_command_gas = (*self.command_gas_used.borrow()).values().0;
         self.txn_inclusion_gas
             .saturating_add(self.total_command_gas_used)
+            .saturating_add(pending_command_gas)
+    }
+
+    pub fn get_max_remaining_gas(&self) -> u64 {
+        self.gas_limit.saturating_sub(self.get_total_gas_used())
     }
 
     //
@@ -186,20 +192,16 @@ where
     pub fn store_txn_pre_exec_inclusion_cost(&mut self, tx_size: usize, commands_len: usize) {
         // stored separately because it is not considered to belong to a single command
         self.txn_inclusion_gas = gas::tx_inclusion_cost(tx_size, commands_len);
-        // TODO
-        // if state.tx.gas_limit < init_gas {
-        //     return Err(TransitionError::PreExecutionGasExhausted);
-        // }
     }
 
-    // TODO decide whether to return error
-    // TODO check when total gas is exceeded
     pub fn store_txn_post_exec_log(&mut self, log_to_store: Log) {
         self.charge(CostChange::deduct(gas::blockchain_log_cost(
             log_to_store.topic.len(),
             log_to_store.value.len(),
         )));
 
+        // TODO 1 - Wasm method caller needs to check on GasExhaustion
+        // old code
         // env.consume_non_wasm_gas(cost_change);
         // if env.get_wasmer_remaining_points() == 0 {
         //     return Err(FuncError::GasExhaustionError);
@@ -212,14 +214,10 @@ where
         self.charge(CostChange::deduct(gas::blockchain_return_values_cost(
             ret_val.len(),
         )));
-        // TODO
-        // if state.tx.gas_limit < state.total_gas_to_be_consumed() {
-        //     return Err(phase::abort(
-        //         state,
-        //         TransitionError::ExecutionProperGasExhausted,
-        //     ));
-        // }
+        // TODO 2 - Wasm method caller needs to check on GasExhaustion
 
+        // FYI callers from staking.rs check by calling phase::finalize_gas_consumption right after
+        // old code
         // env.consume_non_wasm_gas(cost_change);
         // if env.get_wasmer_remaining_points() == 0 {
         //     return Err(FuncError::GasExhaustionError);
@@ -250,7 +248,7 @@ where
     //
     // GET methods
     //
-    /// Gets contract storage (TODO, app_data?) from the read-write set.
+    /// Gets app data from the read-write set.
     pub fn ws_get_app_data(&self, address: PublicAddress, key: AppKey) -> Option<Vec<u8>> {
         match self.ws_get(CacheKey::App(address, key)) {
             Some(CacheValue::App(value)) => {

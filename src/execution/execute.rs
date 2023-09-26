@@ -3739,8 +3739,8 @@ mod test {
                 ws
             }
         };
-        let ctx = TransitionContext::new(ws);
         let tx = create_tx(ACCOUNT_A);
+        let ctx = TransitionContext::new(ws, tx.gas_limit);
         let base_tx = BaseTx::from(&tx);
 
         ExecutionState {

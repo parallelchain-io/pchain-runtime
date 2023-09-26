@@ -67,7 +67,7 @@ impl ContractModule {
             }
         };
 
-        // TODO eventually remove cost change
+        // TODO PENDING remove this cost change no longer used
         Ok(Self {
             store,
             module,
@@ -142,7 +142,9 @@ where
         // Invoke Wasm Execution
         let call_result = unsafe { self.instance.call_method() };
 
-        // TODO TDY update this comment, we expect non_wasm_gas_amount to be always 0
+        // TODO 7 - `non_wasmer_gas_amount` is no longer needed, can remove every where
+        //
+        // can run tests and double check this value will be 0
         let non_wasmer_gas_amount = self.environment.get_non_wasm_gas_amount();
 
         // drop the variable of wasmer remaining gas

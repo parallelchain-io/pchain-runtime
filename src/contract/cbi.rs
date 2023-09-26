@@ -259,7 +259,7 @@ where
                 "is_internal_call" => Function::new_native_with_env(store, env.clone(), K::is_internal_call),
                 "transaction_hash" => Function::new_native(store, not_callable::transaction_hash),
 
-                "call" => Function::new_native_with_env(store, env.clone(), K::call), // TODO
+                "call" => Function::new_native_with_env(store, env.clone(), K::call),
                 "return_value" => Function::new_native_with_env(store, env.clone(), K::return_value),
                 "transfer" => Function::new_native(store, not_callable::transfer),
                 "defer_create_deposit" => Function::new_native(store, not_callable::defer_create_deposit),

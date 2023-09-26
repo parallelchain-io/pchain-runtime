@@ -82,7 +82,7 @@ impl Runtime {
         bd: BlockchainParams,
     ) -> TransitionResult<S> {
         // create transition context from world state
-        let mut ctx = TransitionContext::new(ws);
+        let mut ctx = TransitionContext::new(ws, tx.gas_limit);
         if let Some(cache) = &self.sc_cache {
             ctx.sc_context.cache = Some(cache.clone());
         }
@@ -120,7 +120,7 @@ impl Runtime {
         arguments: Option<Vec<Vec<u8>>>,
     ) -> (CommandReceipt, Option<TransitionError>) {
         // create transition context from world state
-        let mut ctx = TransitionContext::new(ws);
+        let mut ctx = TransitionContext::new(ws, gas_limit);
         if let Some(cache) = &self.sc_cache {
             ctx.sc_context.cache = Some(cache.clone());
         }
@@ -238,9 +238,9 @@ impl<S> TransitionContext<S>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    pub fn new(ws: WorldState<S>) -> Self {
+    pub fn new(ws: WorldState<S>, gas_limit: u64) -> Self {
         let rw_set = Arc::new(Mutex::new(ReadWriteSet::new(ws)));
-        let host_gm = RuntimeGasMeter::new(Arc::clone(&rw_set));
+        let host_gm = RuntimeGasMeter::new(Arc::clone(&rw_set), gas_limit);
 
         Self {
             rw_set,
@@ -248,26 +248,9 @@ where
                 cache: None,
                 memory_limit: None,
             },
-            // TODO
-            // receipt_write_gas: CostChange::default(),
-            // logs: Vec::new(),
-            // return_value: None,
             commands: Vec::new(),
             gas_meter: host_gm,
         }
-    }
-
-    // TODO unify this method inside GasMeter
-    /// It is equivalent to gas_consumed + chareable_gas. The chareable_gas consists of
-    /// - write cost to storage
-    /// - read cost to storage
-    /// - write cost to receipt (blockchain data)
-    pub fn total_gas_to_be_consumed(&self) -> u64 {
-        // Gas incurred to be charged
-        let chargeable_gas = (*self.gas_meter.command_gas_used.borrow()).values().0;
-        self.gas_meter
-            .get_gas_total()
-            .saturating_add(chargeable_gas)
     }
 
     /// Discard the changes to world state
@@ -279,12 +262,17 @@ where
     /// Output the CommandReceipt and clear the intermediate context for next command execution.
     /// `prev_gas_used` will be needed for getting the intermediate gas consumption.
     pub fn extract(&mut self, exit_status: ExitStatus) -> CommandReceipt {
-        // TODO TDY write up v0.5 changes
+        // TODO PENDING write up v0.5 changes relating to this structure
         // 1. Create Command Receipt
+
+        // TODO only take this value if does not exceed total
         let net_command_gas_used = (*self.gas_meter.command_gas_used.borrow()).values().0;
+        let max_remaining_gas = self.gas_meter.get_max_remaining_gas();
+
         let ret = CommandReceipt {
             exit_status,
-            gas_used: net_command_gas_used,
+            // TODO toggle and see the difference
+            gas_used: std::cmp::min(net_command_gas_used, max_remaining_gas),
             return_values: self
                 .gas_meter
                 .command_return_value
