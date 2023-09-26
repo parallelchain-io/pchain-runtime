@@ -153,7 +153,7 @@ where
         let log = Log::deserialize(&serialized_log).map_err(|e| FuncError::Runtime(e.into()))?;
 
         let mut ctx = env.context.lock().unwrap();
-        ctx.gas_meter.store_txn_post_execution_log(log);
+        ctx.gas_meter.store_txn_post_exec_log(log);
         Ok(())
 
         // let cost_change =
@@ -178,7 +178,7 @@ where
         let value = env.read_bytes(value_ptr, value_len)?;
 
         let mut ctx = env.context.lock().unwrap();
-        ctx.gas_meter.store_txn_post_execution_return_value(value);
+        ctx.gas_meter.store_txn_post_exec_return_value(value);
         Ok(())
 
         // let cost_change = CostChange::deduct(gas::blockchain_return_values_cost(value.len()));
@@ -251,10 +251,6 @@ where
 
         match result.error {
             None => {
-                println!(
-                    "---------TODO---Error in CTOC call, zeroing out command_return_value----------"
-                );
-                // TODO verify
                 let mut tx_ctx_locked = env.context.lock().unwrap();
                 let res = tx_ctx_locked.gas_meter.command_return_value.clone();
 

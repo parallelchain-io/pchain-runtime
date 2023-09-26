@@ -232,10 +232,8 @@ where
     fn call(self) -> (ExecutionState<S>, Option<TransitionError>) {
         let (ctx, wasm_exec_gas, call_error) = self.instance.call();
         let mut state = ExecutionState { ctx, ..self.state };
-        // gas for execution is already consumed
-        let gas_consumed = state.gas_consumed();
-        state.set_gas_consumed(gas_consumed.saturating_add(wasm_exec_gas));
-
+        state.ctx.gas_meter.charge_wasmer_gas(wasm_exec_gas);
+        // TODO how to better check for errors
         let transition_err = if state.tx.gas_limit < state.total_gas_to_be_consumed() {
             Some(TransitionError::ExecutionProperGasExhausted)
         } else {

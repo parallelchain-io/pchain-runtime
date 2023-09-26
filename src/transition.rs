@@ -230,16 +230,7 @@ where
     /// Commands that deferred from a Call Comamnd via host function specified in CBI.
     pub commands: Vec<DeferredCommand>,
 
-    /// Gas consumed in transaction, no matter whether the transaction succeeds or fails.
-    gas_used: u64,
-
-    // TODO remove
-    // /// the gas charged for adding logs and setting return value in receipt.
-    // pub receipt_write_gas: CostChange,
-
-    // /// return_value is the value returned by a call transaction using the `return_value` SDK function. It is None if the
-    // /// execution has not/did not return anything.
-    // // pub return_value: Option<Vec<u8>>,
+    /// GasMeter holding state for entire txn
     pub gas_meter: RuntimeGasMeter<S>,
 }
 
@@ -260,21 +251,13 @@ where
             // TODO
             // receipt_write_gas: CostChange::default(),
             // logs: Vec::new(),
-            gas_used: 0,
             // return_value: None,
             commands: Vec::new(),
             gas_meter: host_gm,
         }
     }
 
-    pub fn gas_consumed(&self) -> u64 {
-        self.gas_used
-    }
-
-    pub fn set_gas_consumed(&mut self, gas_used: u64) {
-        self.gas_used = gas_used
-    }
-
+    // TODO unify this method inside GasMeter
     /// It is equivalent to gas_consumed + chareable_gas. The chareable_gas consists of
     /// - write cost to storage
     /// - read cost to storage
@@ -282,7 +265,9 @@ where
     pub fn total_gas_to_be_consumed(&self) -> u64 {
         // Gas incurred to be charged
         let chargeable_gas = (*self.gas_meter.command_gas_used.borrow()).values().0;
-        self.gas_consumed().saturating_add(chargeable_gas)
+        self.gas_meter
+            .get_gas_total()
+            .saturating_add(chargeable_gas)
     }
 
     /// Discard the changes to world state
@@ -293,12 +278,13 @@ where
 
     /// Output the CommandReceipt and clear the intermediate context for next command execution.
     /// `prev_gas_used` will be needed for getting the intermediate gas consumption.
-    pub fn extract(&mut self, prev_gas_used: u64, exit_status: ExitStatus) -> CommandReceipt {
+    pub fn extract(&mut self, exit_status: ExitStatus) -> CommandReceipt {
+        // TODO TDY write up v0.5 changes
         // 1. Create Command Receipt
+        let net_command_gas_used = (*self.gas_meter.command_gas_used.borrow()).values().0;
         let ret = CommandReceipt {
             exit_status,
-            gas_used: self.gas_used.saturating_sub(prev_gas_used),
-            // Intentionally retain return_values and logs even if exit_status is failed
+            gas_used: net_command_gas_used,
             return_values: self
                 .gas_meter
                 .command_return_value
@@ -306,14 +292,12 @@ where
                 .map_or(Vec::new(), std::convert::identity),
             logs: self.gas_meter.command_logs.clone(),
         };
-        // 2. Clear data for next command execution
-        // TODO
-        // self.receipt_write_gas = CostChange::default();
-        // self.logs.clear();
-        // self.return_value = None;
-        self.commands.clear();
 
+        // 2. Write command gas to the total
         self.gas_meter.finalize_command_gas();
+
+        // 3. Clear data for next command execution
+        self.commands.clear();
         ret
     }
 

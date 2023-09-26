@@ -31,7 +31,17 @@ where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     pub gas_limit: u64,
-    pub total_gas_used: RefCell<CostChange>,
+
+    pub total_gas_used_clamped: u64, // TODO remove
+
+    /// cumulative gas used for all executed commands
+    total_command_gas_used: u64,
+
+    /// stores txn inclusion gas separately because it is not considered to belong to a single command
+    txn_inclusion_gas: u64,
+
+    /// stores the gas used by current command,
+    /// finalized and reset at the end of each command
     pub command_gas_used: RefCell<CostChange>,
 
     /// stores the list of events from exeuting a command, ordered by the sequence of emission
@@ -74,9 +84,10 @@ where
     pub fn new(rw_set: Arc<Mutex<ReadWriteSet<S>>>) -> Self {
         Self {
             rw_set,
-            // TODO remove hardcode, we are not chcecking against this limit now
-            gas_limit: 1_000_000_000_u64,
-            total_gas_used: RefCell::new(CostChange::default()),
+            gas_limit: 1_000_000_000_u64, // TODO remove hardcode, we are not chcecking against this limit now
+            total_command_gas_used: 0,
+            txn_inclusion_gas: 0,
+            total_gas_used_clamped: 0,
             command_gas_used: RefCell::new(CostChange::default()),
             command_logs: Vec::new(),
             command_return_value: None,
@@ -87,16 +98,34 @@ where
     // Gas Accounting
     //
 
-    pub fn finalize_command_gas(&mut self) {
-        let mut command_gas_used = self.command_gas_used.borrow_mut();
-        let mut total_gas_used = self.total_gas_used.borrow_mut();
-        *total_gas_used += *command_gas_used;
-        *command_gas_used = CostChange::default();
-        // TODO does error flow come here?
+    /// method to bring in gas consumed in the Wasmer env due to
+    /// 1) read and write to Wasmer memory,
+    /// 2) compute cost
+    pub fn charge_wasmer_gas(&mut self, gas: u64) {
+        self.charge(CostChange::deduct(gas));
+    }
 
-        // TODO is this doing too much?
+    /// called after every command to reset command_gas_used
+    pub fn finalize_command_gas(&mut self) {
+        let net_cmd_gas_used = {
+            let mut command_gas_ptr = self.command_gas_used.borrow_mut();
+            let net_gas = command_gas_ptr.values().0;
+            *command_gas_ptr = CostChange::default();
+            net_gas
+        };
+
+        self.total_command_gas_used = self.total_command_gas_used.saturating_add(net_cmd_gas_used);
+
+        // TODO does error flow come here?
+        // TODO is this doing too much? Better to separate?
         self.command_logs.clear();
         self.command_return_value = None;
+    }
+
+    /// returns total gas for the transaction
+    pub fn get_gas_total(&self) -> u64 {
+        self.txn_inclusion_gas
+            .saturating_add(self.total_command_gas_used)
     }
 
     //
@@ -154,10 +183,18 @@ where
     //
     // Facade methods for Transaction Storage methods that cost gas
     //
+    pub fn store_txn_pre_exec_inclusion_cost(&mut self, tx_size: usize, commands_len: usize) {
+        // stored separately because it is not considered to belong to a single command
+        self.txn_inclusion_gas = gas::tx_inclusion_cost(tx_size, commands_len);
+        // TODO
+        // if state.tx.gas_limit < init_gas {
+        //     return Err(TransitionError::PreExecutionGasExhausted);
+        // }
+    }
 
     // TODO decide whether to return error
     // TODO check when total gas is exceeded
-    pub fn store_txn_post_execution_log(&mut self, log_to_store: Log) {
+    pub fn store_txn_post_exec_log(&mut self, log_to_store: Log) {
         self.charge(CostChange::deduct(gas::blockchain_log_cost(
             log_to_store.topic.len(),
             log_to_store.value.len(),
@@ -171,7 +208,7 @@ where
         self.command_logs.push(log_to_store);
     }
 
-    pub fn store_txn_post_execution_return_value(&mut self, ret_val: Vec<u8>) {
+    pub fn store_txn_post_exec_return_value(&mut self, ret_val: Vec<u8>) {
         self.charge(CostChange::deduct(gas::blockchain_return_values_cost(
             ret_val.len(),
         )));

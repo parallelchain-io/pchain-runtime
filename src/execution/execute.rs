@@ -74,8 +74,6 @@ where
             validator_changes: None,
         };
     }
-    let mut prev_gas_used = state.gas_consumed();
-
     // Phase: Command(s)
     let mut command_task_results = CommandTaskResults::new();
     let mut command_tasks = CommandTasks::new();
@@ -115,8 +113,7 @@ where
                     );
                 }
                 // extract receipt from current execution result
-                let cmd_receipt =
-                    state_of_success_execution.extract(prev_gas_used, ExitStatus::Success);
+                let cmd_receipt = state_of_success_execution.extract(ExitStatus::Success);
                 command_task_results.push(task_id, cmd_receipt);
                 state_of_success_execution
             }
@@ -126,14 +123,12 @@ where
                 error,
             }) => {
                 // extract receipt from last execution result
-                let cmd_receipt =
-                    state_of_abort_result.extract(prev_gas_used, error.as_ref().unwrap().into());
+                let cmd_receipt = state_of_abort_result.extract(error.as_ref().unwrap().into());
                 command_task_results.push(task_id, cmd_receipt);
                 return StateChangesResult::new(state_of_abort_result, error)
                     .finalize(command_task_results.command_receipts());
             }
         };
-        prev_gas_used = state.gas_consumed();
     }
 
     // Phase: Charge
@@ -153,14 +148,14 @@ where
     match account::call(state, true, target, method, arguments, None) {
         // not yet finish. continue command execution with resulting state
         Ok(mut state_of_success_execution) => {
-            let cmd_receipt = state_of_success_execution.extract(0, ExitStatus::Success);
+            let cmd_receipt = state_of_success_execution.extract(ExitStatus::Success);
             (cmd_receipt, None)
         }
         Err(StateChangesResult {
             state: mut state_of_abort_result,
             error,
         }) => {
-            let cmd_receipt = state_of_abort_result.extract(0, error.as_ref().unwrap().into());
+            let cmd_receipt = state_of_abort_result.extract(error.as_ref().unwrap().into());
             (cmd_receipt, error)
         }
     }
@@ -207,7 +202,7 @@ where
     drop(rw_set);
 
     // Extract receipt from current execution result
-    let cmd_receipt = state.extract(0, ExitStatus::Success);
+    let cmd_receipt = state.extract(ExitStatus::Success);
 
     let mut result = StateChangesResult::new(state, None).finalize(vec![cmd_receipt]);
     result.validator_changes = Some(new_vs);
@@ -2494,8 +2489,8 @@ mod test {
             ret.receipt.as_ref().unwrap().last().unwrap().return_values,
             45_000_u64.to_le_bytes().to_vec()
         );
-        let gas_used = ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>();
-        println!("gas_consumed {}", gas_used);
+        let gas_used = extract_gas_used(&ret);
+        assert_eq!(gas_used, 326320);
 
         let mut state = create_state(Some(ret.new_state));
 
@@ -2675,17 +2670,8 @@ mod test {
             ret.receipt.as_ref().unwrap().last().unwrap().return_values,
             300_000_u64.to_le_bytes().to_vec()
         );
-        let gas_used = ret
-            .receipt
-            .as_ref()
-            .unwrap()
-            .iter()
-            .map(|g| g.gas_used)
-            .sum::<u64>();
-        println!(
-            "gas_consumed {}",
-            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-        );
+        let gas_used = extract_gas_used(&ret);
+        assert_eq!(gas_used, 392450);
 
         let mut state = create_state(Some(ret.new_state));
 
@@ -2799,8 +2785,8 @@ mod test {
             ret.receipt.as_ref().unwrap().last().unwrap().return_values,
             20_000_u64.to_le_bytes().to_vec()
         );
-        let gas_used = ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>();
-        println!("gas_consumed {}", gas_used);
+        let gas_used = extract_gas_used(&ret);
+        assert_eq!(gas_used, 383140);
 
         let mut state = create_state(Some(ret.new_state));
 
@@ -2905,8 +2891,8 @@ mod test {
             ret.receipt.as_ref().unwrap().last().unwrap().return_values,
             10_000_u64.to_le_bytes().to_vec()
         );
-        let gas_used = ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>();
-        println!("gas_consumed {}", gas_used);
+        let gas_used = extract_gas_used(&ret);
+        assert_eq!(gas_used, 383140);
 
         let mut state = create_state(Some(ret.new_state));
 

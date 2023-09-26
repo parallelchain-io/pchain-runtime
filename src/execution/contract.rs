@@ -142,6 +142,7 @@ where
         // Invoke Wasm Execution
         let call_result = unsafe { self.instance.call_method() };
 
+        // TODO TDY update this comment, we expect non_wasm_gas_amount to be always 0
         let non_wasmer_gas_amount = self.environment.get_non_wasm_gas_amount();
 
         // drop the variable of wasmer remaining gas

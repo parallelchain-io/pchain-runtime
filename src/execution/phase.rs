@@ -28,18 +28,20 @@ use super::state::ExecutionState;
 // TODO note that pre-charge isn't going through RWset, it goes directly into WS
 
 /// Pre-Charge is a Phase in State Transition. It transits state and returns gas consumption if success.
-pub(crate) fn pre_charge<S>(state: &mut ExecutionState<S>) -> Result<u64, TransitionError>
+pub(crate) fn pre_charge<S>(state: &mut ExecutionState<S>) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    let init_gas = gas::tx_inclusion_cost(state.tx_size, state.commands_len);
+    state
+        .ctx
+        .gas_meter
+        .store_txn_pre_exec_inclusion_cost(state.tx_size, state.commands_len);
 
-    if state.tx.gas_limit < init_gas {
-        return Err(TransitionError::PreExecutionGasExhausted);
-    }
+    // note, remaining reads/ writes are performed directly on WS
+    // not through GasMeter, hence not chargeable
+    // because they are internal housekeeping and not part of the txn execution
 
     let signer = state.tx.signer;
-
     let mut rw_set = state.rw_set.lock().unwrap();
 
     let origin_nonce = rw_set.ws.nonce(signer);
@@ -47,7 +49,7 @@ where
         return Err(TransitionError::WrongNonce);
     }
 
-    let origin_balance = rw_set.ws.balance(state.tx.signer);
+    let origin_balance = rw_set.ws.balance(signer);
     let gas_limit = state.tx.gas_limit;
     let base_fee = state.bd.this_base_fee;
     let priority_fee = state.tx.priority_fee_per_gas;
@@ -63,16 +65,13 @@ where
         .checked_sub(pre_charge)
         .ok_or(TransitionError::NotEnoughBalanceForGasLimit)?; // pre_charge > origin_balance
 
-    // Apply change directly to World State
     rw_set
         .ws
         .with_commit()
         .set_balance(signer, pre_charged_balance);
     drop(rw_set);
 
-    state.set_gas_consumed(init_gas);
-
-    Ok(init_gas)
+    Ok(())
 }
 
 /// finalize gas consumption of this Command Phase. Return Error GasExhaust if gas has already been exhausted
@@ -82,11 +81,12 @@ pub(crate) fn finalize_gas_consumption<S>(
 where
     S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static,
 {
+    // TODO move this checking limit elswhere, this method is basically pointless
+    // its purpose was to come after every command and perform gas checking
     let gas_used = state.total_gas_to_be_consumed();
     if state.tx.gas_limit < gas_used {
         return Err(abort(state, TransitionError::ExecutionProperGasExhausted));
     }
-    state.set_gas_consumed(gas_used);
     Ok(state)
 }
 
@@ -100,7 +100,11 @@ where
 {
     state.revert_changes();
     let gas_used = std::cmp::min(state.tx.gas_limit, state.total_gas_to_be_consumed());
-    state.set_gas_consumed(gas_used);
+
+    // TODO i don't uds why need to clamp the gas consumption, only needed when peforming Charge
+    // keep temporarily
+    state.ctx.gas_meter.total_gas_used_clamped = gas_used;
+
     charge(state, Some(transition_err))
 }
 
@@ -115,7 +119,8 @@ where
     let signer = state.tx.signer;
     let base_fee = state.bd.this_base_fee;
     let priority_fee = state.tx.priority_fee_per_gas;
-    let gas_used = std::cmp::min(state.gas_consumed(), state.tx.gas_limit); // Safety for avoiding overflow
+    let gas_used = std::cmp::min(state.gas_meter.get_gas_total(), state.tx.gas_limit); // Safety for avoiding overflow
+    println!("gas_used: {:?}", gas_used);
     let gas_unused = state.tx.gas_limit.saturating_sub(gas_used);
 
     let mut rw_set = state.rw_set.lock().unwrap();
@@ -163,6 +168,9 @@ where
     rw_set.ws.with_commit().set_nonce(signer, nonce);
     drop(rw_set);
 
-    state.set_gas_consumed(gas_used);
+    // TODO i think this line has no use... but just to be safe, let's save it somewhere
+    // state.set_gas_consumed(gas_used);
+    state.gas_meter.total_gas_used_clamped = gas_used;
+
     StateChangesResult::new(state, transition_result)
 }
