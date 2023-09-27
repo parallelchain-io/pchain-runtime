@@ -343,7 +343,7 @@ where
     state
         .ctx
         .gas_meter
-        .store_txn_post_exec_return_value(return_value);
+        .charge_txn_post_exec_return_value(return_value);
     phase::finalize_gas_consumption(state)
 }
 
@@ -401,7 +401,7 @@ where
     state
         .ctx
         .gas_meter
-        .store_txn_post_exec_return_value(return_value);
+        .charge_txn_post_exec_return_value(return_value);
 
     phase::finalize_gas_consumption(state)
 }
@@ -448,7 +448,7 @@ where
     state
         .ctx
         .gas_meter
-        .store_txn_post_exec_return_value(return_value);
+        .charge_txn_post_exec_return_value(return_value);
 
     phase::finalize_gas_consumption(state)
 }

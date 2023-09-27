@@ -34,7 +34,7 @@ where
     state
         .ctx
         .gas_meter
-        .store_txn_pre_exec_inclusion_cost(state.tx_size, state.commands_len)?;
+        .charge_txn_pre_exec_inclusion(state.tx_size, state.commands_len)?;
 
     // note, remaining reads/ writes are performed directly on WS
     // not through GasMeter, hence not chargeable

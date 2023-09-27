@@ -153,10 +153,9 @@ where
         let log = Log::deserialize(&serialized_log).map_err(|e| FuncError::Runtime(e.into()))?;
 
         let mut ctx = env.context.lock().unwrap();
-        ctx.gas_meter.store_txn_post_exec_log(log);
-        Ok(())
+        ctx.gas_meter.charge_txn_post_exec_log(log);
 
-        // TODO 1 - Wasm method caller needs to check on GasExhaustion
+        // TODO 1 - Wasm method caller should check on GasExhaustion due to this operation
 
         // old code for ref:
         // let cost_change =
@@ -175,16 +174,16 @@ where
         // }
 
         // env.context.lock().unwrap().logs.push(log);
+        Ok(())
     }
 
     fn return_value(env: &Env<S>, value_ptr: u32, value_len: u32) -> Result<(), FuncError> {
         let value = env.read_bytes(value_ptr, value_len)?;
 
         let mut ctx = env.context.lock().unwrap();
-        ctx.gas_meter.store_txn_post_exec_return_value(value);
-        Ok(())
 
-        // TODO 2 - Wasm method caller needs to check on GasExhaustion
+        ctx.gas_meter.charge_txn_post_exec_return_value(value);
+        // TODO 2 - Wasm method caller should on check on GasExhaustion due to this operation
 
         // old code for ref
         // let cost_change = CostChange::deduct(gas::blockchain_return_values_cost(value.len()));
@@ -202,6 +201,7 @@ where
 
         // env.context.lock().unwrap().return_value =
         //     if value.is_empty() { None } else { Some(value) };
+        Ok(())
     }
 
     fn call(
@@ -251,7 +251,6 @@ where
             env.call_counter.saturating_add(1),
             env.is_view,
         );
-        env.consume_non_wasm_gas(result.non_wasmer_gas);
         env.consume_wasm_gas(result.exec_gas); // subtract gas consumed from parent contract's environment
 
         match result.error {
@@ -291,7 +290,6 @@ where
             recipient,
             env.context.clone(),
         );
-        env.consume_non_wasm_gas(result.non_wasmer_gas);
 
         match result.error {
             None => Ok(()),

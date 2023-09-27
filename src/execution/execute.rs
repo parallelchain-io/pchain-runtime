@@ -2545,11 +2545,12 @@ mod test {
         let mut rw_set = state.ctx.lock().unwrap();
         rw_set.ws.cached().set_balance(ACCOUNT_T, 500_000_000);
         let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
 
         let mut state = create_state(Some(ws));
+        let rw_set = state.ctx.lock().unwrap();
         let owner_balance_before = rw_set.ws.balance(ACCOUNT_T);
         drop(rw_set);
-        println!("owner_balance_before: {}", owner_balance_before);
 
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_T,
@@ -2591,7 +2592,6 @@ mod test {
         let owner_balance_after = rw_set.ws.balance(ACCOUNT_T);
         drop(rw_set);
 
-        // TODO confirm if this is passing
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 200_000
@@ -2640,8 +2640,10 @@ mod test {
         let mut rw_set = state.ctx.lock().unwrap();
         rw_set.ws.cached().set_balance(ACCOUNT_T, 500_000_000);
         let ws = rw_set.clone().commit_to_world_state();
+        drop(rw_set);
 
         let mut state = create_state(Some(ws));
+        let rw_set = state.ctx.lock().unwrap();
         let owner_balance_before = rw_set.ws.balance(ACCOUNT_A);
         drop(rw_set);
 

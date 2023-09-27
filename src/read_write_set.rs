@@ -57,7 +57,7 @@ where
     }
 
     /// remove cached writes and return the value,
-    /// gas free operation, only used for accouting during charge phase
+    /// gas free operation, only used for accounting during charge phase
     pub fn purge_balance(&mut self, address: PublicAddress) -> u64 {
         let balance = match self.get_uncharged(&CacheKey::Balance(address)) {
             Some(CacheValue::Balance(value)) => value,

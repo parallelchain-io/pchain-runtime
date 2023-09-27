@@ -266,9 +266,7 @@ where
     //
     /// Output the CommandReceipt and clear the intermediate context for next command execution.
     pub fn extract(&mut self, exit_status: ExitStatus) -> CommandReceipt {
-        // TODO PENDING write up v0.5 changes relating to this structure
         // 1. Create Command Receipt
-
         let ret = CommandReceipt {
             exit_status,
             gas_used: self.gas_meter.get_gas_used_for_current_command(),

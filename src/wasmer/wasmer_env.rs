@@ -122,21 +122,23 @@ where
     }
 
     /// substract remaining points of wasm execution and record the amount to non_wasmer_gas_amount
-    pub fn consume_non_wasm_gas(&self, change: CostChange) {
-        // rewards is not useful in substracting remaining points. It is fine because it will
-        // eventaully be used to reduce gas consumption of the transaction, but here we just do not
-        // want to extend the wasm execution time.
-        let (deduct, _) = change.values();
-        if deduct > 0 {
-            unsafe {
-                self.gas_meter
-                    .lock()
-                    .unwrap()
-                    .assume_init_mut()
-                    .substract_non_wasmer_gas(deduct);
-            }
-        }
-    }
+    // pub fn consume_non_wasm_gas(&self, change: CostChange) {
+    //     println!("----------------------HERE I AM -----------------------");
+    //     println!("cost change: {:?}", change);
+    //     // rewards is not useful in substracting remaining points. It is fine because it will
+    //     // eventaully be used to reduce gas consumption of the transaction, but here we just do not
+    //     // want to extend the wasm execution time.
+    //     let (deduct, _) = change.values();
+    //     if deduct > 0 {
+    //         unsafe {
+    //             self.gas_meter
+    //                 .lock()
+    //                 .unwrap()
+    //                 .assume_init_mut()
+    //                 .substract_non_wasmer_gas(deduct);
+    //         }
+    //     }
+    // }
 
     /// substract remaining points of wasm execution
     pub fn consume_wasm_gas(&self, gas_consumed: u64) -> u64 {
@@ -176,6 +178,8 @@ pub(crate) struct GasMeter {
     /// global vaiable of wasmer_middlewares::metering remaining points.
     wasmer_gas: wasmer::Global,
 
+    // TODO 7 - `non_wasmer_gas_amount` is no longer needed, can remove every where
+    //
     /// the gas accounted as part of the wasm execution gas during execution for eariler exiting when
     /// gas becomes insufficient. This value is useful in deriving the gas used only for wasm execution.
     non_wasmer_gas_amount: u64,
@@ -192,9 +196,9 @@ impl GasMeter {
         new_remaining_points
     }
 
-    /// subtract amount from wasmer_gas, and record the amount of non_wasmer_gas.
-    fn substract_non_wasmer_gas(&mut self, amount: u64) -> u64 {
-        self.non_wasmer_gas_amount = self.non_wasmer_gas_amount.saturating_add(amount);
-        self.substract(amount)
-    }
+    // /// subtract amount from wasmer_gas, and record the amount of non_wasmer_gas.
+    // fn substract_non_wasmer_gas(&mut self, amount: u64) -> u64 {
+    //     self.non_wasmer_gas_amount = self.non_wasmer_gas_amount.saturating_add(amount);
+    //     self.substract(amount)
+    // }
 }

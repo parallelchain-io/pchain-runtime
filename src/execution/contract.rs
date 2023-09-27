@@ -67,10 +67,10 @@ impl ContractModule {
             }
         };
 
-        // TODO PENDING remove this cost change no longer used
         Ok(Self {
             store,
             module,
+            // TODO CLEAN remove this cost change no longer used
             gas_cost: CostChange::default(),
         })
     }

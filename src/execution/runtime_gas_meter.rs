@@ -32,6 +32,7 @@ pub(crate) struct RuntimeGasMeter<S>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
+    /// gas limit of the entire txn
     pub gas_limit: u64,
 
     pub total_gas_used_clamped: u64, // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
@@ -98,7 +99,9 @@ where
     }
 
     //
+    //
     // Gas Accounting
+    //
     //
 
     /// method to bring in gas consumed in the Wasmer env due to
@@ -125,6 +128,21 @@ where
         self.command_return_value = None;
     }
 
+    /// returns gas that has been used so far
+    /// will not exceed maximum
+    pub fn get_gas_already_used(&self) -> u64 {
+        let val = self
+            .txn_inclusion_gas
+            .saturating_add(self.total_command_gas_used);
+
+        // TODO CLEAN probably can remove this sanity check, should not happen as we only consume gas up to the limit
+        if self.gas_limit < val {
+            panic!("Invariant violated, we are using more gas than the limit");
+        } else {
+            val
+        }
+    }
+
     /// returns the theoretical max gas used so far
     /// may exceed gas_limit
     pub fn get_gas_to_be_used_in_theory(&self) -> u64 {
@@ -133,24 +151,9 @@ where
             .saturating_add(pending_command_gas)
     }
 
-    /// returns gas that has been used so far
-    /// will not exceed maximum
-    pub fn get_gas_already_used(&self) -> u64 {
-        let val = self
-            .txn_inclusion_gas
-            .saturating_add(self.total_command_gas_used);
-
-        // TODO CLEAN probably can remove this sanity check, should not happen as we only use gas to the limit
-        if self.gas_limit < val {
-            panic!("Invariant violated, we are using more gas than the limit");
-        } else {
-            val
-        }
-    }
-
     pub fn get_gas_used_for_current_command(&self) -> u64 {
         if self.gas_limit < self.get_gas_to_be_used_in_theory() {
-            // gas exhaustion
+            // consume only up to limit if exceeding
             return self.gas_limit.saturating_sub(self.get_gas_already_used());
         }
         let net_gas_used_for_cmd = (*self.command_gas_used.borrow()).values().0;
@@ -158,7 +161,9 @@ where
     }
 
     //
+    //
     // Facade methods for cryptographic operations on host machine callable by contracts
+    //
     //
     pub fn host_sha256(&self, input_bytes: Vec<u8>) -> Vec<u8> {
         self.charge(CostChange::deduct(
@@ -210,9 +215,11 @@ where
     }
 
     //
+    //
     // Facade methods for Transaction Storage methods that cost gas
     //
-    pub fn store_txn_pre_exec_inclusion_cost(
+    //
+    pub fn charge_txn_pre_exec_inclusion(
         &mut self,
         tx_size: usize,
         commands_len: usize,
@@ -227,7 +234,7 @@ where
         Ok(())
     }
 
-    pub fn store_txn_post_exec_log(&mut self, log_to_store: Log) {
+    pub fn charge_txn_post_exec_log(&mut self, log_to_store: Log) {
         self.charge(CostChange::deduct(gas::blockchain_log_cost(
             log_to_store.topic.len(),
             log_to_store.value.len(),
@@ -243,7 +250,7 @@ where
         self.command_logs.push(log_to_store);
     }
 
-    pub fn store_txn_post_exec_return_value(&mut self, ret_val: Vec<u8>) {
+    pub fn charge_txn_post_exec_return_value(&mut self, ret_val: Vec<u8>) {
         self.charge(CostChange::deduct(gas::blockchain_return_values_cost(
             ret_val.len(),
         )));
@@ -260,7 +267,10 @@ where
     }
 
     //
+    //
     // Facade methods for World State methods that cost gas
+    //
+    //
     //
 
     //
