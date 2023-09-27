@@ -282,7 +282,7 @@ where
 {
     fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
         let rw_set = self.rw_set.lock().unwrap();
-        rw_set.app_data_from_account_storage_state(
+        rw_set.app_data_from_account_storage_state_uncharged(
             &self.account_storage_state,
             AppKey::new(key.to_vec()),
         )
@@ -290,7 +290,7 @@ where
 
     fn contains(&self, key: &[u8]) -> bool {
         let rw_set = self.rw_set.lock().unwrap();
-        rw_set.contains_app_data_from_account_storage_state(
+        rw_set.contains_app_data_from_account_storage_state_uncharged(
             &self.account_storage_state,
             AppKey::new(key.to_vec()),
         )

@@ -154,26 +154,6 @@ where
 
         let mut ctx = env.context.lock().unwrap();
         ctx.gas_meter.charge_txn_post_exec_log(log);
-
-        // TODO 1 - Wasm method caller should check on GasExhaustion due to this operation
-
-        // old code for ref:
-        // let cost_change =
-        //     CostChange::deduct(gas::blockchain_log_cost(log.topic.len(), log.value.len()));
-        // let mut tx_ctx_lock = env.context.lock().unwrap();
-        // tx_ctx_lock.receipt_write_gas += cost_change;
-        // drop(tx_ctx_lock);
-
-        // check exhaustion before writing receipt data to ensure
-        // the data is not written to receipt after gas exhaustion
-
-        // TODO put back this behaviour
-        // env.consume_non_wasm_gas(cost_change);
-        // if env.get_wasmer_remaining_points() == 0 {
-        //     return Err(FuncError::GasExhaustionError);
-        // }
-
-        // env.context.lock().unwrap().logs.push(log);
         Ok(())
     }
 
@@ -183,24 +163,6 @@ where
         let mut ctx = env.context.lock().unwrap();
 
         ctx.gas_meter.charge_txn_post_exec_return_value(value);
-        // TODO 2 - Wasm method caller should on check on GasExhaustion due to this operation
-
-        // old code for ref
-        // let cost_change = CostChange::deduct(gas::blockchain_return_values_cost(value.len()));
-        // let mut tx_ctx_lock = env.context.lock().unwrap();
-        // tx_ctx_lock.receipt_write_gas += cost_change;
-        // drop(tx_ctx_lock);
-
-        // check exhaustion before writing receipt data to ensure
-        // the data is not written to receipt after gas exhaustion
-
-        // env.consume_non_wasm_gas(cost_change);
-        // if env.get_wasmer_remaining_points() == 0 {
-        //     return Err(FuncError::GasExhaustionError);
-        // }
-
-        // env.context.lock().unwrap().return_value =
-        //     if value.is_empty() { None } else { Some(value) };
         Ok(())
     }
 
@@ -266,6 +228,7 @@ where
                 }
             }
             Some(e) => {
+                // TODO 6 - should check using RuntimeGasMeter: gas_meter.gas_limit > (gas_meter.get_gas_to_be_used_in_theory() + wasm gas used)
                 if env.get_wasmer_remaining_points() == 0 {
                     return Err(FuncError::GasExhaustionError);
                 }

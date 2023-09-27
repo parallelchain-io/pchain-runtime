@@ -35,7 +35,8 @@ where
     /// gas limit of the entire txn
     pub gas_limit: u64,
 
-    pub total_gas_used_clamped: u64, // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
+    // TODO 4 - temp keeping this field (which means total gas used clamped to gas limit), but should remove if no use
+    pub total_gas_used_clamped: u64,
 
     /// cumulative gas used for all executed commands
     total_command_gas_used: u64,
@@ -88,7 +89,6 @@ where
         Self {
             rw_set,
             gas_limit,
-            // TODO 6 - check GasExhausted against centralized GasMeter `gas_limit` field instead of other fields
             total_command_gas_used: 0,
             txn_inclusion_gas: 0,
             total_gas_used_clamped: 0,
@@ -240,12 +240,25 @@ where
             log_to_store.value.len(),
         )));
 
-        // TODO 1 - Wasm method caller needs to check on GasExhaustion
-        // old code
+        // TODO 6 - should check using RuntimeGasMeter: gas_meter.gas_limit > (gas_meter.get_gas_to_be_used_in_theory() + wasm gas used)
+        // old checking behaviour was in the caller
+        // old calling code reproduced as follows:
+
+        // let cost_change =
+        //     CostChange::deduct(gas::blockchain_log_cost(log.topic.len(), log.value.len()));
+        // let mut tx_ctx_lock = env.context.lock().unwrap();
+        // tx_ctx_lock.receipt_write_gas += cost_change;
+        // drop(tx_ctx_lock);
+
+        // check exhaustion before writing receipt data to ensure
+        // the data is not written to receipt after gas exhaustion
+
         // env.consume_non_wasm_gas(cost_change);
         // if env.get_wasmer_remaining_points() == 0 {
         //     return Err(FuncError::GasExhaustionError);
         // }
+
+        // env.context.lock().unwrap().logs.push(log);
 
         self.command_logs.push(log_to_store);
     }
@@ -254,14 +267,50 @@ where
         self.charge(CostChange::deduct(gas::blockchain_return_values_cost(
             ret_val.len(),
         )));
-        // TODO 2 - Wasm method caller needs to check on GasExhaustion
 
-        // FYI callers from staking.rs check by calling phase::finalize_gas_consumption right after
-        // old code
+        // TODO 6 - should check using RuntimeGasMeter: gas_meter.gas_limit > (gas_meter.get_gas_to_be_used_in_theory() + wasm gas used)
+        //
+        // this more complicated because written from 2 places: within contract (contract/functions.rs), and outside of contract (staking.rs)
+        // but similar in that gas is checked before saving the return value
+
+        //
+        // old calling code from (contract/functions.rs) reproduced as follows:
+        //
+        //
+
+        // let cost_change = CostChange::deduct(gas::blockchain_return_values_cost(value.len()));
+        // let mut tx_ctx_lock = env.context.lock().unwrap();
+        // tx_ctx_lock.receipt_write_gas += cost_change;
+        // drop(tx_ctx_lock);
+
+        // check exhaustion before writing receipt data to ensure
+        // the data is not written to receipt after gas exhaustion
+
         // env.consume_non_wasm_gas(cost_change);
         // if env.get_wasmer_remaining_points() == 0 {
         //     return Err(FuncError::GasExhaustionError);
         // }
+
+        // env.context.lock().unwrap().return_value =
+        //     if value.is_empty() { None } else { Some(value) };
+
+        //
+        //
+
+        //
+        // old calling code from (staking.rs) reproduced as follows:
+        //
+
+        // let return_value = amount_unstaked.to_le_bytes().to_vec();
+        // state.receipt_write_gas +=
+        //     CostChange::deduct(gas::blockchain_return_values_cost(return_value.len()));
+        // if state.tx.gas_limit < state.total_gas_to_be_consumed() {
+        //     return Err(phase::abort(
+        //         state,
+        //         TransitionError::ExecutionProperGasExhausted,
+        //     ));
+        // }
+        // state.return_value = Some(return_value);
 
         self.command_return_value = Some(ret_val);
     }

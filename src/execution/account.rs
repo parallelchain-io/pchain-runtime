@@ -233,7 +233,7 @@ where
         let (ctx, wasm_exec_gas, call_error) = self.instance.call();
         let mut state = ExecutionState { ctx, ..self.state };
         state.ctx.gas_meter.charge_wasmer_gas(wasm_exec_gas);
-        // TODO 6 - check GasExhausted against centralized GasMeter `gas_limit` field instead of other fields
+
         let transition_err =
             if state.tx.gas_limit < state.ctx.gas_meter.get_gas_to_be_used_in_theory() {
                 Some(TransitionError::ExecutionProperGasExhausted)

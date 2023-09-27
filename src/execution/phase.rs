@@ -80,15 +80,18 @@ pub(crate) fn finalize_gas_consumption<S>(
 where
     S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    // TODO 6 - check GasExhausted against centralized `gas_limit` field instead of other fields
-    // should centralize gas checking in GasMeter
-    // may need to tackle with lifecycle change
+    // TODO 8 - Potentially part of command lifecycle refactor
+
     if state.tx.gas_limit < state.ctx.gas_meter.get_gas_to_be_used_in_theory() {
         return Err(abort(state, TransitionError::ExecutionProperGasExhausted));
     }
     Ok(state)
 }
 
+// TODO 8 - Potentially part of command lifecycle refactor
+//
+// This is technically not a phase, it's an Event that transits the phase
+// Can be re-organised
 /// Abort is operation that causes all World State sets in the Commands Phase to be reverted.
 pub(crate) fn abort<S>(
     mut state: ExecutionState<S>,
@@ -98,15 +101,15 @@ where
     S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static,
 {
     state.revert_changes();
-    // // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
+    // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
+    //
+    // technically the Charge phase resolves this again by doing min comparison
+    // why need to store?
     let gas_used = std::cmp::min(
         state.tx.gas_limit,
         state.ctx.gas_meter.get_gas_to_be_used_in_theory(),
     );
 
-    // //
-    // // technically the Charge phase resolves this again by doing min comparison
-    // // why need to store?
     state.ctx.gas_meter.total_gas_used_clamped = gas_used;
 
     charge(state, Some(transition_err))
@@ -123,8 +126,10 @@ where
     let signer = state.tx.signer;
     let base_fee = state.bd.this_base_fee;
     let priority_fee = state.tx.priority_fee_per_gas;
-    // let gas_used = state.gas_meter.get_gas_already_used();
-    // TODO 4 remove
+
+    // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
+    // see also below where it is stored
+    // technically the min comparison can be replaced with state.gas_meter.get_gas_already_used(); which is already the total of each command clamped to gas limit
     let gas_used = std::cmp::min(
         state.gas_meter.get_gas_to_be_used_in_theory(),
         state.tx.gas_limit,
@@ -177,7 +182,7 @@ where
     drop(rw_set);
 
     // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
-    // CY: this looks like it's really not being used, even though the old code was saving it to state
+    // this looks like it's really not being used, even though the old code was saving it to state
     //
     // old code
     // state.set_gas_consumed(gas_used);

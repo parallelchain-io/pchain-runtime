@@ -71,7 +71,12 @@ where
     };
     drop(ctx_locked);
 
+    // TODO 6 - should check using RuntimeGasMeter: gas_meter.gas_limit > (gas_meter.get_gas_to_be_used_in_theory() + wasm gas used)
+    //
+    // here the max allowable gas for the child contract should be gas_limit - (gas_meter.get_gas_to_be_used_in_theory() + wasm gas used)
     // limit the gas for child contract execution
+    // previously - the cost of "build_contract" was saved to internal_call_result.non_wasmer_gas which is then deducted in the following lines for tx_from_contract.gas_limit
+    // but now the CostChange from build_contract is not meaningful
     tx_from_contract.gas_limit = tx_from_contract
         .gas_limit
         .saturating_sub(internal_call_result.non_wasmer_gas.values().0);

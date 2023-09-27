@@ -70,7 +70,7 @@ impl ContractModule {
         Ok(Self {
             store,
             module,
-            // TODO CLEAN remove this cost change no longer used
+            // TODO CLEAN remove this cost change no longer used, Gas is ttacked by GasMeter...
             gas_cost: CostChange::default(),
         })
     }
@@ -143,8 +143,7 @@ where
         let call_result = unsafe { self.instance.call_method() };
 
         // TODO 7 - `non_wasmer_gas_amount` is no longer needed, can remove every where
-        //
-        // can run tests and double check this value will be 0
+        // can double check and confirm this value is indeed 0, nothing writes to it
         let non_wasmer_gas_amount = self.environment.get_non_wasm_gas_amount();
 
         // drop the variable of wasmer remaining gas

@@ -1,4 +1,7 @@
-TODO delete this file after reafctoring
+TODO delete this file after refactoring
+Note. the numbered TODOs are not be in sequence as some have been merged or closed
+
+TODO v0.5 changes
 
 ### GAS METER REFACTORING (DONE except TODOS)
 
@@ -6,72 +9,73 @@ RuntimeGasMeter is a Singleton struct on TransitionContext
 
 - Facade for all non-Wasmer operations which are chargeable (see Wasmer Gas Accounting for Wasmer)
 
-- General Features
+#### General Features
 
-  - Exposed methods deduct gas, encapsulate business logic, and delegate (to RWSet, if needed)
+- Exposed methods deduct gas, encapsulate business logic, and delegate (to RWSet, if needed)
 
-  - Lives and holds Gas state for the entire txn
+- Lives and holds Gas state for the entire txn
 
-    - Saves `txn_inclusion_gas`
-    - Intermediate per command gas stored in `command_gas_used`
-    - After each command, lifecycle has to call `finalize_command_gas()`
-      - Calls `get_gas_used_for_current_command()`, capped to gas limit, receipt stores this
-      - Saves to `total_command_gas_used`
+  - Saves `txn_inclusion_gas`
+  - Intermediate per command gas stored in `command_gas_used`
+  - After each command, lifecycle has to call `finalize_command_gas()`
+    - Calls `get_gas_used_for_current_command()`, capped to gas limit, receipt stores this
+    - Saves to `total_command_gas_used`
 
-  - Preserves old behaviour of (generally) charging before performing the operation
+- Preserves old behaviour of (generally) charging before performing the operation
 
-- Categories of methods
+#### Categories of methods
 
-  A. World state read-write costs (DONE)
+A. World state read-write costs (DONE)
 
-  - Facade for WorldState (rw*set), prefixed by `ws*`, e.g. `ws_get_app_data(address: PublicAddress, app_key: AppKey)`
-  - Facade for NetworkAccountStorage( through trait implementation)
+- Facade for WorldState (rw*set), prefixed by `ws*`, e.g. `ws_get_app_data(address: PublicAddress, app_key: AppKey)`
+- Facade for NetworkAccountStorage( through trait implementation)
 
-  B. Transaction Storage Costs (DONE)
+B. Transaction Storage Costs (DONE)
 
-  - Prefixed by `charge_txn*`
-  - Pre-execution portion (i.e. TransactionInclusionCost)
+- Prefixed by `charge_txn*`
+- Pre-execution portion (i.e. TransactionInclusionCost)
 
-    - `charge_txn_pre_exec_inclusion(txsize: usize, commands_len: usize)`
+  - `charge_txn_pre_exec_inclusion(txsize: usize, commands_len: usize)`
 
-  - Post-execution portion (i.e. portion known after execution)
+- Post-execution portion (i.e. portion known after execution)
 
-    - `charge_txn_post_exec_return_value(ret_val: Vec<u8>)` - TODO 1 - Wasm method caller should check on GasExhaustion due to this operation
+  - `charge_txn_post_exec_return_value(ret_val: Vec<u8>)` - see TODO 6
 
-    - `charge_txn_post_exec_log(log: Log)` - TODO 2 - Wasm method caller should on check on GasExhaustion due to this operation
+  - `charge_txn_post_exec_log(log: Log)` - see TODO 6
 
-  C. Crytographic operations on host machine (DONE)
+C. Crytographic operations on host machine (DONE)
 
-  - Facade methods for cryptographic operations on host machine callable by contracts
-  - Prefixed by `host_`
-  - E.g. `host_sha256(input: Vec<u8>)`
+- Facade methods for cryptographic operations on host machine callable by contracts
+- Prefixed by `host_`
+- E.g. `host_sha256(input: Vec<u8>)`
 
-- Wasmer Gas Accounting
+#### Wasmer Gas Accounting
 
-  - Env (i.e. WasmerEnv) now only tracks gas from two sources
+- Env (i.e. WasmerEnv) now only tracks gas from two sources
 
-    D. read/write by host to Wasm guest linear memory by calling Env::write_bytes() and Env::read_bytes()
-    E. Wasm compute cost using FunctionMiddle by automatic exeuction of smart contract code
+  D. read/write by host to Wasm guest linear memory by calling Env::write_bytes() and Env::read_bytes()
+  E. Wasm compute cost using Function Middleware by automatic exeuction of smart contract code
 
-    - Decision to keep this way so that RuntimeGasMeter won't have to wrap and interact with the lifecycle of Wasmer instances during the transaction
+  - Decision to keep this way so that RuntimeGasMeter won't have to wrap and interact with the lifecycle of Wasmer instances during the transaction
 
-  - Lifecycle
+- Lifecycle
 
-    - No change to initialization and lifecycle
-    - Gas from the 2 sources will mutate `wasmer_metering_remaining_points`
-    - Running total is brought back to RuntimeGasMeter eventually by calling `charge_wasmer_gas(gas: s)`
+  - No change to initialization and lifecycle
+  - Gas from the 2 sources will mutate `wasmer_metering_remaining_points`
+  - Running total is brought back to RuntimeGasMeter eventually by calling `charge_wasmer_gas(gas: s)`
 
-  - TODO 7 - `non_wasmer_gas_amount` is no longer needed, can remove every where
-    - Potentially means can simply the `GasMeter` struct which holds this field (found in wasmer_env.rs)
+- TODO 7 - `non_wasmer_gas_amount` is no longer needed, can remove every where
+
+  - Potentially means can simply the `GasMeter` struct which holds this field (found in wasmer_env.rs)
 
 - Other GasMeter TODOs
 
   - TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
 
-  - TODO 6 - check GasExhausted against centralized GasMeter `gas_limit` field instead of other fields
-    - Has a small effect on when we fail during the Wasmer lifecycle, see marked TODO in code
-    - Because `wasmer_metering_remaining_points` previously would be deducted against all (A, B, C, D, E), now only (D and E) and fail earlier
-    - Now we would only fail when the total gas is checked after completing the Wasmer instance call
+  - TODO 6 - should check using RuntimeGasMeter: gas_meter.gas_limit > (gas_meter.get_gas_to_be_used_in_theory() + wasm gas used)
+    - To preserve previous behaviour to halt further execution at the same point as before
+    - Explaination: Because `wasmer_metering_remaining_points` previously would be deducted against all (A, B, C, D, E), now only (D and E)
+    - So now, `wasmer_metering_remaining_points` could be > 0 but actually gas is fully used, due to category A, B, C usage during contract execution
 
 #### REFERENCE ONLY : Existing Wasmer initialization and gas meter interactions (UNCHANGED)
 
@@ -139,8 +143,63 @@ Account.rs/call() {
 
 ### LIFECYCLE AND FILE ORGANISATION (TODO)
 
-- To further confirm
-- TODO 8 - Potentially part of command lifecycle refactor
+- Potential areas for the lifecycle refactor marked with TODO 8 as follows:
+
+  - "TODO 8 - Potentially part of command lifecycle refactor"
+
+- General Ideas
+
+  - Consistent interface for triggering commands (e.g. All Commands impl Executable interface)
+    - Enables pre- and post- execution life cycle
+  - Better sort Actions and Phases
+
+- Specific places:
+
+  - `phase::finalize_gas_consumption()`
+
+    - Does every single command method need to individually call this?
+    - It basically just checks for GasExhaustion and decides whether to abort
+    - Should be part of a fixed step after successful Command exeuction
+
+  - `phase::abort()`
+    - This is technically not a phase, it's an Event that transits the phase
+    - Can be re-organised
+
+#### REREFENCE - SAMPLE FILE STRUCTURE
+
+```
+// Example
+|-- transition.rs (entrypoint)
+|-- commands/
+|   |-- account/ // either single file or many separate files for each command
+|   |-- staking/ // either single file or many separate files for each command
+|   |-- protocol/ // either single file or many separate files for each command
+|   |-- command_executable.rs // defines an executable trait
+|-- execution/ (previously execution.rs)
+|   |-- transactions/
+|   |   |-- execute_commands.rs // CHARGING is involved - traces the life cycle from pre-charge to charge
+|   |   |-- phases/ // either single file or many separate files for each phase - Charge/ Precharge
+|   |   |    |-- charge.rs
+|   |   |    |-- pre_charge.rs
+|   |   |-- abort.rs // describes abort action
+|   |   |-- finalize_gas_consumption.rs // helper to finalise gas consumption
+|   |-- view/
+|   |   |-- execute_view.rs // no charging involved
+|   |-- next_epoch/
+|   |-- |-- execute_next_epoch.rs // purely for next epoch
+|-- contract/
+|   |-- cbi.rs
+|   |-- cbi_version.rs (previously contract/version.rs)
+|   |-- contract.rs (previously contract/context.rs) // base definitions and contract
+|   |-- host_functions // all host function and helper logic here
+|   |   |-- functions.rs
+|   |-- wasm/
+|       |-- module.rs // represents a wasm module
+|       |-- instance.rs // represents a wasm instance
+|-- calculation/
+|   |-- gas_cost.rs
+|   |-- reward_formulas.rs
+```
 
 ### V5 Changes (TODO)
 
@@ -164,17 +223,17 @@ Refer to v0.5 CHANGELOG: https://hackmd.io/@V8G7dGj7QPG84VX_SNL6Wg/HkL1cff0n
    Now called in tx_inclusion_cost()
    PENDING updated constant
 
-TODO further elaborate on remaining changes
-
 1. Variable portion of TransactionInclusionCost
+   Individual commands will now write to individual fields, e.g. `AmountWithdrawn` for `WithdrawDeposit`
+   This will need methods to be replaced instead of generically calling `charge_txn_post_exec_return_value()`
+
 1. New gas formulas for MPT operations that do not “double charge” 32 bytes in the key length.
 
    - Remove the extra address.len() in CacheKey.len() method, matching the CacheKey::App variant
    - https://github.com/parallelchain-io/parallelchain-protocol/issues/3
 
 1. New function for contract address which has command index as a parameter.
-
-Update Gas charging formula for CommandReceiptsV2 (the predetermined part of which will affect TransactionInclusionCost)
+   Double check where this should be
 
 #### IMPLEMENTATION
 

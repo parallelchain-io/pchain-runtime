@@ -21,6 +21,7 @@ impl Instance {
     /// # Panics
     /// call_method assumes that the Instance does export the name method, and panics otherwise.
     pub(crate) unsafe fn call_method(&self) -> Result<u64, (u64, MethodCallError)> {
+        // TODO 6 - should check using RuntimeGasMeter: gas_meter.gas_limit > (gas_meter.get_gas_to_be_used_in_theory() + wasm gas used)
         // remaining_gas before method call
         let remaining_gas = match wasmer_middlewares::metering::get_remaining_points(&self.0) {
             wasmer_middlewares::metering::MeteringPoints::Exhausted => 0,
@@ -41,7 +42,7 @@ impl Instance {
         // method call
         let execution_result = method.call();
 
-        // TODO 6 - check GasExhausted against centralized GasMeter `gas_limit` field instead of other fields
+        // TODO 6 - should check using RuntimeGasMeter: gas_meter.gas_limit > (gas_meter.get_gas_to_be_used_in_theory() + wasm gas used)
         // remaining_gas after method call
         let remaining_gas = match wasmer_middlewares::metering::get_remaining_points(&self.0) {
             wasmer_middlewares::metering::MeteringPoints::Exhausted => 0,

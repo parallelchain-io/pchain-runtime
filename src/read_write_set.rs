@@ -86,7 +86,7 @@ where
     }
 
     /// check if App Key already exists. It is gas-free operation.
-    pub fn contains_app_data_from_account_storage_state(
+    pub fn contains_app_data_from_account_storage_state_uncharged(
         &self,
         account_storage_state: &AccountStorageState<S>,
         app_key: AppKey,
@@ -112,7 +112,7 @@ where
     }
 
     /// Get app data given a account storage state. It is gas-free operation.
-    pub fn app_data_from_account_storage_state(
+    pub fn app_data_from_account_storage_state_uncharged(
         &self,
         account_storage_state: &AccountStorageState<S>,
         app_key: AppKey,
