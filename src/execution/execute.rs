@@ -2549,6 +2549,7 @@ mod test {
         let mut state = create_state(Some(ws));
         let owner_balance_before = rw_set.ws.balance(ACCOUNT_T);
         drop(rw_set);
+        println!("owner_balance_before: {}", owner_balance_before);
 
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_T,
@@ -2567,17 +2568,8 @@ mod test {
             ret.receipt.as_ref().unwrap().last().unwrap().return_values,
             200_000_u64.to_le_bytes().to_vec()
         );
-        let gas_used = ret
-            .receipt
-            .as_ref()
-            .unwrap()
-            .iter()
-            .map(|g| g.gas_used)
-            .sum::<u64>();
-        println!(
-            "gas_consumed {}",
-            ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>()
-        );
+        let gas_used = extract_gas_used(&ret);
+        assert_eq!(gas_used, 11140);
 
         let mut state = create_state(Some(ret.new_state));
 
@@ -2599,29 +2591,29 @@ mod test {
         let owner_balance_after = rw_set.ws.balance(ACCOUNT_T);
         drop(rw_set);
 
-        // TODO this last portion is failing
-        // assert_eq!(
-        //     owner_balance_before,
-        //     owner_balance_after + gas_used + tx_base_cost - 200_000
-        // );
-        // assert_eq!(
-        //     NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
-        //     TEST_MAX_VALIDATOR_SET_SIZE as u32
-        // );
-        // assert_eq!(
-        //     NetworkAccount::nvp(&mut state.ctx.gas_meter)
-        //         .get(0)
-        //         .unwrap()
-        //         .operator,
-        //     ACCOUNT_T
-        // );
-        // assert_eq!(
-        //     NetworkAccount::nvp(&mut state.ctx.gas_meter)
-        //         .get(0)
-        //         .unwrap()
-        //         .power,
-        //     50_000
-        // );
+        // TODO confirm if this is passing
+        assert_eq!(
+            owner_balance_before,
+            owner_balance_after + gas_used + tx_base_cost - 200_000
+        );
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
+            TEST_MAX_VALIDATOR_SET_SIZE as u32
+        );
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .operator,
+            ACCOUNT_T
+        );
+        assert_eq!(
+            NetworkAccount::nvp(&mut state.ctx.gas_meter)
+                .get(0)
+                .unwrap()
+                .power,
+            50_000
+        );
     }
 
     // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with non-zero value of Operator Stake

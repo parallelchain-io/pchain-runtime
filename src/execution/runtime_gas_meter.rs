@@ -1,6 +1,7 @@
 use core::panic;
 use std::{
     cell::RefCell,
+    error::Error,
     sync::{Arc, Mutex},
 };
 
@@ -21,6 +22,7 @@ use crate::{
     cost::CostChange,
     gas,
     read_write_set::{CacheKey, CacheValue, ReadWriteSet},
+    TransitionError,
 };
 
 /// GasMeter is a global struct that keeps track of gas used from operations OUTSIDE of a Wasmer guest instance (compute and memory access).
@@ -108,30 +110,51 @@ where
 
     /// called after every command to reset command_gas_used
     pub fn finalize_command_gas(&mut self) {
-        let net_cmd_gas_used = {
-            let mut command_gas_ptr = self.command_gas_used.borrow_mut();
-            let net_gas = command_gas_ptr.values().0;
-            *command_gas_ptr = CostChange::default();
-            net_gas
-        };
+        // sum to total_command_gas_used
+        let gas_used_by_command = self.get_gas_used_for_current_command();
+        self.total_command_gas_used = self
+            .total_command_gas_used
+            .saturating_add(gas_used_by_command);
 
-        self.total_command_gas_used = self.total_command_gas_used.saturating_add(net_cmd_gas_used);
+        // reset command_gas_used
+        let mut command_gas_ptr = self.command_gas_used.borrow_mut();
+        *command_gas_ptr = CostChange::default();
 
-        // TODO CLEAN is this doing too much? Better to separate?
+        // TODO CLEAN is it better to separate these other clearing of state
         self.command_logs.clear();
         self.command_return_value = None;
     }
 
-    /// returns total gas for the transaction
-    pub fn get_total_gas_used(&self) -> u64 {
+    /// returns the theoretical max gas used so far
+    /// may exceed gas_limit
+    pub fn get_gas_to_be_used_in_theory(&self) -> u64 {
         let pending_command_gas = (*self.command_gas_used.borrow()).values().0;
-        self.txn_inclusion_gas
-            .saturating_add(self.total_command_gas_used)
+        self.get_gas_already_used()
             .saturating_add(pending_command_gas)
     }
 
-    pub fn get_max_remaining_gas(&self) -> u64 {
-        self.gas_limit.saturating_sub(self.get_total_gas_used())
+    /// returns gas that has been used so far
+    /// will not exceed maximum
+    pub fn get_gas_already_used(&self) -> u64 {
+        let val = self
+            .txn_inclusion_gas
+            .saturating_add(self.total_command_gas_used);
+
+        // TODO CLEAN probably can remove this sanity check, should not happen as we only use gas to the limit
+        if self.gas_limit < val {
+            panic!("Invariant violated, we are using more gas than the limit");
+        } else {
+            val
+        }
+    }
+
+    pub fn get_gas_used_for_current_command(&self) -> u64 {
+        if self.gas_limit < self.get_gas_to_be_used_in_theory() {
+            // gas exhaustion
+            return self.gas_limit.saturating_sub(self.get_gas_already_used());
+        }
+        let net_gas_used_for_cmd = (*self.command_gas_used.borrow()).values().0;
+        net_gas_used_for_cmd
     }
 
     //
@@ -189,9 +212,19 @@ where
     //
     // Facade methods for Transaction Storage methods that cost gas
     //
-    pub fn store_txn_pre_exec_inclusion_cost(&mut self, tx_size: usize, commands_len: usize) {
+    pub fn store_txn_pre_exec_inclusion_cost(
+        &mut self,
+        tx_size: usize,
+        commands_len: usize,
+    ) -> Result<(), TransitionError> {
         // stored separately because it is not considered to belong to a single command
-        self.txn_inclusion_gas = gas::tx_inclusion_cost(tx_size, commands_len);
+        let required_cost = gas::tx_inclusion_cost(tx_size, commands_len);
+        if required_cost > self.gas_limit {
+            return Err(TransitionError::PreExecutionGasExhausted);
+        } else {
+            self.txn_inclusion_gas = required_cost;
+        }
+        Ok(())
     }
 
     pub fn store_txn_post_exec_log(&mut self, log_to_store: Log) {

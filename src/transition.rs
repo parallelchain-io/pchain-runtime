@@ -259,20 +259,19 @@ where
         rw_set.revert();
     }
 
+    // - TODO 8 - Potentially part of command lifecycle refactor
+    //
+    // IMPORTANT: This function must be called after each command execution, whether success or fail
+    // as all the tallying and state changes happen here.
+    //
     /// Output the CommandReceipt and clear the intermediate context for next command execution.
-    /// `prev_gas_used` will be needed for getting the intermediate gas consumption.
     pub fn extract(&mut self, exit_status: ExitStatus) -> CommandReceipt {
         // TODO PENDING write up v0.5 changes relating to this structure
         // 1. Create Command Receipt
 
-        // TODO only take this value if does not exceed total
-        let net_command_gas_used = (*self.gas_meter.command_gas_used.borrow()).values().0;
-        let max_remaining_gas = self.gas_meter.get_max_remaining_gas();
-
         let ret = CommandReceipt {
             exit_status,
-            // TODO toggle and see the difference
-            gas_used: std::cmp::min(net_command_gas_used, max_remaining_gas),
+            gas_used: self.gas_meter.get_gas_used_for_current_command(),
             return_values: self
                 .gas_meter
                 .command_return_value

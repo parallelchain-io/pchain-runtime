@@ -194,7 +194,7 @@ where
 
         // Check pay for storage gas cost at this point. Consider it as runtime cost because the world state write is an execution gas
         // Gas limit for init method call should be subtract the blockchain and worldstate storage cost
-        let pre_execution_baseline_gas_limit = state.ctx.gas_meter.get_total_gas_used();
+        let pre_execution_baseline_gas_limit = state.ctx.gas_meter.get_gas_to_be_used_in_theory();
         if state.tx.gas_limit < pre_execution_baseline_gas_limit {
             return Err((state, TransitionError::ExecutionProperGasExhausted));
         }
@@ -234,11 +234,12 @@ where
         let mut state = ExecutionState { ctx, ..self.state };
         state.ctx.gas_meter.charge_wasmer_gas(wasm_exec_gas);
         // TODO 6 - check GasExhausted against centralized GasMeter `gas_limit` field instead of other fields
-        let transition_err = if state.tx.gas_limit < state.ctx.gas_meter.get_total_gas_used() {
-            Some(TransitionError::ExecutionProperGasExhausted)
-        } else {
-            call_error.map(TransitionError::from)
-        };
+        let transition_err =
+            if state.tx.gas_limit < state.ctx.gas_meter.get_gas_to_be_used_in_theory() {
+                Some(TransitionError::ExecutionProperGasExhausted)
+            } else {
+                call_error.map(TransitionError::from)
+            };
 
         (state, transition_err)
     }
@@ -341,7 +342,7 @@ where
         ctx.gas_meter
             .ws_set_cbi_version(contract_address, cbi_version);
 
-        if self.tx.gas_limit < self.ctx.gas_meter.get_total_gas_used() {
+        if self.tx.gas_limit < self.ctx.gas_meter.get_gas_to_be_used_in_theory() {
             return Err((
                 self.state,
                 DeployError::InsufficientGasForInitialWritesError,

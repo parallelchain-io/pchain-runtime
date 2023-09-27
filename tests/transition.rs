@@ -954,7 +954,6 @@ fn test_fail_in_pre_charge() {
     );
     let sws: SimulateWorldState = result.new_state.into();
 
-
     // 2. nonce is incorrect
     let tx2 = Transaction {
         nonce: 1,

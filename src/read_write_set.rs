@@ -196,7 +196,9 @@ where
     }
 }
 
-// TODO PENDING maybe move this elsewhere, some coupling with Gas calculation
+// TODO CLEAN ideally move this elsewhere
+// has more to do with Gas calculation than actual RWSet functions
+//
 /// CacheKey is the key for state changes cache in Runtime. It is different with world state Key or App Key for
 /// being useful in:
 /// - data read write cache

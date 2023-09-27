@@ -14,11 +14,12 @@
 //! The actual command execution happens in Commands Phase. It is implemented in modules [account](crate::execution::account) and
 //! [protocol](crate::execution::protocol).
 
-use pchain_world_state::storage::WorldStateStorage;
+use pchain_world_state::{
+    network::network_account::NetworkAccountStorage, storage::WorldStateStorage,
+};
 
 use crate::{
     formulas::{TOTAL_BASE_FEE, TREASURY_CUT_OF_BASE_FEE},
-    gas,
     transition::StateChangesResult,
     TransitionError,
 };
@@ -33,11 +34,7 @@ where
     state
         .ctx
         .gas_meter
-        .store_txn_pre_exec_inclusion_cost(state.tx_size, state.commands_len);
-
-    if state.tx.gas_limit < state.ctx.gas_meter.get_total_gas_used() {
-        return Err(TransitionError::PreExecutionGasExhausted);
-    }
+        .store_txn_pre_exec_inclusion_cost(state.tx_size, state.commands_len)?;
 
     // note, remaining reads/ writes are performed directly on WS
     // not through GasMeter, hence not chargeable
@@ -86,7 +83,7 @@ where
     // TODO 6 - check GasExhausted against centralized `gas_limit` field instead of other fields
     // should centralize gas checking in GasMeter
     // may need to tackle with lifecycle change
-    if state.tx.gas_limit < state.ctx.gas_meter.get_total_gas_used() {
+    if state.tx.gas_limit < state.ctx.gas_meter.get_gas_to_be_used_in_theory() {
         return Err(abort(state, TransitionError::ExecutionProperGasExhausted));
     }
     Ok(state)
@@ -101,12 +98,15 @@ where
     S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static,
 {
     state.revert_changes();
-    let gas_used = std::cmp::min(state.tx.gas_limit, state.ctx.gas_meter.get_total_gas_used());
+    // // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
+    let gas_used = std::cmp::min(
+        state.tx.gas_limit,
+        state.ctx.gas_meter.get_gas_to_be_used_in_theory(),
+    );
 
-    // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
-    //
-    // technically the Charge phase resolves this again by doing min comparison
-    // why need to store?
+    // //
+    // // technically the Charge phase resolves this again by doing min comparison
+    // // why need to store?
     state.ctx.gas_meter.total_gas_used_clamped = gas_used;
 
     charge(state, Some(transition_err))
@@ -123,7 +123,12 @@ where
     let signer = state.tx.signer;
     let base_fee = state.bd.this_base_fee;
     let priority_fee = state.tx.priority_fee_per_gas;
-    let gas_used = std::cmp::min(state.gas_meter.get_total_gas_used(), state.tx.gas_limit); // Safety for avoiding overflow
+    // let gas_used = state.gas_meter.get_gas_already_used();
+    // TODO 4 remove
+    let gas_used = std::cmp::min(
+        state.gas_meter.get_gas_to_be_used_in_theory(),
+        state.tx.gas_limit,
+    ); // Safety for avoiding overflow
     let gas_unused = state.tx.gas_limit.saturating_sub(gas_used);
 
     let mut rw_set = state.rw_set.lock().unwrap();
@@ -176,7 +181,7 @@ where
     //
     // old code
     // state.set_gas_consumed(gas_used);
-    state.gas_meter.total_gas_used_clamped = gas_used;
+    // state.gas_meter.total_gas_used_clamped = gas_used;
 
     StateChangesResult::new(state, transition_result)
 }
