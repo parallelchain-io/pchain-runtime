@@ -41,14 +41,14 @@ where
     // because they are internal housekeeping and not part of the txn execution
 
     let signer = state.tx.signer;
-    let mut rw_set = state.rw_set.lock().unwrap();
+    let ws_cache = state.ctx.ws_cache_mut();
 
-    let origin_nonce = rw_set.ws.nonce(signer);
+    let origin_nonce = ws_cache.ws.nonce(signer);
     if state.tx.nonce != origin_nonce {
         return Err(TransitionError::WrongNonce);
     }
 
-    let origin_balance = rw_set.ws.balance(signer);
+    let origin_balance = ws_cache.ws.balance(signer);
     let gas_limit = state.tx.gas_limit;
     let base_fee = state.bd.this_base_fee;
     let priority_fee = state.tx.priority_fee_per_gas;
@@ -64,11 +64,10 @@ where
         .checked_sub(pre_charge)
         .ok_or(TransitionError::NotEnoughBalanceForGasLimit)?; // pre_charge > origin_balance
 
-    rw_set
+    ws_cache
         .ws
         .with_commit()
         .set_balance(signer, pre_charged_balance);
-    drop(rw_set);
 
     Ok(())
 }
@@ -100,7 +99,7 @@ pub(crate) fn abort<S>(
 where
     S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    state.revert_changes();
+    state.ctx.revert_changes();
     // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
     //
     // technically the Charge phase resolves this again by doing min comparison
@@ -131,20 +130,20 @@ where
     // see also below where it is stored
     // technically the min comparison can be replaced with state.gas_meter.get_gas_already_used(); which is already the total of each command clamped to gas limit
     let gas_used = std::cmp::min(
-        state.gas_meter.get_gas_to_be_used_in_theory(),
+        state.ctx.gas_meter.get_gas_to_be_used_in_theory(),
         state.tx.gas_limit,
     ); // Safety for avoiding overflow
     let gas_unused = state.tx.gas_limit.saturating_sub(gas_used);
 
-    let mut rw_set = state.rw_set.lock().unwrap();
+    let ws_cache = state.ctx.ws_cache_mut();
 
     // Finalize signer's balance
-    let signer_balance = rw_set.purge_balance(signer);
+    let signer_balance = ws_cache.purge_balance(signer);
     let new_signer_balance = signer_balance + gas_unused * (base_fee + priority_fee);
 
     // Transfer priority fee to Proposer
     let proposer_address = state.bd.proposer_address;
-    let mut proposer_balance = rw_set.purge_balance(proposer_address);
+    let mut proposer_balance = ws_cache.purge_balance(proposer_address);
     if signer == proposer_address {
         proposer_balance = new_signer_balance;
     }
@@ -152,7 +151,7 @@ where
 
     // Burn the gas to Treasury account
     let treasury_address = state.bd.treasury_address;
-    let mut treasury_balance = rw_set.purge_balance(treasury_address);
+    let mut treasury_balance = ws_cache.purge_balance(treasury_address);
     if signer == treasury_address {
         treasury_balance = new_signer_balance;
     }
@@ -163,23 +162,22 @@ where
         .saturating_add((gas_used * base_fee * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE);
 
     // Commit updated balances
-    rw_set
+    ws_cache
         .ws
         .with_commit()
         .set_balance(signer, new_signer_balance);
-    rw_set
+    ws_cache
         .ws
         .with_commit()
         .set_balance(proposer_address, new_proposer_balance);
-    rw_set
+    ws_cache
         .ws
         .with_commit()
         .set_balance(treasury_address, new_treasury_balance);
 
     // Commit Signer's Nonce
-    let nonce = rw_set.ws.nonce(signer).saturating_add(1);
-    rw_set.ws.with_commit().set_nonce(signer, nonce);
-    drop(rw_set);
+    let nonce = ws_cache.ws.nonce(signer).saturating_add(1);
+    ws_cache.ws.with_commit().set_nonce(signer, nonce);
 
     // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
     // this looks like it's really not being used, even though the old code was saving it to state

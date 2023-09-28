@@ -32,7 +32,7 @@ use crate::gas;
 
 /// ReadWriteSet defines data cache for Read-Write opertaions during state transition.
 #[derive(Clone)]
-pub(crate) struct ReadWriteSet<S>
+pub(crate) struct WorldStateCache<S>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -44,7 +44,7 @@ where
     pub reads: RefCell<HashMap<CacheKey, Option<CacheValue>>>,
 }
 
-impl<S> ReadWriteSet<S>
+impl<S> WorldStateCache<S>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {

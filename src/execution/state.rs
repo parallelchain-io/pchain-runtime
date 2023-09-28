@@ -37,23 +37,3 @@ where
     /// Transition Context which also contains world state as input
     pub ctx: TransitionContext<S>,
 }
-
-impl<S> Deref for ExecutionState<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone,
-{
-    type Target = TransitionContext<S>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.ctx
-    }
-}
-
-impl<S> DerefMut for ExecutionState<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.ctx
-    }
-}

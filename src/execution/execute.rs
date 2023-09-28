@@ -68,7 +68,7 @@ where
 
     if let Err(err) = pre_charge_result {
         return TransitionResult {
-            new_state: state.ctx.rw_set.lock().unwrap().clone().ws,
+            new_state: state.ctx.into_ws_cache().ws,
             receipt: None,
             error: Some(err),
             validator_changes: None,
@@ -113,7 +113,7 @@ where
                     );
                 }
                 // extract receipt from current execution result
-                let cmd_receipt = state_of_success_execution.extract(ExitStatus::Success);
+                let cmd_receipt = state_of_success_execution.ctx.extract(ExitStatus::Success);
                 command_task_results.push(task_id, cmd_receipt);
                 state_of_success_execution
             }
@@ -123,7 +123,7 @@ where
                 error,
             }) => {
                 // extract receipt from last execution result
-                let cmd_receipt = state_of_abort_result.extract(error.as_ref().unwrap().into());
+                let cmd_receipt = state_of_abort_result.ctx.extract(error.as_ref().unwrap().into());
                 command_task_results.push(task_id, cmd_receipt);
                 return StateChangesResult::new(state_of_abort_result, error)
                     .finalize(command_task_results.command_receipts());
@@ -148,14 +148,14 @@ where
     match account::call(state, true, target, method, arguments, None) {
         // not yet finish. continue command execution with resulting state
         Ok(mut state_of_success_execution) => {
-            let cmd_receipt = state_of_success_execution.extract(ExitStatus::Success);
+            let cmd_receipt = state_of_success_execution.ctx.extract(ExitStatus::Success);
             (cmd_receipt, None)
         }
         Err(StateChangesResult {
             state: mut state_of_abort_result,
             error,
         }) => {
-            let cmd_receipt = state_of_abort_result.extract(error.as_ref().unwrap().into());
+            let cmd_receipt = state_of_abort_result.ctx.extract(error.as_ref().unwrap().into());
             (cmd_receipt, error)
         }
     }
@@ -176,33 +176,31 @@ where
     // - Block performance is required for execution of next epoch transaction.
     // - Transaction nonce matches with the nonce in state
 
-    let rw_set = state.ctx.rw_set.lock().unwrap();
+    let ws_cache = state.ctx.ws_cache();
     if commands.len() != 1
         || commands.first() != Some(&Command::NextEpoch)
         || state.bd.validator_performance.is_none()
-        || state.tx.nonce != rw_set.ws.nonce(signer)
+        || state.tx.nonce != ws_cache.ws.nonce(signer)
     {
         return TransitionResult {
-            new_state: rw_set.ws.clone(),
+            new_state: state.ctx.into_ws_cache().ws,
             receipt: None,
             error: Some(TransitionError::InvalidNextEpochCommand),
             validator_changes: None,
         };
     }
-    drop(rw_set);
 
     // State transition
     let (mut state, new_vs) = protocol::next_epoch(state);
 
     // Update Nonce for the transaction. This step ensures future epoch transaction produced
     // by the signer will have different transaction hash.
-    let mut rw_set = state.ctx.rw_set.lock().unwrap();
-    let nonce = rw_set.ws.nonce(signer).saturating_add(1);
-    rw_set.ws.with_commit().set_nonce(signer, nonce);
-    drop(rw_set);
+    let ws_cache = state.ctx.ws_cache_mut();
+    let nonce = ws_cache.ws.nonce(signer).saturating_add(1);
+    ws_cache.ws.with_commit().set_nonce(signer, nonce);
 
     // Extract receipt from current execution result
-    let cmd_receipt = state.extract(ExitStatus::Success);
+    let cmd_receipt = state.ctx.extract(ExitStatus::Success);
 
     let mut result = StateChangesResult::new(state, None).finalize(vec![cmd_receipt]);
     result.validator_changes = Some(new_vs);
@@ -401,9 +399,7 @@ mod test {
     fn test_empty_commands() {
         let mut state = create_state(None);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let owner_balance_before = rw_set.ws.balance(ACCOUNT_A);
-        drop(rw_set);
+        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_A);
 
         let tx_base_cost = set_tx(&mut state, ACCOUNT_A, 0, &vec![]);
         let ret = execute_commands(state, vec![]);
@@ -412,11 +408,7 @@ mod test {
         assert_eq!(gas_used, 0);
 
         let state = create_state(Some(ret.new_state));
-
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let owner_balance_after = rw_set.ws.balance(ACCOUNT_A);
-        drop(rw_set);
-
+        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_A);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost
@@ -486,8 +478,7 @@ mod test {
 
         ///// Exceptions: /////
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let mut state = create_state(Some(rw_set.ws.to_owned()));
+        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
         state.tx.nonce = 1;
         let ret = execute_commands(
             state,
@@ -543,8 +534,7 @@ mod test {
 
         ///// Exceptions: /////
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let mut state = create_state(Some(rw_set.ws.to_owned()));
+        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
         state.tx.signer = ACCOUNT_B;
         let ret = execute_commands(
             state,
@@ -625,8 +615,7 @@ mod test {
 
         ///// Exceptions: /////
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let mut state = create_state(Some(rw_set.ws.to_owned()));
+        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
         state.tx.signer = ACCOUNT_B;
         let ret = execute_commands(state, vec![Command::DeletePool]);
         assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
@@ -687,8 +676,7 @@ mod test {
 
         ///// Exceptions: /////
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let mut state = create_state(Some(rw_set.ws.to_owned()));
+        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
         state.tx.nonce = 1;
         let ret = execute_commands(
             state,
@@ -740,10 +728,7 @@ mod test {
         pool.set_power(100_000);
         pool.set_commission_rate(1);
         pool.set_operator_stake(None);
-
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
         let commands = vec![
@@ -782,9 +767,7 @@ mod test {
             true
         );
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let mut state = create_state(Some(rw_set.ws.to_owned()));
-        drop(rw_set);
+        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
 
         let ret = execute_commands(
             state,
@@ -822,9 +805,7 @@ mod test {
         pool.set_power(100_000);
         pool.set_commission_rate(1);
         pool.set_operator_stake(None);
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
         let commands = vec![
@@ -864,9 +845,7 @@ mod test {
         );
 
         ///// Exceptions: /////
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let state = create_state(Some(rw_set.ws.to_owned()));
-        drop(rw_set);
+        let state = create_state(Some(state.ctx.into_ws_cache().ws));
         let ret = execute_commands(
             state,
             vec![Command::TopUpDeposit(TopUpDepositInput {
@@ -911,10 +890,7 @@ mod test {
         deposit.set_balance(20_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
         let commands = vec![
             Command::StakeDeposit(StakeDepositInput {
@@ -945,9 +921,8 @@ mod test {
         assert_eq!(delegated_stake.power, 20_000);
 
         ///// Exceptions: /////
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let mut state = create_state(Some(rw_set.ws.to_owned()));
-        drop(rw_set);
+
+        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
 
         let commands = vec![Command::StakeDeposit(StakeDepositInput {
             operator: ACCOUNT_A,
@@ -1001,10 +976,7 @@ mod test {
         deposit.set_balance(6_300_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
         let commands = vec![Command::StakeDeposit(StakeDepositInput {
             operator: ACCOUNT_A,
@@ -1067,10 +1039,7 @@ mod test {
         deposit.set_balance(6_500_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
         let commands = vec![Command::StakeDeposit(StakeDepositInput {
             operator: ACCOUNT_B,
@@ -1135,10 +1104,7 @@ mod test {
         deposit.set_balance(250_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
         let prev_pool_power = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
             .power()
@@ -1171,9 +1137,8 @@ mod test {
         assert_eq!(delegated_stakes.get(0).unwrap().owner, ACCOUNT_C);
 
         ///// Exceptions: /////
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let mut state = create_state(Some(rw_set.ws.to_owned()));
-        drop(rw_set);
+
+        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
         // create deposit first (too low to join deledated stake )
         let commands = vec![Command::CreateDeposit(CreateDepositInput {
             operator: ACCOUNT_A,
@@ -1213,10 +1178,7 @@ mod test {
         deposit.set_balance(310_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
         let prev_pool_power = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_C)
             .power()
@@ -1276,10 +1238,7 @@ mod test {
         deposit.set_balance(100_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
         let commands = vec![Command::StakeDeposit(StakeDepositInput {
             operator: ACCOUNT_A,
@@ -1323,10 +1282,7 @@ mod test {
         deposit.set_balance(150_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let state = create_state(Some(ws));
         let ret = execute_commands(
             state,
@@ -1370,10 +1326,7 @@ mod test {
         deposit.set_balance(210_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
         let commands = vec![Command::StakeDeposit(StakeDepositInput {
             operator: ACCOUNT_A,
@@ -1440,10 +1393,7 @@ mod test {
         deposit.set_balance(150_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
         let commands = vec![Command::StakeDeposit(StakeDepositInput {
             operator: ACCOUNT_C,
@@ -1506,10 +1456,7 @@ mod test {
         deposit.set_balance(100_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let state = create_state(Some(ws));
         let ret = execute_commands(
             state,
@@ -1565,10 +1512,7 @@ mod test {
         deposit.set_balance(100_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
         let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
             operator: ACCOUNT_A,
@@ -1597,8 +1541,7 @@ mod test {
         assert_eq!(delegated_stake.power, 10_000);
 
         ///// Exceptions: /////
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let mut state = create_state(Some(rw_set.ws.to_owned()));
+        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
         let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
             operator: ACCOUNT_C,
             max_amount: 40_000,
@@ -1690,10 +1633,7 @@ mod test {
             .get_by(&biggest)
             .unwrap();
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
         let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
             operator: ACCOUNT_A,
@@ -1752,10 +1692,7 @@ mod test {
         deposit.set_balance(200_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
         let commands = vec![
             Command::UnstakeDeposit(UnstakeDepositInput {
@@ -1824,9 +1761,7 @@ mod test {
         deposit.set_balance(200_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
         let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
             operator: ACCOUNT_T,
@@ -1884,10 +1819,7 @@ mod test {
         deposit.set_balance(150_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let state = create_state(Some(ws));
         let ret = execute_commands(
             state,
@@ -1916,8 +1848,7 @@ mod test {
 
         ///// Exceptions: /////
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let mut state = create_state(Some(rw_set.ws.to_owned()));
+        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
         state.tx.nonce = 1;
         let ret = execute_commands(
             state,
@@ -1951,10 +1882,14 @@ mod test {
         deposit.set_balance(200_000);
         deposit.set_auto_stake_rewards(false);
 
-        let mut rw_set = state.ctx.rw_set.lock().unwrap();
-        rw_set.ws.cached().set_balance(ACCOUNT_T, 500_000_000);
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
+        
+        state
+            .ctx
+            .ws_cache_mut()
+            .ws
+            .cached()
+            .set_balance(ACCOUNT_T, 500_000_000);
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
         let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
@@ -2020,10 +1955,13 @@ mod test {
         deposit.set_balance(200_000);
         deposit.set_auto_stake_rewards(false);
 
-        let mut rw_set = state.ctx.lock().unwrap();
-        rw_set.ws.cached().set_balance(ACCOUNT_T, 500_000_000);
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
+        state
+            .ctx
+            .ws_cache_mut()
+            .ws
+            .cached()
+            .set_balance(ACCOUNT_T, 500_000_000);
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
         let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
@@ -2089,13 +2027,10 @@ mod test {
             }))
             .unwrap();
 
-        let rw_set = state.ctx.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
-        let owner_balance_before = rw_set.ws.balance(ACCOUNT_B);
-        drop(rw_set);
-
+        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_A,
             max_amount: 40_000,
@@ -2134,18 +2069,15 @@ mod test {
                 .unwrap(),
             60_000
         );
-        let rw_set = state.ctx.lock().unwrap();
-        let owner_balance_after = rw_set.ws.balance(ACCOUNT_B);
-        drop(rw_set);
-
+        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 40_000
         );
 
         ///// Exceptions: /////
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let mut state = create_state(Some(rw_set.ws.to_owned()));
+
+        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
         let ret = execute_commands(
             state,
             vec![Command::WithdrawDeposit(WithdrawDepositInput {
@@ -2268,13 +2200,10 @@ mod test {
         deposit.set_balance(200_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
-        let owner_balance_before = rw_set.ws.balance(ACCOUNT_B);
-        drop(rw_set);
-
+        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_T,
             max_amount: 200_000,
@@ -2317,10 +2246,7 @@ mod test {
                 .unwrap(),
             50_000
         );
-        let rw_set = state.ctx.lock().unwrap();
-        let owner_balance_after = rw_set.ws.balance(ACCOUNT_B);
-        drop(rw_set);
-
+        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 200_000
@@ -2370,13 +2296,10 @@ mod test {
         deposit.set_balance(300_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
-        let owner_balance_before = rw_set.ws.balance(ACCOUNT_A);
-        drop(rw_set);
-
+        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_A);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_T,
             max_amount: 300_000,
@@ -2419,10 +2342,7 @@ mod test {
                 .unwrap(),
             0
         );
-        let rw_set = state.ctx.lock().unwrap();
-        let owner_balance_after = rw_set.ws.balance(ACCOUNT_B);
-        drop(rw_set);
-
+        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 300_000
@@ -2465,13 +2385,10 @@ mod test {
         deposit.set_balance(100_000);
         deposit.set_auto_stake_rewards(false);
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
-        let owner_balance_before = rw_set.ws.balance(ACCOUNT_A);
-        drop(rw_set);
-
+        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_A);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_A,
             max_amount: 45_000,
@@ -2511,9 +2428,7 @@ mod test {
                 .unwrap(),
             55_000
         );
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let owner_balance_after = rw_set.ws.balance(ACCOUNT_A);
-        drop(rw_set);
+        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_A);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 45_000
@@ -2542,16 +2457,16 @@ mod test {
         deposit.set_balance(200_000);
         deposit.set_auto_stake_rewards(false);
 
-        let mut rw_set = state.ctx.lock().unwrap();
-        rw_set.ws.cached().set_balance(ACCOUNT_T, 500_000_000);
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
+        state
+            .ctx
+            .ws_cache_mut()
+            .ws
+            .cached()
+            .set_balance(ACCOUNT_T, 500_000_000);
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
-        let rw_set = state.ctx.lock().unwrap();
-        let owner_balance_before = rw_set.ws.balance(ACCOUNT_T);
-        drop(rw_set);
-
+        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_T);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_T,
             max_amount: 200_000,
@@ -2588,10 +2503,7 @@ mod test {
                 .unwrap(),
             50_000
         );
-        let rw_set = state.ctx.lock().unwrap();
-        let owner_balance_after = rw_set.ws.balance(ACCOUNT_T);
-        drop(rw_set);
-
+        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_T);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 200_000
@@ -2637,16 +2549,16 @@ mod test {
         deposit.set_balance(300_000);
         deposit.set_auto_stake_rewards(false);
 
-        let mut rw_set = state.ctx.lock().unwrap();
-        rw_set.ws.cached().set_balance(ACCOUNT_T, 500_000_000);
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
+        state
+            .ctx
+            .ws_cache_mut()
+            .ws
+            .cached()
+            .set_balance(ACCOUNT_T, 500_000_000);
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
-        let rw_set = state.ctx.lock().unwrap();
-        let owner_balance_before = rw_set.ws.balance(ACCOUNT_A);
-        drop(rw_set);
-
+        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_A);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_T,
             max_amount: 300_000,
@@ -2677,9 +2589,7 @@ mod test {
             .operator_stake()
             .unwrap()
             .is_none());
-        let rw_set = state.ctx.lock().unwrap();
-        let owner_balance_after = rw_set.ws.balance(ACCOUNT_T);
-        drop(rw_set);
+        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_T);
 
         assert_eq!(
             owner_balance_before,
@@ -2756,12 +2666,9 @@ mod test {
             )
             .unwrap();
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
-        let owner_balance_before = rw_set.ws.balance(ACCOUNT_B);
-        drop(rw_set);
-
+        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_A,
             max_amount: 40_000,
@@ -2802,9 +2709,7 @@ mod test {
             80_000
         );
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let owner_balance_after = rw_set.ws.balance(ACCOUNT_B);
-        drop(rw_set);
+        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 20_000
@@ -2862,11 +2767,9 @@ mod test {
             )
             .unwrap();
 
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
-        let owner_balance_before = rw_set.ws.balance(ACCOUNT_B);
-        drop(rw_set);
+        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
 
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_A,
@@ -2907,9 +2810,7 @@ mod test {
                 .unwrap(),
             90_000
         );
-        let rw_set = state.ctx.lock().unwrap();
-        let owner_balance_after = rw_set.ws.balance(ACCOUNT_B);
-
+        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 10_000
@@ -2923,8 +2824,7 @@ mod test {
     fn test_next_epoch_no_pool() {
         let mut state = create_state(None);
         NetworkAccount::new(&mut state.ctx.gas_meter).set_current_epoch(0);
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let state = create_state(Some(ws));
         let mut state = execute_next_epoch(state);
         assert_eq!(
@@ -3282,14 +3182,10 @@ mod test {
     fn test_next_epoch_multiple_pools_and_stakes() {
         let mut state = create_state(None);
 
-        let mut rw_set = state.ctx.rw_set.lock().unwrap();
-        prepare_accounts_balance(&mut rw_set.ws);
-        drop(rw_set);
+        prepare_accounts_balance(&mut state.ctx.ws_cache_mut().ws);
 
         create_full_nvp_pool_stakes_deposits(&mut state, false, false, false);
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
 
@@ -3311,12 +3207,10 @@ mod test {
 
         {
             // open account storage state for speed up read operations
-            let rw_set = state.ctx.rw_set.lock().unwrap();
-            let acc_state = rw_set
+            let acc_state = state.ctx.ws_cache()
                 .ws
                 .account_storage_state(constants::NETWORK_ADDRESS)
                 .unwrap();
-            drop(rw_set);
             let mut state = super::protocol::NetworkAccountWorldState::new(&mut state, acc_state);
 
             // Pool power of vp and nvp are equal
@@ -3372,10 +3266,7 @@ mod test {
         }
 
         // Second Epoch
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let mut state = create_state(Some(rw_set.ws.to_owned()));
-        drop(rw_set);
-
+        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
         state.bd.validator_performance = Some(all_nodes_performance());
         state.tx.nonce = 1;
         let t = std::time::Instant::now();
@@ -3397,12 +3288,10 @@ mod test {
 
         {
             // open account storage state for speed up read operations
-            let rw_set = state.ctx.rw_set.lock().unwrap();
-            let acc_state = rw_set
+            let acc_state = state.ctx.ws_cache()
                 .ws
                 .account_storage_state(constants::NETWORK_ADDRESS)
                 .unwrap();
-            drop(rw_set);
             let mut state = super::protocol::NetworkAccountWorldState::new(&mut state, acc_state);
 
             // Pool power of pvp, vp and nvp are equal
@@ -3477,14 +3366,10 @@ mod test {
     fn test_next_epoch_multiple_pools_and_stakes_auto_stake() {
         let mut state = create_state(None);
 
-        let mut rw_set = state.ctx.rw_set.lock().unwrap();
-        prepare_accounts_balance(&mut rw_set.ws);
-        drop(rw_set);
+        prepare_accounts_balance(&mut state.ctx.ws_cache_mut().ws);
 
         create_full_nvp_pool_stakes_deposits(&mut state, true, true, true);
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
 
         // First Epoch
@@ -3505,12 +3390,10 @@ mod test {
 
         {
             // open account storage state for speed up read operations
-            let rw_set = state.ctx.rw_set.lock().unwrap();
-            let acc_state = rw_set
+            let acc_state = state.ctx.ws_cache()
                 .ws
                 .account_storage_state(constants::NETWORK_ADDRESS)
                 .unwrap();
-            drop(rw_set);
             let mut state = super::protocol::NetworkAccountWorldState::new(&mut state, acc_state);
 
             // Pool power of vp and nvp are equal
@@ -3567,9 +3450,7 @@ mod test {
         }
 
         // Second Epoch
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let mut state = create_state(Some(rw_set.ws.to_owned()));
-        drop(rw_set);
+        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
         state.bd.validator_performance = Some(all_nodes_performance());
         state.tx.nonce = 1;
         let t = std::time::Instant::now();
@@ -3591,12 +3472,10 @@ mod test {
 
         {
             // open account storage state for speed up read operations
-            let rw_set = state.ctx.rw_set.lock().unwrap();
-            let acc_state = rw_set
+            let acc_state = state.ctx.ws_cache()
                 .ws
                 .account_storage_state(constants::NETWORK_ADDRESS)
                 .unwrap();
-            drop(rw_set);
             let mut state = super::protocol::NetworkAccountWorldState::new(&mut state, acc_state);
 
             // Pool power of vp and nvp are equal and greater than pool power of pvp
@@ -3672,10 +3551,7 @@ mod test {
     fn test_change_of_validators() {
         let mut state = create_state(None);
         create_full_pools_in_nvp(&mut state, false, false);
-        let rw_set = state.ctx.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        drop(rw_set);
-
+        let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let state = create_state(Some(ws));
         let mut state = execute_next_epoch(state);
 
@@ -3695,10 +3571,7 @@ mod test {
         state.tx.nonce = 2;
         let state = execute_next_epoch(state);
 
-        let rw_set = state.ctx.lock().unwrap();
-        let mut state = create_state(Some(rw_set.ws.to_owned()));
-        drop(rw_set);
-
+        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
         state.tx.signer = ACCOUNT_B;
         state.tx.nonce = 0;
         let ret = execute_commands(
@@ -3981,9 +3854,8 @@ mod test {
             auto_stake_rewards_a,
             auto_stake_rewards_b,
         );
-        let rw_set = state.ctx.rw_set.lock().unwrap();
-        let ws = rw_set.clone().commit_to_world_state();
-        ws
+        // TODO avoid Clone
+        state.ctx.ws_cache().clone().commit_to_world_state()
     }
 
     // pool[A].power = 100_000

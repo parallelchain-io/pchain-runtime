@@ -25,7 +25,7 @@ use pchain_world_state::{
 
 use crate::{
     formulas::{pool_reward, stake_reward},
-    read_write_set::ReadWriteSet,
+    read_write_set::WorldStateCache,
     BlockProposalStats, ValidatorChanges,
 };
 
@@ -39,11 +39,7 @@ where
     let block_performance = state.bd.validator_performance.clone().unwrap();
 
     let new_validator_set = {
-        let acc_state = state
-            .rw_set
-            .lock()
-            .unwrap()
-            .ws
+        let acc_state = state.ctx.ws_cache().ws
             .account_storage_state(NETWORK_ADDRESS)
             .unwrap();
 
@@ -253,15 +249,15 @@ where
 /// Write opertions would store to read write set.
 /// Different with [state::ExecutionState] which also implements Trait [NetworkAccountStorage],
 /// it does not charge gas for opertaions.
-pub(crate) struct NetworkAccountWorldState<S>
+pub(crate) struct NetworkAccountWorldState<'a, S>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
     account_storage_state: AccountStorageState<S>,
-    rw_set: Arc<Mutex<ReadWriteSet<S>>>,
+    ws_cache: &'a mut WorldStateCache<S>,
 }
 
-impl<'a, S> NetworkAccountWorldState<S>
+impl<'a, S> NetworkAccountWorldState<'a, S>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -271,26 +267,24 @@ where
     ) -> Self {
         Self {
             account_storage_state,
-            rw_set: Arc::clone(&state.rw_set),
+            ws_cache: state.ctx.ws_cache_mut(),
         }
     }
 }
 
-impl<'a, S> NetworkAccountStorage for NetworkAccountWorldState<S>
+impl<'a, S> NetworkAccountStorage for NetworkAccountWorldState<'a, S>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
     fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        let rw_set = self.rw_set.lock().unwrap();
-        rw_set.app_data_from_account_storage_state_uncharged(
+        self.ws_cache.app_data_from_account_storage_state_uncharged(
             &self.account_storage_state,
             AppKey::new(key.to_vec()),
         )
     }
 
     fn contains(&self, key: &[u8]) -> bool {
-        let rw_set = self.rw_set.lock().unwrap();
-        rw_set.contains_app_data_from_account_storage_state_uncharged(
+        self.ws_cache.contains_app_data_from_account_storage_state_uncharged(
             &self.account_storage_state,
             AppKey::new(key.to_vec()),
         )
@@ -298,14 +292,11 @@ where
 
     fn set(&mut self, key: &[u8], value: Vec<u8>) {
         let address = self.account_storage_state.address();
-        let mut rw_set = self.rw_set.lock().unwrap();
-
-        rw_set.set_app_data_uncharged(address, AppKey::new(key.to_vec()), value);
+        self.ws_cache.set_app_data_uncharged(address, AppKey::new(key.to_vec()), value);
     }
 
     fn delete(&mut self, key: &[u8]) {
         let address = self.account_storage_state.address();
-        let mut rw_set = self.rw_set.lock().unwrap();
-        rw_set.set_app_data_uncharged(address, AppKey::new(key.to_vec()), Vec::new());
+        self.ws_cache.set_app_data_uncharged(address, AppKey::new(key.to_vec()), Vec::new());
     }
 }

@@ -32,7 +32,7 @@ use crate::{
     contract::SmartContractContext,
     cost::CostChange,
     execution::{execute, state::ExecutionState},
-    read_write_set::ReadWriteSet,
+    read_write_set::WorldStateCache,
     types::{BaseTx, DeferredCommand},
     wasmer::cache::Cache,
     BlockchainParams, TransitionError,
@@ -83,9 +83,7 @@ impl Runtime {
     ) -> TransitionResult<S> {
         // create transition context from world state
         let mut ctx = TransitionContext::new(ws, tx.gas_limit);
-        if let Some(cache) = &self.sc_cache {
-            ctx.sc_context.cache = Some(cache.clone());
-        }
+        ctx.sc_context.cache = self.sc_cache.clone();
         ctx.sc_context.memory_limit = self.sc_memory_limit;
 
         // transaction inputs
@@ -121,9 +119,7 @@ impl Runtime {
     ) -> (CommandReceipt, Option<TransitionError>) {
         // create transition context from world state
         let mut ctx = TransitionContext::new(ws, gas_limit);
-        if let Some(cache) = &self.sc_cache {
-            ctx.sc_context.cache = Some(cache.clone());
-        }
+        ctx.sc_context.cache = self.sc_cache.clone();
         ctx.sc_context.memory_limit = self.sc_memory_limit;
 
         // create a dummy transaction
@@ -193,8 +189,7 @@ where
     /// finalize generates TransitionResult
     pub(crate) fn finalize(self, command_receipts: Vec<CommandReceipt>) -> TransitionResult<S> {
         let error = self.error;
-        let rw_set = self.state.ctx.rw_set.lock().unwrap();
-        let new_state = rw_set.clone().commit_to_world_state();
+        let new_state = self.state.ctx.ws_cache().clone().commit_to_world_state();
 
         TransitionResult {
             new_state,
@@ -221,9 +216,6 @@ pub(crate) struct TransitionContext<S>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    /// Running data cache for Read-Write operations during state transition.
-    pub rw_set: Arc<Mutex<ReadWriteSet<S>>>,
-
     /// Smart contract context for execution
     pub sc_context: SmartContractContext,
 
@@ -239,11 +231,9 @@ where
     S: WorldStateStorage + Send + Sync + Clone,
 {
     pub fn new(ws: WorldState<S>, gas_limit: u64) -> Self {
-        let rw_set = Arc::new(Mutex::new(ReadWriteSet::new(ws)));
-        let host_gm = RuntimeGasMeter::new(Arc::clone(&rw_set), gas_limit);
+        let host_gm = RuntimeGasMeter::new(WorldStateCache::new(ws), gas_limit);
 
         Self {
-            rw_set,
             sc_context: SmartContractContext {
                 cache: None,
                 memory_limit: None,
@@ -253,10 +243,21 @@ where
         }
     }
 
+    pub fn ws_cache(&self) -> &WorldStateCache<S> {
+        self.gas_meter.ws_cache()
+    }
+
+    pub fn ws_cache_mut(&mut self) -> &mut WorldStateCache<S> {
+        self.gas_meter.ws_cache_mut()
+    }
+
+    pub fn into_ws_cache(self) -> WorldStateCache<S> {
+        self.gas_meter.into_ws_cache()
+    }
+
     /// Discard the changes to world state
     pub fn revert_changes(&mut self) {
-        let mut rw_set = self.rw_set.lock().unwrap();
-        rw_set.revert();
+        self.gas_meter.ws_cache_mut().revert();
     }
 
     // - TODO 8 - Potentially part of command lifecycle refactor
@@ -294,25 +295,5 @@ where
         let mut ret = Vec::new();
         ret.append(&mut self.commands);
         Some(ret)
-    }
-}
-
-impl<S> Deref for TransitionContext<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone,
-{
-    type Target = Arc<Mutex<ReadWriteSet<S>>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.rw_set
-    }
-}
-
-impl<S> DerefMut for TransitionContext<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.rw_set
     }
 }

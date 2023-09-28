@@ -9,7 +9,7 @@ use pchain_types::{blockchain::Log, cryptography::PublicAddress};
 use pchain_world_state::{
     keys::AppKey,
     network::{constants::NETWORK_ADDRESS, network_account::NetworkAccountStorage},
-    storage::WorldStateStorage,
+    storage::WorldStateStorage, states::WorldState,
 };
 
 use ed25519_dalek::Verifier;
@@ -21,7 +21,7 @@ use crate::{
     contract::{self, FuncError, SmartContractContext},
     cost::CostChange,
     gas,
-    read_write_set::{CacheKey, CacheValue, ReadWriteSet},
+    read_write_set::{CacheKey, CacheValue, WorldStateCache},
     TransitionError,
 };
 
@@ -35,14 +35,14 @@ where
     /// gas limit of the entire txn
     pub gas_limit: u64,
 
+    /// stores txn inclusion gas separately because it is not considered to belong to a single command
+    txn_inclusion_gas: u64,
+
     // TODO 4 - temp keeping this field (which means total gas used clamped to gas limit), but should remove if no use
     pub total_gas_used_clamped: u64,
 
     /// cumulative gas used for all executed commands
     total_command_gas_used: u64,
-
-    /// stores txn inclusion gas separately because it is not considered to belong to a single command
-    txn_inclusion_gas: u64,
 
     /// stores the gas used by current command,
     /// finalized and reset at the end of each command
@@ -55,7 +55,7 @@ where
     /// It is None if the execution has not/did not return anything.
     pub command_return_value: Option<Vec<u8>>,
 
-    rw_set: Arc<Mutex<ReadWriteSet<S>>>,
+    ws_cache: WorldStateCache<S>,
 }
 
 /// GasMeter implements NetworkAccountStorage with charegable read-write operations to world state
@@ -85,9 +85,9 @@ where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     // TODO CLEAN consider whether Arc/Mutex is really needed, or should the Arc/Mutex really be on TransitionContext parent
-    pub fn new(rw_set: Arc<Mutex<ReadWriteSet<S>>>, gas_limit: u64) -> Self {
+    pub fn new(ws_cache: WorldStateCache<S>, gas_limit: u64) -> Self {
         Self {
-            rw_set,
+            ws_cache,
             gas_limit,
             total_command_gas_used: 0,
             txn_inclusion_gas: 0,
@@ -96,6 +96,18 @@ where
             command_logs: Vec::new(),
             command_return_value: None,
         }
+    }
+
+    pub fn ws_cache(&self) -> &WorldStateCache<S> {
+        &self.ws_cache
+    }
+
+    pub fn ws_cache_mut(&mut self) -> &mut WorldStateCache<S> {
+        &mut self.ws_cache
+    }
+
+    pub fn into_ws_cache(self) -> WorldStateCache<S> {
+        self.ws_cache
     }
 
     //
@@ -332,8 +344,7 @@ where
         // check from RW set first
         self.ws_contains(&cache_key) || {
             // if not found, check from storage
-            let rw_set = self.rw_set.lock().unwrap();
-            rw_set.contains_in_storage_uncharged(address, &app_key)
+            self.ws_cache.contains_in_storage_uncharged(address, &app_key)
         }
     }
 
@@ -447,9 +458,7 @@ where
     }
 
     fn ws_get(&self, key: CacheKey) -> Option<CacheValue> {
-        let rw_set = self.rw_set.lock().unwrap();
-        let value = rw_set.get_uncharged(&key);
-        drop(rw_set);
+        let value = self.ws_cache.get_uncharged(&key);
 
         let get_cost = match key {
             CacheKey::ContractCode(_) => {
@@ -479,14 +488,11 @@ where
             + CostChange::deduct(gas::set_cost_rehash(key_len));
         self.charge(set_cost);
 
-        let mut rw_set = self.rw_set.lock().unwrap();
-        rw_set.set_uncharged(key, value);
-        drop(rw_set);
+        self.ws_cache.set_uncharged(key, value);
     }
 
     fn ws_contains(&self, key: &CacheKey) -> bool {
         self.charge(CostChange::deduct(gas::contains_cost(key.len())));
-        let rw_set = self.rw_set.lock().unwrap();
-        rw_set.contains_uncharged(key)
+        self.ws_cache.contains_uncharged(key)
     }
 }

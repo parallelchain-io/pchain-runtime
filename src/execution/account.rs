@@ -306,7 +306,7 @@ where
             return Err((state, DeployError::CBIVersionAlreadySet));
         }
 
-        let module = match ContractModule::new(&contract, state.sc_context.memory_limit) {
+        let module = match ContractModule::new(&contract, state.ctx.sc_context.memory_limit) {
             Ok(module) => module,
             Err(err) => return Err((state, DeployError::ModuleBuildError(err))),
         };
@@ -329,7 +329,7 @@ where
         let contract_address = self.contract_address;
 
         // cache the module
-        if let Some(sc_cache) = &self.sc_context.cache {
+        if let Some(sc_cache) = &self.ctx.sc_context.cache {
             self.module.cache(contract_address, &mut sc_cache.clone());
         }
 
