@@ -24,13 +24,10 @@ use pchain_types::{
     cryptography::PublicAddress,
 };
 use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
-use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Mutex};
 
 use crate::execution::runtime_gas_meter::RuntimeGasMeter;
 use crate::{
     contract::SmartContractContext,
-    cost::CostChange,
     execution::{execute, state::ExecutionState},
     read_write_set::WorldStateCache,
     types::{BaseTx, DeferredCommand},

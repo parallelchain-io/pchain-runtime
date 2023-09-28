@@ -767,7 +767,7 @@ mod test {
             true
         );
 
-        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
+        let state = create_state(Some(state.ctx.into_ws_cache().ws));
 
         let ret = execute_commands(
             state,
@@ -2077,7 +2077,7 @@ mod test {
 
         ///// Exceptions: /////
 
-        let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
+        let state = create_state(Some(state.ctx.into_ws_cache().ws));
         let ret = execute_commands(
             state,
             vec![Command::WithdrawDeposit(WithdrawDepositInput {

@@ -19,7 +19,7 @@ use std::{
 use wasmer::{Global, LazyInit, Memory, NativeFunc};
 
 use crate::{
-    contract::FuncError, cost::CostChange, gas, transition::TransitionContext, types::CallTx,
+    contract::FuncError, gas, transition::TransitionContext, types::CallTx,
     wasmer::wasmer_memory::MemoryContext, BlockchainParams,
 };
 

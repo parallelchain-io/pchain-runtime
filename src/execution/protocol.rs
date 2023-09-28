@@ -5,10 +5,7 @@
 
 //! Implementation of executing [Protocol Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#protocol-commands).
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
 
 use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{

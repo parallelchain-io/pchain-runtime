@@ -1,15 +1,11 @@
 use core::panic;
-use std::{
-    cell::RefCell,
-    error::Error,
-    sync::{Arc, Mutex},
-};
+use std::cell::RefCell;
 
 use pchain_types::{blockchain::Log, cryptography::PublicAddress};
 use pchain_world_state::{
     keys::AppKey,
     network::{constants::NETWORK_ADDRESS, network_account::NetworkAccountStorage},
-    storage::WorldStateStorage, states::WorldState,
+    storage::WorldStateStorage
 };
 
 use ed25519_dalek::Verifier;

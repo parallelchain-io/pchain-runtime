@@ -16,9 +16,7 @@ use pchain_world_state::{
 
 use crate::{
     contract::{ContractBinaryInterface, FuncError},
-    cost::CostChange,
     execution::{self},
-    gas::{self},
     types::DeferredCommand,
     wasmer::wasmer_env::Env,
 };

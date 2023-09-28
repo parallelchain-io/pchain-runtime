@@ -14,9 +14,7 @@
 //! The actual command execution happens in Commands Phase. It is implemented in modules [account](crate::execution::account) and
 //! [protocol](crate::execution::protocol).
 
-use pchain_world_state::{
-    network::network_account::NetworkAccountStorage, storage::WorldStateStorage,
-};
+use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
     formulas::{TOTAL_BASE_FEE, TREASURY_CUT_OF_BASE_FEE},
@@ -74,7 +72,7 @@ where
 
 /// finalize gas consumption of this Command Phase. Return Error GasExhaust if gas has already been exhausted
 pub(crate) fn finalize_gas_consumption<S>(
-    mut state: ExecutionState<S>,
+    state: ExecutionState<S>,
 ) -> Result<ExecutionState<S>, StateChangesResult<S>>
 where
     S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static,

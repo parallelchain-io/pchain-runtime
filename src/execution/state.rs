@@ -8,8 +8,6 @@
 //! This state is not as same as the concept of state in World State. Execution encapsulates the changing information
 //! during execution life-cycle. It is the state of execution model, but not referring to blockchain storage.
 
-use std::ops::{Deref, DerefMut};
-
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{transition::TransitionContext, types::BaseTx, BlockchainParams};

@@ -15,7 +15,6 @@ use crate::{
     contract::{
         self, ContractBinaryFunctions, ContractValidateError, MethodCallError, ModuleBuildError,
     },
-    cost::CostChange,
     transition::TransitionContext,
     types::CallTx,
     wasmer::{wasmer_env, wasmer_store},
@@ -26,8 +25,6 @@ use crate::{
 pub(crate) struct ContractModule {
     store: Store,
     module: contract::Module,
-    /// Gas cost for getting contract code
-    pub gas_cost: CostChange,
 }
 
 impl ContractModule {
@@ -46,7 +43,6 @@ impl ContractModule {
         Ok(Self {
             store: wasmer_store,
             module,
-            gas_cost: CostChange::default(),
         })
     }
 
@@ -70,8 +66,6 @@ impl ContractModule {
         Ok(Self {
             store,
             module,
-            // TODO CLEAN remove this cost change no longer used, Gas is ttacked by GasMeter...
-            gas_cost: CostChange::default(),
         })
     }
 

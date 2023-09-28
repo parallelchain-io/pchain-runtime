@@ -20,8 +20,6 @@ use pchain_world_state::{
     storage::WorldStateStorage,
 };
 
-use crate::cost::CostChange;
-use crate::gas;
 use crate::{transition::StateChangesResult, TransitionError};
 
 use super::state::ExecutionState;
@@ -145,7 +143,7 @@ pub(crate) fn delete_pool<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
+    let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
         return Err(phase::abort(state, TransitionError::PoolNotExists));
     }
