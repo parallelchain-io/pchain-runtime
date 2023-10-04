@@ -9,7 +9,7 @@
 
 use wasmer::{imports, Function, ImportObject, Store};
 
-use super::MethodCallError;
+use super::wasmer::instance::MethodCallError;
 
 /// Definition of host functions with [wasmer::WasmerEnv]. Implement this trait for creation of importable
 /// that can be used in instantiation of contract module.

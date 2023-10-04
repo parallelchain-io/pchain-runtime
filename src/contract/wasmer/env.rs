@@ -14,9 +14,14 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use wasmer::{Global, LazyInit, Memory, NativeFunc};
 
 use crate::{
-    transition::TransitionContext, types::{CallTx, DeferredCommand},
-    wasmer::wasmer_memory::MemoryContext, BlockchainParams, execution::gas_meter::{WasmerRemainingGas, WasmerGasMeter}, contract::SmartContractContext,
+    contract::SmartContractContext,
+    execution::gas::{WasmerGasMeter, WasmerRemainingGas},
+    transition::TransitionContext,
+    types::{CallTx, DeferredCommand},
+    BlockchainParams,
 };
+
+use super::memory::MemoryContext;
 
 /// Env provides the functions in `exports` (which are in turn 'imported' by WASM smart contracts)
 /// access to complex functionality that typically cannot cross the host-WASM barrier.
@@ -91,7 +96,7 @@ where
         LockWasmerTransitionContext {
             env: self,
             context: self.context.lock().unwrap(),
-            wasmer_remaining_gas: self.gas_meter.lock().unwrap()
+            wasmer_remaining_gas: self.gas_meter.lock().unwrap(),
         }
     }
 }
@@ -115,7 +120,7 @@ where
 {
     env: &'a Env<S>,
     context: MutexGuard<'a, TransitionContext<S>>,
-    wasmer_remaining_gas: MutexGuard<'a, WasmerRemainingGas>
+    wasmer_remaining_gas: MutexGuard<'a, WasmerRemainingGas>,
 }
 
 impl<'a, S> LockWasmerTransitionContext<'a, S>
@@ -123,7 +128,11 @@ where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     pub fn gas_meter(&mut self) -> WasmerGasMeter<'_, S, Env<S>> {
-        WasmerGasMeter::new(&self.env, &self.wasmer_remaining_gas, &mut self.context.gas_meter)
+        WasmerGasMeter::new(
+            self.env,
+            &self.wasmer_remaining_gas,
+            &mut self.context.gas_meter,
+        )
     }
 
     pub fn smart_contract_context(&self) -> SmartContractContext {

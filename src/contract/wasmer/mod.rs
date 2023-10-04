@@ -10,14 +10,18 @@
 //! The store is created with a [Wasmer OpCode Filter](non_determinism_filter) so that invalid contract will
 //! not be executed. The state transition function might specify a [cache] for storing compiled smart contract to execute.
 
-pub mod wasmer_env;
+pub mod env;
 
-pub mod wasmer_memory;
+pub mod memory;
 
-pub mod wasmer_store;
+pub mod module;
+
+pub mod store;
 
 pub mod non_determinism_filter;
 
 pub mod cache;
 
 pub mod custom_tunables;
+
+pub mod instance;

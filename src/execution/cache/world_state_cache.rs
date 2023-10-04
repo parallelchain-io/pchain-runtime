@@ -76,12 +76,7 @@ where
 
     /// set value to contract storage. This operation does not write to world state immediately.
     /// It is gas-free operation.
-    pub fn set_app_data(
-        &mut self,
-        address: PublicAddress,
-        app_key: AppKey,
-        value: Vec<u8>,
-    ) {
+    pub fn set_app_data(&mut self, address: PublicAddress, app_key: AppKey, value: Vec<u8>) {
         self.set(CacheKey::App(address, app_key), CacheValue::App(value));
     }
 
@@ -151,7 +146,9 @@ where
                 .filter(|v| v.is_some())
                 .is_some();
 
-        if value_from_rw { return true }
+        if value_from_rw {
+            return true;
+        }
 
         // Check if world state contains this key.
         match key {

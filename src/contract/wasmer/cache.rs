@@ -69,7 +69,7 @@ impl Cache {
 
     /// save the Module with Metadata to file storage
     pub(crate) fn store(
-        &mut self,
+        &self,
         address: PublicAddress,
         module: &wasmer::Module,
         bytes_length: usize,

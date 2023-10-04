@@ -17,18 +17,18 @@ use std::{
 };
 
 use crate::{
-    contract::{self, ContractValidateError, ModuleBuildError},
+    contract::{
+        self,
+        wasmer::{instance::ContractValidateError, module::ModuleBuildError},
+        ContractInstance, ContractModule,
+    },
+    execution::abort::{abort, abort_if_gas_exhausted},
     transition::StateChangesResult,
     types::{BaseTx, CallTx},
     TransitionError,
 };
 
-use super::{
-    contract::{ContractInstance, ContractModule},
-    execute::TryExecuteResult,
-    phase::{self},
-    state::ExecutionState,
-};
+use crate::execution::{execute_commands::TryExecuteResult, state::ExecutionState};
 
 /// Execution Logic for Account Commands. Err If the Command is not Account Command.
 pub(crate) fn try_execute<S>(state: ExecutionState<S>, command: &Command) -> TryExecuteResult<S>
@@ -75,10 +75,7 @@ where
     let origin_balance = state.ctx.gas_meter.ws_get_balance(signer);
 
     if origin_balance < amount {
-        return Err(phase::abort(
-            state,
-            TransitionError::NotEnoughBalanceForTransfer,
-        ));
+        return Err(abort(state, TransitionError::NotEnoughBalanceForTransfer));
     }
 
     // Always deduct the amount specified in the transaction
@@ -94,7 +91,7 @@ where
         .gas_meter
         .ws_set_balance(recipient, recipient_balance.saturating_add(amount));
 
-    phase::finalize_gas_consumption(state)
+    abort_if_gas_exhausted(state)
 }
 
 /// Execution of [pchain_types::blockchain::Command::Call]
@@ -115,10 +112,7 @@ where
         // check balance
         let origin_balance = state.ctx.gas_meter.ws_get_balance(signer);
         if origin_balance < amount {
-            return Err(phase::abort(
-                state,
-                TransitionError::NotEnoughBalanceForTransfer,
-            ));
+            return Err(abort(state, TransitionError::NotEnoughBalanceForTransfer));
         }
 
         // Always deduct the amount specified in the transaction
@@ -137,14 +131,14 @@ where
 
     // Instantiation of contract
     let instance = CallInstance::instantiate(state, is_view, target, method, arguments, amount)
-        .map_err(|(state, transition_err)| phase::abort(state, transition_err))?;
+        .map_err(|(state, transition_err)| abort(state, transition_err))?;
 
     // Call the contract
     let (state, transition_err) = instance.call();
 
     match transition_err {
-        Some(err) => Err(phase::abort(state, err)),
-        None => phase::finalize_gas_consumption(state),
+        Some(err) => Err(abort(state, err)),
+        None => abort_if_gas_exhausted(state),
     }
 }
 
@@ -186,9 +180,13 @@ where
 
         // ONLY load contract after checking CBI version. (To ensure the loaded contract is deployed SUCCESSFULLY,
         // otherwise, it is possible to load the cached contract in previous transaction)
-        let contract_module = match state.ctx.gas_meter.ws_get_cached_contract(target, &state.ctx.sc_context) {
-            Some((module, store)) => ContractModule::new(store, module),
-            None => return Err((state, TransitionError::NoContractcode))
+        let contract_module = match state
+            .ctx
+            .gas_meter
+            .ws_get_cached_contract(target, &state.ctx.sc_context)
+        {
+            Some(contract_module) => contract_module,
+            None => return Err((state, TransitionError::NoContractcode)),
         };
 
         // Check pay for storage gas cost at this point. Consider it as runtime cost because the world state write is an execution gas
@@ -263,14 +261,14 @@ where
 
     // Instantiate instant to preform contract deployment.
     let instance = DeployInstance::instantiate(state, contract, cbi_version, contract_address)
-        .map_err(|(state, err)| phase::abort(state, err.into()))?;
+        .map_err(|(state, err)| abort(state, err.into()))?;
 
     // Deploy the contract
     let state = instance
         .deploy()
-        .map_err(|(state, err)| phase::abort(state, err.into()))?;
+        .map_err(|(state, err)| abort(state, err.into()))?;
 
-    phase::finalize_gas_consumption(state)
+    abort_if_gas_exhausted(state)
 }
 
 /// DeployInstance defines the steps of contract instantiation and contract deploy.
@@ -305,7 +303,10 @@ where
             return Err((state, DeployError::CBIVersionAlreadySet));
         }
 
-        let module = match ContractModule::from_contract_code(&contract, state.ctx.sc_context.memory_limit) {
+        let module = match ContractModule::from_contract_code(
+            &contract,
+            state.ctx.sc_context.memory_limit,
+        ) {
             Ok(module) => module,
             Err(err) => return Err((state, DeployError::ModuleBuildError(err))),
         };
@@ -329,7 +330,7 @@ where
 
         // cache the module
         if let Some(sc_cache) = &self.ctx.sc_context.cache {
-            self.module.cache(contract_address, &mut sc_cache.clone());
+            self.module.cache(contract_address, sc_cache);
         }
 
         // Write contract code with CBI version.

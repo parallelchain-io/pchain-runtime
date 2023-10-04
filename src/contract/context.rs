@@ -6,7 +6,7 @@
 //! Defines a struct containing context for a Smart Contract Execution such as cache for storing
 //! smart contract module and VM memory limit for contract execution.
 
-use crate::{wasmer::wasmer_store, Cache};
+use super::wasmer::cache::Cache;
 
 /// Smart Contract Context stores useful information for contract execution.
 #[derive(Clone)]
@@ -15,11 +15,4 @@ pub(crate) struct SmartContractContext {
     pub cache: Option<Cache>,
     /// smart contract VM memory limit
     pub memory_limit: Option<usize>,
-}
-
-impl SmartContractContext {
-    /// Instantiate [wasmer::Store] from this context.
-    pub fn instantiate_store(&self) -> wasmer::Store {
-        wasmer_store::instantiate_store(u64::MAX, self.memory_limit)
-    }
 }

@@ -18,21 +18,19 @@
 //!
 //! [Runtime] also provides method to execute a [view call](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
 
-use pchain_types::serialization::Serializable;
 use pchain_types::{
     blockchain::{Command, CommandReceipt, ExitStatus, Receipt, Transaction},
     cryptography::PublicAddress,
+    serialization::Serializable,
 };
 use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
 
-use crate::execution::gas_meter::GasMeter;
 use crate::{
     contract::SmartContractContext,
-    execution::{execute, state::ExecutionState},
-    world_state_cache::WorldStateCache,
+    execution::{cache::WorldStateCache, execute_commands, state::ExecutionState},
+    execution::{execute_next_epoch_command, execute_view, gas::GasMeter},
     types::{BaseTx, DeferredCommand},
-    wasmer::cache::Cache,
-    BlockchainParams, TransitionError,
+    BlockchainParams, Cache, TransitionError,
 };
 
 /// Version of Contract Binary Interface
@@ -99,9 +97,9 @@ impl Runtime {
 
         // initiate command execution
         if commands.iter().any(|c| matches!(c, Command::NextEpoch)) {
-            execute::execute_next_epoch_command(state, commands)
+            execute_next_epoch_command(state, commands)
         } else {
-            execute::execute_commands(state, commands)
+            execute_commands::execute_commands(state, commands)
         }
     }
 
@@ -138,7 +136,7 @@ impl Runtime {
         };
 
         // execute view
-        execute::execute_view(state, target, method, arguments)
+        execute_view(state, target, method, arguments)
     }
 }
 
@@ -186,7 +184,12 @@ where
     /// finalize generates TransitionResult
     pub(crate) fn finalize(self, command_receipts: Vec<CommandReceipt>) -> TransitionResult<S> {
         let error = self.error;
-        let new_state = self.state.ctx.inner_ws_cache().clone().commit_to_world_state();
+        let new_state = self
+            .state
+            .ctx
+            .inner_ws_cache()
+            .clone()
+            .commit_to_world_state();
 
         TransitionResult {
             new_state,

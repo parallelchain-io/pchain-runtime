@@ -35,9 +35,10 @@
     allow(clippy::new_without_default, clippy::result_large_err)
 )]
 
-pub mod contract;
+pub mod commands;
 
-pub mod cost;
+pub mod contract;
+pub use contract::wasmer::cache::Cache;
 
 pub mod error;
 pub use error::TransitionError;
@@ -53,8 +54,3 @@ pub use transition::{cbi_version, Runtime, TransitionResult, ValidatorChanges};
 
 pub mod types;
 pub use types::{BlockProposalStats, BlockchainParams, ValidatorPerformance};
-
-pub mod wasmer;
-pub use crate::wasmer::cache::Cache;
-
-pub mod world_state_cache;

@@ -22,11 +22,10 @@ use pchain_world_state::{
 
 use crate::{
     formulas::{pool_reward, stake_reward},
-    world_state_cache::WorldStateCache,
     BlockProposalStats, ValidatorChanges,
 };
 
-use super::state::ExecutionState;
+use crate::execution::{cache::WorldStateCache, state::ExecutionState};
 
 /// Execution of [pchain_types::blockchain::Command::NextEpoch]
 pub(crate) fn next_epoch<S>(mut state: ExecutionState<S>) -> (ExecutionState<S>, ValidatorChanges)
@@ -36,7 +35,10 @@ where
     let block_performance = state.bd.validator_performance.clone().unwrap();
 
     let new_validator_set = {
-        let acc_state = state.ctx.inner_ws_cache().ws
+        let acc_state = state
+            .ctx
+            .inner_ws_cache()
+            .ws
             .account_storage_state(NETWORK_ADDRESS)
             .unwrap();
 
@@ -289,11 +291,13 @@ where
 
     fn set(&mut self, key: &[u8], value: Vec<u8>) {
         let address = self.account_storage_state.address();
-        self.ws_cache.set_app_data(address, AppKey::new(key.to_vec()), value);
+        self.ws_cache
+            .set_app_data(address, AppKey::new(key.to_vec()), value);
     }
 
     fn delete(&mut self, key: &[u8]) {
         let address = self.account_storage_state.address();
-        self.ws_cache.set_app_data(address, AppKey::new(key.to_vec()), Vec::new());
+        self.ws_cache
+            .set_app_data(address, AppKey::new(key.to_vec()), Vec::new());
     }
 }

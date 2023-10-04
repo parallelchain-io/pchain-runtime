@@ -3,83 +3,55 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct to use [wasmer::Instance] to perform method call according to ParallelChain Smart Contract Defintions.
+//! Defines structs for contract instantiation and contract call which are used in executing Commands Phase.
 
-use anyhow::Result;
+use pchain_world_state::storage::WorldStateStorage;
 
-/// Instance represents a WebAssembly module that has been 'instantiated' into a stateful quasi-process and can have its methods
-/// called.
-pub(crate) struct Instance(pub(crate) wasmer::Instance);
+use crate::{
+    contract::wasmer::{
+        env,
+        instance::{Instance, MethodCallError},
+    },
+    transition::TransitionContext,
+};
 
-impl Instance {
-    /// call_method executes the named method of the Instance
-    ///
-    /// If the call completes successfully, it returns the remaining gas after the execution. If the call terminated early,
-    /// it returns a two-tuple comprising the remaining gas after the execution, and a MethodCallError describing the
-    /// cause of the early termination.
-    ///
-    /// # Panics
-    /// call_method assumes that the Instance does export the name method, and panics otherwise.
-    pub(crate) unsafe fn call_method(&self) -> Result<u64, (u64, MethodCallError)> {
-        let remaining_gas = match wasmer_middlewares::metering::get_remaining_points(&self.0) {
-            wasmer_middlewares::metering::MeteringPoints::Exhausted => 0,
-            wasmer_middlewares::metering::MeteringPoints::Remaining(gas_left_after_execution) => {
-                gas_left_after_execution
-            }
+/// ContractInstance contains contract instance which is prepared to be called in Commands Phase.
+pub(crate) struct ContractInstance<S>
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
+{
+    pub(in crate::contract) environment: env::Env<S>,
+    pub(in crate::contract) instance: Instance,
+}
+
+impl<S> ContractInstance<S>
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
+{
+    pub(crate) fn call(self) -> (TransitionContext<S>, u64, Option<MethodCallError>) {
+        // initialize the variable of wasmer remaining gas
+        self.environment
+            .init_wasmer_remaining_points(self.instance.remaining_points());
+
+        // Invoke Wasm Execution
+        let call_result = unsafe { self.instance.call_method() };
+
+        // drop the variable of wasmer remaining gas
+        self.environment.drop_wasmer_remaining_points();
+
+        let (remaining_gas, call_error) = match call_result {
+            Ok(remaining_gas) => (remaining_gas, None),
+            Err((remaining_gas, call_error)) => (remaining_gas, Some(call_error)),
         };
 
-        let method = match self
-            .0
-            .exports
-            .get_native_function::<(), ()>(CONTRACT_METHOD)
-        {
-            Ok(m) => m,
-            Err(e) => return Err((remaining_gas, MethodCallError::NoExportedMethod(e))), // Invariant violated: A contract that does not export method_name was deployed.
-        };
+        let total_gas = self
+            .environment
+            .call_tx
+            .gas_limit
+            .saturating_sub(remaining_gas);
 
-        // method call
-        let execution_result = method.call();
-
-        let remaining_gas = match wasmer_middlewares::metering::get_remaining_points(&self.0) {
-            wasmer_middlewares::metering::MeteringPoints::Exhausted => 0,
-            wasmer_middlewares::metering::MeteringPoints::Remaining(gas_left_after_execution) => {
-                gas_left_after_execution
-            }
-        };
-
-        match execution_result{
-            Ok(_) => Ok(remaining_gas),
-            Err(_) if remaining_gas == 0 => Err((remaining_gas, MethodCallError::GasExhaustion)),
-            Err(e) /* remaining_gas > 0 */ => Err((remaining_gas, MethodCallError::Runtime(e)))
-        }
-    }
-
-    /// return a global variable which can read and modify the metering remaining points of wasm execution of this Instance
-    pub(crate) fn remaining_points(&self) -> wasmer::Global {
-        self.0
-            .exports
-            .get_global("wasmer_metering_remaining_points")
-            .unwrap()
-            .clone()
+        // Get the updated TransitionContext
+        let ctx = self.environment.context.lock().unwrap().clone();
+        (ctx, total_gas, call_error)
     }
 }
-
-/// MethodCallError enumerates through the possible reasons why a call into a contract Instance's exported methods might
-/// terminate early.
-#[derive(Debug)]
-pub enum MethodCallError {
-    Runtime(wasmer::RuntimeError),
-    GasExhaustion,
-    NoExportedMethod(wasmer::ExportError),
-}
-
-/// ContractValidateError enumerates through the possible reasons why the contract is not runnable
-#[derive(Debug)]
-pub enum ContractValidateError {
-    MethodNotFound,
-    InstantiateError,
-}
-
-/// CONTRACT_METHOD is reserved by the ParallelChain Mainnet protocol to name callable function
-/// exports from smart contract Modules.  
-pub const CONTRACT_METHOD: &str = "entrypoint";

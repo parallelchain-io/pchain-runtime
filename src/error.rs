@@ -10,7 +10,7 @@
 
 use pchain_types::blockchain::ExitStatus;
 
-use crate::contract::{FuncError, MethodCallError};
+use crate::contract::{wasmer::instance::MethodCallError, FuncError};
 
 /// Descriptive error definitions of a Transition
 #[derive(Clone, Debug, PartialEq, Eq)]
