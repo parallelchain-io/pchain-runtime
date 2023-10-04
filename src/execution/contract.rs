@@ -28,7 +28,11 @@ pub(crate) struct ContractModule {
 }
 
 impl ContractModule {
-    pub(crate) fn new(
+    pub(crate) fn new(store: Store, module: contract::Module) -> Self {
+        Self { store, module }
+    }
+
+    pub(crate) fn from_contract_code(
         contract_code: &Vec<u8>,
         memory_limit: Option<usize>,
     ) -> Result<Self, ModuleBuildError> {
@@ -40,33 +44,7 @@ impl ContractModule {
             &wasmer_store,
         )?;
 
-        Ok(Self {
-            store: wasmer_store,
-            module,
-        })
-    }
-
-    pub(crate) fn build_contract<S>(
-        contract_address: PublicAddress,
-        transition_ctx: &TransitionContext<S>,
-    ) -> Result<Self, ()>
-    where
-        S: WorldStateStorage + Send + Sync + Clone + 'static,
-    {
-        let (module, store) = {
-            match transition_ctx
-                .gas_meter
-                .ws_get_cached_contract(contract_address, &transition_ctx.sc_context)
-            {
-                Some((module, store)) => (module, store),
-                None => return Err(()),
-            }
-        };
-
-        Ok(Self {
-            store,
-            module,
-        })
+        Ok(Self::new(wasmer_store, module))
     }
 
     pub(crate) fn validate(&self) -> Result<(), ContractValidateError> {
@@ -136,10 +114,6 @@ where
         // Invoke Wasm Execution
         let call_result = unsafe { self.instance.call_method() };
 
-        // TODO 7 - `non_wasmer_gas_amount` is no longer needed, can remove every where
-        // can double check and confirm this value is indeed 0, nothing writes to it
-        let non_wasmer_gas_amount = self.environment.get_non_wasm_gas_amount();
-
         // drop the variable of wasmer remaining gas
         self.environment.drop_wasmer_remaining_points();
 
@@ -152,8 +126,7 @@ where
             .environment
             .call_tx
             .gas_limit
-            .saturating_sub(remaining_gas)
-            .saturating_sub(non_wasmer_gas_amount); // add back the non_wasmer gas because it is already accounted in read write set.
+            .saturating_sub(remaining_gas);
 
         // Get the updated TransitionContext
         let ctx = self.environment.context.lock().unwrap().clone();

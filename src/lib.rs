@@ -57,4 +57,4 @@ pub use types::{BlockProposalStats, BlockchainParams, ValidatorPerformance};
 pub mod wasmer;
 pub use crate::wasmer::cache::Cache;
 
-pub mod read_write_set;
+pub mod world_state_cache;

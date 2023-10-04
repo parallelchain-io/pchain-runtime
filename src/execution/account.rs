@@ -186,10 +186,9 @@ where
 
         // ONLY load contract after checking CBI version. (To ensure the loaded contract is deployed SUCCESSFULLY,
         // otherwise, it is possible to load the cached contract in previous transaction)
-        let build_contract = ContractModule::build_contract(target, &state.ctx);
-        let module = match build_contract {
-            Ok(module) => module,
-            Err(_) => return Err((state, TransitionError::NoContractcode)),
+        let contract_module = match state.ctx.gas_meter.ws_get_cached_contract(target, &state.ctx.sc_context) {
+            Some((module, store)) => ContractModule::new(store, module),
+            None => return Err((state, TransitionError::NoContractcode))
         };
 
         // Check pay for storage gas cost at this point. Consider it as runtime cost because the world state write is an execution gas
@@ -214,7 +213,7 @@ where
             target,
         };
 
-        let instance = match module.instantiate(
+        let instance = match contract_module.instantiate(
             Arc::new(Mutex::new(state.ctx.clone())),
             0,
             is_view,
@@ -232,7 +231,7 @@ where
     fn call(self) -> (ExecutionState<S>, Option<TransitionError>) {
         let (ctx, wasm_exec_gas, call_error) = self.instance.call();
         let mut state = ExecutionState { ctx, ..self.state };
-        state.ctx.gas_meter.charge_wasmer_gas(wasm_exec_gas);
+        state.ctx.gas_meter.reduce_gas(wasm_exec_gas);
 
         let transition_err =
             if state.tx.gas_limit < state.ctx.gas_meter.get_gas_to_be_used_in_theory() {
@@ -306,7 +305,7 @@ where
             return Err((state, DeployError::CBIVersionAlreadySet));
         }
 
-        let module = match ContractModule::new(&contract, state.ctx.sc_context.memory_limit) {
+        let module = match ContractModule::from_contract_code(&contract, state.ctx.sc_context.memory_limit) {
             Ok(module) => module,
             Err(err) => return Err((state, DeployError::ModuleBuildError(err))),
         };

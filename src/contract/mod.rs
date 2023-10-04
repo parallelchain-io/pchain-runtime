@@ -8,7 +8,7 @@
 //!
 //! A contract consists of a set of host functions that can be compiled into WASM [module]. The state transition
 //! function prepares execution [context] and builds an [instance] from a contract with well-defined [functions].
-//! The contract should match the current [version] of Contract Binary Interface ([cbi]).
+//! The contract should match the current [version] of Contract Binary Interface ([cbi]). 
 
 pub mod cbi;
 pub(crate) use cbi::*;

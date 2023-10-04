@@ -19,16 +19,13 @@ pub trait MemoryContext {
         let alloc = self.get_alloc();
 
         // Allocate segment.
-        let segment_ptr = match alloc.call(value.len() as u32) {
-            Ok(ptr) => ptr,
-            Err(err) => return Err(anyhow!("MODERATE: fail to allocate linear memory: {}", err)),
-        };
+        let segment_ptr = alloc.call(value.len() as u32)
+            .map_err(|err| anyhow!("MODERATE: fail to allocate linear memory: {}", err))?;
 
         // Write bytes.
-        let segment = match segment_ptr.deref(memory, 0, value.len() as u32) {
-            Some(cell) => cell,
-            None => return Err(anyhow!("MODERATE: fail to dereference linear memory")),
-        };
+        let segment = segment_ptr.deref(memory, 0, value.len() as u32)
+            .ok_or(anyhow!("MODERATE: fail to dereference linear memory"))?;
+
         for i in 0..value.len() {
             segment[i].set(value[i]);
         }
@@ -49,10 +46,9 @@ pub trait MemoryContext {
         let memory = self.get_memory();
         let bytes_ptr: WasmPtr<u8, Array> = WasmPtr::new(offset);
 
-        let bytes = match bytes_ptr.deref(memory, 0, len) {
-            Some(bytes) => bytes,
-            None => return Err(anyhow!("MODERATE: fail to read bytes from linear memory")),
-        };
+        let bytes = bytes_ptr.deref(memory, 0, len)
+            .ok_or(anyhow!("MODERATE: fail to read bytes from linear memory"))?;
+
         let mut bytes_copy = Vec::new();
         for byte in bytes {
             bytes_copy.push(byte.get());

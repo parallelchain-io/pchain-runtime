@@ -23,7 +23,7 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 /// assert_eq!(change.values().0, 1);
 /// ```
 #[derive(Clone, Copy, Debug, Default)]
-pub struct CostChange {
+pub(crate) struct CostChange {
     deduct: u64,
     reward: u64,
 }

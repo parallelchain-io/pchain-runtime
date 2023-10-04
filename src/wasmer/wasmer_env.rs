@@ -9,18 +9,13 @@
 //! changes include the read-write operation on world state, the incurring gas consumption and
 //! context related to cross-contract calls.
 
-use anyhow::Result;
 use pchain_world_state::storage::WorldStateStorage;
-use std::{
-    convert::TryInto,
-    mem::MaybeUninit,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex, MutexGuard};
 use wasmer::{Global, LazyInit, Memory, NativeFunc};
 
 use crate::{
-    contract::FuncError, gas, transition::TransitionContext, types::CallTx,
-    wasmer::wasmer_memory::MemoryContext, BlockchainParams,
+    transition::TransitionContext, types::{CallTx, DeferredCommand},
+    wasmer::wasmer_memory::MemoryContext, BlockchainParams, execution::gas_meter::{WasmerRemainingGas, WasmerGasMeter}, contract::SmartContractContext,
 };
 
 /// Env provides the functions in `exports` (which are in turn 'imported' by WASM smart contracts)
@@ -34,12 +29,11 @@ where
 {
     /// Transition Context
     pub context: Arc<Mutex<TransitionContext<S>>>,
+    /// gas meter for wasm execution.
+    gas_meter: Arc<Mutex<WasmerRemainingGas>>,
 
     /// counter of calls. It starts with zero and increases for every Internal Calls
     pub call_counter: u32,
-
-    /// gas meter for wasm execution.
-    pub gas_meter: Arc<Mutex<MaybeUninit<GasMeter>>>,
 
     /// Call Transaction consists of information such as target_address, gas limit, and data which is parameters provided to contract.
     /// In Internal Call, target address of the contract being called could be child contract.
@@ -74,7 +68,7 @@ where
         Env {
             context,
             call_counter,
-            gas_meter: Arc::new(Mutex::new(MaybeUninit::uninit())),
+            gas_meter: Arc::new(Mutex::new(WasmerRemainingGas::new())),
             memory: LazyInit::default(),
             alloc: LazyInit::default(),
             call_tx,
@@ -85,77 +79,20 @@ where
 
     /// initialize the variable wasmer_remaining_points
     pub fn init_wasmer_remaining_points(&self, global: Global) {
-        self.gas_meter.lock().unwrap().write(GasMeter {
-            wasmer_gas: global,
-            non_wasmer_gas_amount: 0,
-        });
+        self.gas_meter.lock().unwrap().write(global);
     }
 
     /// drop the variable wasmer_remaining_points
     pub fn drop_wasmer_remaining_points(&self) {
-        unsafe { self.gas_meter.lock().unwrap().assume_init_drop() };
+        self.gas_meter.lock().unwrap().clear();
     }
 
-    /// get remaining points (gas) of wasm execution
-    pub fn get_wasmer_remaining_points(&self) -> u64 {
-        unsafe {
-            self.gas_meter
-                .lock()
-                .unwrap()
-                .assume_init_ref()
-                .wasmer_gas
-                .get()
-                .try_into()
-                .unwrap()
+    pub fn lock(&self) -> LockWasmerTransitionContext<'_, S> {
+        LockWasmerTransitionContext {
+            env: self,
+            context: self.context.lock().unwrap(),
+            wasmer_remaining_gas: self.gas_meter.lock().unwrap()
         }
-    }
-
-    /// get the recorded non-wasm gas amount from gas meter
-    pub fn get_non_wasm_gas_amount(&self) -> u64 {
-        unsafe {
-            self.gas_meter
-                .lock()
-                .unwrap()
-                .assume_init_ref()
-                .non_wasmer_gas_amount
-        }
-    }
-
-    /// substract remaining points of wasm execution and record the amount to non_wasmer_gas_amount
-    // pub fn consume_non_wasm_gas(&self, change: CostChange) {
-    //     println!("----------------------HERE I AM -----------------------");
-    //     println!("cost change: {:?}", change);
-    //     // rewards is not useful in substracting remaining points. It is fine because it will
-    //     // eventaully be used to reduce gas consumption of the transaction, but here we just do not
-    //     // want to extend the wasm execution time.
-    //     let (deduct, _) = change.values();
-    //     if deduct > 0 {
-    //         unsafe {
-    //             self.gas_meter
-    //                 .lock()
-    //                 .unwrap()
-    //                 .assume_init_mut()
-    //                 .substract_non_wasmer_gas(deduct);
-    //         }
-    //     }
-    // }
-
-    /// substract remaining points of wasm execution
-    pub fn consume_wasm_gas(&self, gas_consumed: u64) -> u64 {
-        let gas_meter_lock = self.gas_meter.lock().unwrap();
-        unsafe { gas_meter_lock.assume_init_ref().substract(gas_consumed) }
-    }
-
-    /// write the data to memory, charge the write cost and return the length
-    pub fn write_bytes(&self, value: Vec<u8>, val_ptr_ptr: u32) -> Result<u32, FuncError> {
-        self.consume_wasm_gas(gas::wasm_memory_write_cost(value.len()));
-        MemoryContext::write_bytes_to_memory(self, value, val_ptr_ptr).map_err(FuncError::Runtime)
-    }
-
-    /// read data from memory and charge the read cost
-    pub fn read_bytes(&self, offset: u32, len: u32) -> Result<Vec<u8>, FuncError> {
-        self.consume_wasm_gas(gas::wasm_memory_read_cost(len as usize));
-        MemoryContext::read_bytes_from_memory(self, offset, len).map_err(FuncError::Runtime)
     }
 }
 
@@ -172,33 +109,28 @@ where
     }
 }
 
-/// GasMeter defines gas metering logics. It is composed of the gas related to Wasmer Execution and the
-/// non-Wasmer related gas amount.
-pub(crate) struct GasMeter {
-    /// global vaiable of wasmer_middlewares::metering remaining points.
-    wasmer_gas: wasmer::Global,
-
-    // TODO 7 - `non_wasmer_gas_amount` is no longer needed, can remove every where
-    //
-    /// the gas accounted as part of the wasm execution gas during execution for eariler exiting when
-    /// gas becomes insufficient. This value is useful in deriving the gas used only for wasm execution.
-    non_wasmer_gas_amount: u64,
+pub(crate) struct LockWasmerTransitionContext<'a, S>
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
+{
+    env: &'a Env<S>,
+    context: MutexGuard<'a, TransitionContext<S>>,
+    wasmer_remaining_gas: MutexGuard<'a, WasmerRemainingGas>
 }
 
-impl GasMeter {
-    /// substract amount from wasmer_gas
-    fn substract(&self, amount: u64) -> u64 {
-        let current_remaining_points: u64 = self.wasmer_gas.get().try_into().unwrap();
-        let new_remaining_points = current_remaining_points.saturating_sub(amount);
-        self.wasmer_gas
-            .set(new_remaining_points.into())
-            .expect("Can't subtract `wasmer_metering_remaining_points` in Env");
-        new_remaining_points
+impl<'a, S> LockWasmerTransitionContext<'a, S>
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
+{
+    pub fn gas_meter(&mut self) -> WasmerGasMeter<'_, S, Env<S>> {
+        WasmerGasMeter::new(&self.env, &self.wasmer_remaining_gas, &mut self.context.gas_meter)
     }
 
-    // /// subtract amount from wasmer_gas, and record the amount of non_wasmer_gas.
-    // fn substract_non_wasmer_gas(&mut self, amount: u64) -> u64 {
-    //     self.non_wasmer_gas_amount = self.non_wasmer_gas_amount.saturating_add(amount);
-    //     self.substract(amount)
-    // }
+    pub fn smart_contract_context(&self) -> SmartContractContext {
+        self.context.sc_context.clone()
+    }
+
+    pub fn append_deferred_command(&mut self, deferred_command: DeferredCommand) {
+        self.context.commands.push(deferred_command);
+    }
 }

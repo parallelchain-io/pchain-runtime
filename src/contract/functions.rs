@@ -8,7 +8,7 @@
 use pchain_types::{
     blockchain::{Command, Log},
     runtime::CallInput,
-    serialization::{Deserializable, Serializable},
+    serialization::{Deserializable, Serializable}, cryptography::PublicAddress,
 };
 use pchain_world_state::{
     keys::AppKey, network::constants::NETWORK_ADDRESS, storage::WorldStateStorage,
@@ -16,8 +16,8 @@ use pchain_world_state::{
 
 use crate::{
     contract::{ContractBinaryInterface, FuncError},
-    execution::{self},
-    types::DeferredCommand,
+    execution::{contract::ContractModule, gas_meter::WasmerGasMeter},
+    types::{DeferredCommand, CallTx, BaseTx},
     wasmer::wasmer_env::Env,
 };
 
@@ -35,32 +35,29 @@ where
         val_ptr: u32,
         val_len: u32,
     ) -> Result<(), FuncError> {
-        let app_key = env.read_bytes(key_ptr, key_len)?;
-        let app_key = AppKey::new(app_key);
-        let new_value = env.read_bytes(val_ptr, val_len)?;
-        let target_address = env.call_tx.target;
+        let mut ctx = env.lock();
+        let mut gas_meter = ctx.gas_meter();
 
-        let mut env_ctx = env.context.lock().unwrap();
-        env_ctx
-            .gas_meter
-            .ws_set_app_data(target_address, app_key, new_value);
-        drop(env_ctx);
+        let app_key = gas_meter.read_bytes(key_ptr, key_len)?;
+        let app_key = AppKey::new(app_key);
+        let new_value = gas_meter.read_bytes(val_ptr, val_len)?;
+
+        gas_meter.ws_set_app_data(env.call_tx.target, app_key, new_value);
 
         Ok(())
     }
 
     fn get(env: &Env<S>, key_ptr: u32, key_len: u32, val_ptr_ptr: u32) -> Result<i64, FuncError> {
-        let app_key = env.read_bytes(key_ptr, key_len)?;
+        let mut ctx = env.lock();
+        let gas_meter = ctx.gas_meter();
+
+        let app_key = gas_meter.read_bytes(key_ptr, key_len)?;
         let app_key = AppKey::new(app_key);
 
-        let env_ctx = env.context.lock().unwrap();
-        let value = env_ctx
-            .gas_meter
-            .ws_get_app_data(env.call_tx.target, app_key);
-        drop(env_ctx);
+        let value = gas_meter.ws_get_app_data(env.call_tx.target, app_key);
 
         let ret_val = match value {
-            Some(value) => env.write_bytes(value, val_ptr_ptr)? as i64,
+            Some(value) => gas_meter.write_bytes(value, val_ptr_ptr)? as i64,
             None => -1,
         };
 
@@ -73,16 +70,16 @@ where
         key_len: u32,
         val_ptr_ptr: u32,
     ) -> Result<i64, FuncError> {
-        let app_key = env.read_bytes(key_ptr, key_len)?;
+        let mut ctx = env.lock();
+        let gas_meter = ctx.gas_meter();
+
+        let app_key = gas_meter.read_bytes(key_ptr, key_len)?;
         let app_key = AppKey::new(app_key);
 
-        let env_ctx = env.context.lock().unwrap();
-        let value = env_ctx.gas_meter.ws_get_app_data(NETWORK_ADDRESS, app_key);
-
-        drop(env_ctx);
+        let value = gas_meter.ws_get_app_data(NETWORK_ADDRESS, app_key);
 
         let ret_val = match value {
-            Some(value) => env.write_bytes(value, val_ptr_ptr)? as i64,
+            Some(value) => gas_meter.write_bytes(value, val_ptr_ptr)? as i64,
             None => -1,
         };
 
@@ -90,10 +87,7 @@ where
     }
 
     fn balance(env: &Env<S>) -> Result<u64, FuncError> {
-        let env_ctx = env.context.lock().unwrap();
-        let balance = env_ctx.gas_meter.ws_get_balance(env.call_tx.target);
-        drop(env_ctx);
-        Ok(balance)
+        Ok(env.lock().gas_meter().ws_get_balance(env.call_tx.target))
     }
 
     fn block_height(env: &Env<S>) -> Result<u64, FuncError> {
@@ -103,31 +97,46 @@ where
         Ok(env.params_from_blockchain.timestamp)
     }
     fn prev_block_hash(env: &Env<S>, hash_ptr_ptr: u32) -> Result<(), FuncError> {
-        env.write_bytes(
+        env.lock().gas_meter().write_bytes(
             env.params_from_blockchain.prev_block_hash.to_vec(),
             hash_ptr_ptr,
-        )?;
-        Ok(())
+        )
+        .map(|_| ())
+        .map_err(FuncError::Runtime)
     }
 
     fn calling_account(env: &Env<S>, address_ptr_ptr: u32) -> Result<(), FuncError> {
-        env.write_bytes(env.call_tx.signer.to_vec(), address_ptr_ptr)?;
-        Ok(())
+        env.lock().gas_meter().write_bytes(
+            env.call_tx.signer.to_vec(),
+            address_ptr_ptr
+        )
+        .map(|_| ())
+        .map_err(FuncError::Runtime)
     }
     fn current_account(env: &Env<S>, address_ptr_ptr: u32) -> Result<(), FuncError> {
-        env.write_bytes(env.call_tx.target.to_vec(), address_ptr_ptr)?;
-        Ok(())
+        env.lock().gas_meter().write_bytes(
+            env.call_tx.target.to_vec(),
+            address_ptr_ptr
+        )
+        .map(|_| ())
+        .map_err(FuncError::Runtime)
     }
 
     fn method(env: &Env<S>, method_ptr_ptr: u32) -> Result<u32, FuncError> {
-        env.write_bytes(env.call_tx.method.as_bytes().to_vec(), method_ptr_ptr)
+        env.lock().gas_meter().write_bytes(
+            env.call_tx.method.as_bytes().to_vec(),
+            method_ptr_ptr
+        )
+        .map_err(FuncError::Runtime)
     }
 
     fn arguments(env: &Env<S>, arguments_ptr_ptr: u32) -> Result<u32, FuncError> {
         match &env.call_tx.arguments {
             Some(arguments) => {
                 let arguments = <Vec<Vec<u8>> as Serializable>::serialize(arguments);
-                env.write_bytes(arguments, arguments_ptr_ptr)
+                env.lock().gas_meter()
+                    .write_bytes(arguments, arguments_ptr_ptr)
+                    .map_err(FuncError::Runtime)
             }
             None => Ok(0),
         }
@@ -142,25 +151,27 @@ where
     }
 
     fn transaction_hash(env: &Env<S>, hash_ptr_ptr: u32) -> Result<(), FuncError> {
-        env.write_bytes(env.call_tx.hash.to_vec(), hash_ptr_ptr)?;
-        Ok(())
+        env.lock().gas_meter().write_bytes(env.call_tx.hash.to_vec(), hash_ptr_ptr)
+        .map(|_| ())
+        .map_err(FuncError::Runtime)
     }
 
     fn log(env: &Env<S>, log_ptr: u32, log_len: u32) -> Result<(), FuncError> {
-        let serialized_log = env.read_bytes(log_ptr, log_len)?;
-        let log = Log::deserialize(&serialized_log).map_err(|e| FuncError::Runtime(e.into()))?;
+        let mut ctx = env.lock();
+        let mut gas_meter = ctx.gas_meter();
 
-        let mut ctx = env.context.lock().unwrap();
-        ctx.gas_meter.charge_txn_post_exec_log(log);
+        let serialized_log = gas_meter.read_bytes(log_ptr, log_len)?;
+        let log = Log::deserialize(&serialized_log).map_err(|e| FuncError::Runtime(e.into()))?;
+        gas_meter.command_output_append_log(log);
         Ok(())
     }
 
     fn return_value(env: &Env<S>, value_ptr: u32, value_len: u32) -> Result<(), FuncError> {
-        let value = env.read_bytes(value_ptr, value_len)?;
+        let mut ctx = env.lock();
+        let mut gas_meter = ctx.gas_meter();
 
-        let mut ctx = env.context.lock().unwrap();
-
-        ctx.gas_meter.charge_txn_post_exec_return_value(value);
+        let value = gas_meter.read_bytes(value_ptr, value_len)?;
+        gas_meter.command_output_set_return_values(value);
         Ok(())
     }
 
@@ -170,18 +181,26 @@ where
         call_input_len: u32,
         return_ptr_ptr: u32,
     ) -> Result<u32, FuncError> {
-        let call_command_bytes = env.read_bytes(call_input_ptr, call_input_len)?;
-        let call_command =
-            Command::deserialize(&call_command_bytes).map_err(|e| FuncError::Runtime(e.into()))?;
+        let mut ctx = env.lock();
+        let sc_context = ctx.smart_contract_context();
+        let mut gas_meter = ctx.gas_meter();
 
-        let (target, method, arguments, amount) = match call_command {
-            Command::Call(CallInput {
-                target,
-                method,
-                arguments,
-                amount,
-            }) => (target, method, arguments, amount),
-            _ => return Err(FuncError::Internal),
+        // Parse the call command arguments
+        let (target, method, arguments, amount) = {
+            let call_command_bytes = gas_meter.read_bytes(call_input_ptr, call_input_len)
+                .map_err(FuncError::Runtime)?;
+            let call_command =
+                Command::deserialize(&call_command_bytes).map_err(|e| FuncError::Runtime(e.into()))?;
+
+            match call_command {
+                Command::Call(CallInput {
+                    target,
+                    method,
+                    arguments,
+                    amount,
+                }) => (target, method, arguments, amount),
+                _ => return Err(FuncError::Internal),
+            }
         };
 
         // error if transfer amount is specified in view call.
@@ -189,48 +208,58 @@ where
             return Err(FuncError::Internal);
         }
 
-        // obtain the signer address (this contract's address) from transaction execution context
-        let signer = env.call_tx.target;
-        // gas limit bounded by remaining gas
-        let gas_limit = env.get_wasmer_remaining_points();
+        // Transfer to the target address first.
+        if let Some(amount) = amount {
+            transfer_from_contract(env.call_tx.target, amount, target, &mut gas_meter)?;
+        }
+
+        // Get the Contract Code and create the contract module
+        let (module, store) = gas_meter.ws_get_cached_contract(target, &sc_context).ok_or(FuncError::ContractNotFound)?;
+        let contract_module = ContractModule::new(store, module);
 
         // by default, fields would be inherited from parent transaction
-        let mut call_tx = env.call_tx.clone();
-        call_tx.signer = signer;
-        call_tx.gas_limit = gas_limit;
+        let call_tx = CallTx {
+            base_tx: BaseTx {
+                signer: env.call_tx.target,
+                gas_limit: gas_meter.remaining_gas(),
+                ..env.call_tx.base_tx
+            },
+            amount,
+            arguments,
+            method,
+            target,
+        };
 
-        call_tx.target = target;
-        call_tx.method = method;
-        call_tx.arguments = arguments;
-        call_tx.amount = amount;
-
-        let result = execution::internal::call_from_contract(
-            call_tx,
-            env.params_from_blockchain.clone(),
+        drop(ctx); // Drop the transition context and pass it to child contract.
+        
+        // Call the contract
+        let (_, gas_consumed, call_error) = contract_module.instantiate(
             env.context.clone(),
             env.call_counter.saturating_add(1),
             env.is_view,
-        );
-        env.consume_wasm_gas(result.exec_gas); // subtract gas consumed from parent contract's environment
+            call_tx,
+            env.params_from_blockchain.clone(),
+        )
+        .map_err(|_| FuncError::ContractNotFound)?
+        .call();
+        
+        let mut ctx = env.lock();
+        let mut gas_meter = ctx.gas_meter();
 
-        match result.error {
+        gas_meter.reduce_gas(gas_consumed); // subtract gas consumed from parent contract's environment?
+
+        match call_error {
             None => {
-                let mut tx_ctx_locked = env.context.lock().unwrap();
-                let res = tx_ctx_locked.gas_meter.command_return_value.clone();
-
-                // clear child result in parent's execution context. No cost because the return value is not written to block.
-                tx_ctx_locked.gas_meter.command_return_value = None;
-
-                if let Some(res) = res {
-                    return env.write_bytes(res, return_ptr_ptr);
+                // Take the child result in parent's execution context.
+                if let Some(res) = gas_meter.command_output_cache().take_return_values() {
+                    return gas_meter.write_bytes(res, return_ptr_ptr).map_err(|e| FuncError::Runtime(e));
                 }
             }
             Some(e) => {
-                // TODO 6 - should check using RuntimeGasMeter: gas_meter.gas_limit > (gas_meter.get_gas_to_be_used_in_theory() + wasm gas used)
-                if env.get_wasmer_remaining_points() == 0 {
+                if gas_meter.remaining_gas() == 0 {
                     return Err(FuncError::GasExhaustionError);
                 }
-                return Err(e);
+                return Err(FuncError::MethodCallError(e));
             }
         }
 
@@ -238,24 +267,22 @@ where
     }
 
     fn transfer(env: &Env<S>, transfer_input_ptr: u32) -> Result<(), FuncError> {
-        let transfer_bytes =
-            env.read_bytes(transfer_input_ptr, std::mem::size_of::<[u8; 40]>() as u32)?;
+        let mut ctx = env.lock();
+        let mut gas_meter = ctx.gas_meter();
+
+        let transfer_bytes = gas_meter.read_bytes(transfer_input_ptr, std::mem::size_of::<[u8; 40]>() as u32)
+            .map_err(FuncError::Runtime)?;
 
         let (recipient, amount_bytes) = transfer_bytes.split_at(32);
         let recipient = recipient.try_into().unwrap();
         let amount = u64::from_le_bytes(amount_bytes.try_into().unwrap());
 
-        let result = execution::internal::transfer_from_contract(
+        transfer_from_contract(
             env.call_tx.target, // the signer address (this contract's address) from transaction execution context
             amount,
             recipient,
-            env.context.clone(),
-        );
-
-        match result.error {
-            None => Ok(()),
-            Some(e) => Err(e),
-        }
+            &mut gas_meter,
+        )
     }
 
     fn defer_create_deposit(
@@ -263,16 +290,21 @@ where
         create_deposit_input_ptr: u32,
         create_deposit_input_len: u32,
     ) -> Result<(), FuncError> {
+        let mut ctx = env.lock();
+        let gas_meter = ctx.gas_meter();
+
         let serialized_command =
-            env.read_bytes(create_deposit_input_ptr, create_deposit_input_len)?;
+            gas_meter
+            .read_bytes(create_deposit_input_ptr, create_deposit_input_len)
+            .map_err(FuncError::Runtime)?;
         let command =
             Command::deserialize(&serialized_command).map_err(|e| FuncError::Runtime(e.into()))?;
 
         if !matches!(command, Command::CreateDeposit { .. }) {
             return Err(FuncError::Internal);
         }
-
-        env.context.lock().unwrap().commands.push(DeferredCommand {
+        
+        ctx.append_deferred_command(DeferredCommand {
             command,
             contract_address: env.call_tx.target,
         });
@@ -285,10 +317,14 @@ where
         set_deposit_settings_input_ptr: u32,
         set_deposit_settings_input_len: u32,
     ) -> Result<(), FuncError> {
-        let serialized_command = env.read_bytes(
+        let mut ctx = env.lock();
+        let gas_meter = ctx.gas_meter();
+
+        let serialized_command = gas_meter.read_bytes(
             set_deposit_settings_input_ptr,
             set_deposit_settings_input_len,
-        )?;
+        )
+        .map_err(FuncError::Runtime)?;
         let command =
             Command::deserialize(&serialized_command).map_err(|e| FuncError::Runtime(e.into()))?;
 
@@ -296,7 +332,7 @@ where
             return Err(FuncError::Internal);
         }
 
-        env.context.lock().unwrap().commands.push(DeferredCommand {
+        ctx.append_deferred_command(DeferredCommand {
             command,
             contract_address: env.call_tx.target,
         });
@@ -309,8 +345,11 @@ where
         top_up_deposit_input_ptr: u32,
         top_up_deposit_input_len: u32,
     ) -> Result<(), FuncError> {
-        let serialized_command =
-            env.read_bytes(top_up_deposit_input_ptr, top_up_deposit_input_len)?;
+        let mut ctx = env.lock();
+        let gas_meter = ctx.gas_meter();
+
+        let serialized_command = gas_meter.read_bytes(top_up_deposit_input_ptr, top_up_deposit_input_len)
+            .map_err(FuncError::Runtime)?;
         let command =
             Command::deserialize(&serialized_command).map_err(|e| FuncError::Runtime(e.into()))?;
 
@@ -318,7 +357,7 @@ where
             return Err(FuncError::Internal);
         }
 
-        env.context.lock().unwrap().commands.push(DeferredCommand {
+        ctx.append_deferred_command(DeferredCommand {
             command,
             contract_address: env.call_tx.target,
         });
@@ -331,8 +370,11 @@ where
         withdraw_deposit_input_ptr: u32,
         withdraw_deposit_input_len: u32,
     ) -> Result<(), FuncError> {
-        let serialized_command =
-            env.read_bytes(withdraw_deposit_input_ptr, withdraw_deposit_input_len)?;
+        let mut ctx = env.lock();
+        let gas_meter = ctx.gas_meter();
+
+        let serialized_command = gas_meter.read_bytes(withdraw_deposit_input_ptr, withdraw_deposit_input_len)
+            .map_err(FuncError::Runtime)?;
         let command =
             Command::deserialize(&serialized_command).map_err(|e| FuncError::Runtime(e.into()))?;
 
@@ -340,7 +382,7 @@ where
             return Err(FuncError::Internal);
         }
 
-        env.context.lock().unwrap().commands.push(DeferredCommand {
+        ctx.append_deferred_command(DeferredCommand {
             command,
             contract_address: env.call_tx.target,
         });
@@ -353,8 +395,12 @@ where
         stake_deposit_input_ptr: u32,
         stake_deposit_input_len: u32,
     ) -> Result<(), FuncError> {
+        let mut ctx = env.lock();
+        let gas_meter = ctx.gas_meter();
+
         let serialized_command =
-            env.read_bytes(stake_deposit_input_ptr, stake_deposit_input_len)?;
+            gas_meter.read_bytes(stake_deposit_input_ptr, stake_deposit_input_len)
+            .map_err(FuncError::Runtime)?;
         let command =
             Command::deserialize(&serialized_command).map_err(|e| FuncError::Runtime(e.into()))?;
 
@@ -362,7 +408,7 @@ where
             return Err(FuncError::Internal);
         }
 
-        env.context.lock().unwrap().commands.push(DeferredCommand {
+        ctx.append_deferred_command(DeferredCommand {
             command,
             contract_address: env.call_tx.target,
         });
@@ -375,8 +421,12 @@ where
         unstake_deposit_input_ptr: u32,
         unstake_deposit_input_len: u32,
     ) -> Result<(), FuncError> {
+        let mut ctx = env.lock();
+        let gas_meter = ctx.gas_meter();
+
         let serialized_command =
-            env.read_bytes(unstake_deposit_input_ptr, unstake_deposit_input_len)?;
+            gas_meter.read_bytes(unstake_deposit_input_ptr, unstake_deposit_input_len)
+            .map_err(FuncError::Runtime)?;
         let command =
             Command::deserialize(&serialized_command).map_err(|e| FuncError::Runtime(e.into()))?;
 
@@ -384,7 +434,7 @@ where
             return Err(FuncError::Internal);
         }
 
-        env.context.lock().unwrap().commands.push(DeferredCommand {
+        ctx.append_deferred_command(DeferredCommand {
             command,
             contract_address: env.call_tx.target,
         });
@@ -398,13 +448,13 @@ where
         msg_len: u32,
         digest_ptr_ptr: u32,
     ) -> Result<(), FuncError> {
-        let input_bytes = env.read_bytes(msg_ptr, msg_len)?;
+        let mut ctx = env.lock();
+        let gas_meter = ctx.gas_meter();
 
-        let ctx = env.context.lock().unwrap();
-        let digest = ctx.gas_meter.host_sha256(input_bytes);
-        drop(ctx);
+        let input_bytes = gas_meter.read_bytes(msg_ptr, msg_len)?;
+        let digest = gas_meter.sha256(input_bytes);
 
-        env.write_bytes(digest, digest_ptr_ptr)?;
+        gas_meter.write_bytes(digest, digest_ptr_ptr)?;
         Ok(())
     }
 
@@ -414,13 +464,13 @@ where
         msg_len: u32,
         digest_ptr_ptr: u32,
     ) -> Result<(), FuncError> {
-        let input_bytes = env.read_bytes(msg_ptr, msg_len)?;
+        let mut ctx = env.lock();
+        let gas_meter = ctx.gas_meter();
 
-        let ctx = env.context.lock().unwrap();
-        let digest = ctx.gas_meter.host_keccak256(input_bytes);
-        drop(ctx);
+        let input_bytes = gas_meter.read_bytes(msg_ptr, msg_len)?;
+        let digest = gas_meter.keccak256(input_bytes);
 
-        env.write_bytes(digest, digest_ptr_ptr)?;
+        gas_meter.write_bytes(digest, digest_ptr_ptr)?;
         Ok(())
     }
 
@@ -430,13 +480,13 @@ where
         msg_len: u32,
         digest_ptr_ptr: u32,
     ) -> Result<(), FuncError> {
-        let input_bytes = env.read_bytes(msg_ptr, msg_len)?;
+        let mut ctx = env.lock();
+        let gas_meter = ctx.gas_meter();
 
-        let ctx = env.context.lock().unwrap();
-        let digest = ctx.gas_meter.host_ripemd(input_bytes);
-        drop(ctx);
-
-        env.write_bytes(digest, digest_ptr_ptr)?;
+        let input_bytes = gas_meter.read_bytes(msg_ptr, msg_len)?;
+        let digest = gas_meter.ripemd(input_bytes);
+        
+        gas_meter.write_bytes(digest, digest_ptr_ptr)?;
         Ok(())
     }
 
@@ -447,12 +497,42 @@ where
         signature_ptr: u32,
         address_ptr: u32,
     ) -> Result<i32, FuncError> {
-        let message = env.read_bytes(msg_ptr, msg_len)?;
-        let signature = env.read_bytes(signature_ptr, 64)?;
-        let address = env.read_bytes(address_ptr, 32)?;
+        let mut ctx = env.lock();
+        let gas_meter = ctx.gas_meter();
 
-        let ctx = env.context.lock().unwrap();
-        ctx.gas_meter
-            .host_verify_ed25519_signature(message, signature, address)
+        let message = gas_meter.read_bytes(msg_ptr, msg_len)?;
+        let signature = gas_meter.read_bytes(signature_ptr, 64)?;
+        let address = gas_meter.read_bytes(address_ptr, 32)?;
+
+        gas_meter.verify_ed25519_signature(message, signature, address)
+            .map_err(|_| FuncError::Internal)
     }
+}
+
+/// Execution logics for transferring tokens from a contract
+fn transfer_from_contract<S>(
+    signer: PublicAddress,
+    amount: u64,
+    recipient: PublicAddress,
+    gas_meter: &mut WasmerGasMeter<'_, S, Env<S>>,
+) -> Result<(), FuncError>
+where
+    S: WorldStateStorage + Send + Sync + Clone,
+{
+    // 1. Verify that the caller's balance is >= amount
+    let from_balance = gas_meter.ws_get_balance(signer);
+    if from_balance < amount {
+        return Err(FuncError::InsufficientBalance)
+    }
+
+    // 2. Debit amount from from_address.
+    let from_address_new_balance = from_balance - amount;
+    gas_meter.ws_set_balance(signer, from_address_new_balance);
+
+    // 3. Credit amount to recipient.
+    let to_address_prev_balance = gas_meter.ws_get_balance(recipient);
+    let to_address_new_balance = to_address_prev_balance.saturating_add(amount);
+    gas_meter.ws_set_balance(recipient, to_address_new_balance);
+
+    Ok(())
 }

@@ -176,7 +176,7 @@ where
     // - Block performance is required for execution of next epoch transaction.
     // - Transaction nonce matches with the nonce in state
 
-    let ws_cache = state.ctx.ws_cache();
+    let ws_cache = state.ctx.inner_ws_cache();
     if commands.len() != 1
         || commands.first() != Some(&Command::NextEpoch)
         || state.bd.validator_performance.is_none()
@@ -195,7 +195,7 @@ where
 
     // Update Nonce for the transaction. This step ensures future epoch transaction produced
     // by the signer will have different transaction hash.
-    let ws_cache = state.ctx.ws_cache_mut();
+    let ws_cache = state.ctx.inner_ws_cache_mut();
     let nonce = ws_cache.ws.nonce(signer).saturating_add(1);
     ws_cache.ws.with_commit().set_nonce(signer, nonce);
 
@@ -399,7 +399,7 @@ mod test {
     fn test_empty_commands() {
         let mut state = create_state(None);
 
-        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_A);
+        let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
 
         let tx_base_cost = set_tx(&mut state, ACCOUNT_A, 0, &vec![]);
         let ret = execute_commands(state, vec![]);
@@ -408,7 +408,7 @@ mod test {
         assert_eq!(gas_used, 0);
 
         let state = create_state(Some(ret.new_state));
-        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_A);
+        let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost
@@ -1885,7 +1885,7 @@ mod test {
         
         state
             .ctx
-            .ws_cache_mut()
+            .inner_ws_cache_mut()
             .ws
             .cached()
             .set_balance(ACCOUNT_T, 500_000_000);
@@ -1957,7 +1957,7 @@ mod test {
 
         state
             .ctx
-            .ws_cache_mut()
+            .inner_ws_cache_mut()
             .ws
             .cached()
             .set_balance(ACCOUNT_T, 500_000_000);
@@ -2030,7 +2030,7 @@ mod test {
         let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
-        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
+        let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_A,
             max_amount: 40_000,
@@ -2069,7 +2069,7 @@ mod test {
                 .unwrap(),
             60_000
         );
-        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
+        let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 40_000
@@ -2203,7 +2203,7 @@ mod test {
         let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
-        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
+        let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_T,
             max_amount: 200_000,
@@ -2246,7 +2246,7 @@ mod test {
                 .unwrap(),
             50_000
         );
-        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
+        let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 200_000
@@ -2299,7 +2299,7 @@ mod test {
         let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
-        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_A);
+        let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_T,
             max_amount: 300_000,
@@ -2342,7 +2342,7 @@ mod test {
                 .unwrap(),
             0
         );
-        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
+        let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 300_000
@@ -2388,7 +2388,7 @@ mod test {
         let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
-        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_A);
+        let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_A,
             max_amount: 45_000,
@@ -2428,7 +2428,7 @@ mod test {
                 .unwrap(),
             55_000
         );
-        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_A);
+        let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 45_000
@@ -2459,14 +2459,14 @@ mod test {
 
         state
             .ctx
-            .ws_cache_mut()
+            .inner_ws_cache_mut()
             .ws
             .cached()
             .set_balance(ACCOUNT_T, 500_000_000);
         let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
-        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_T);
+        let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_T);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_T,
             max_amount: 200_000,
@@ -2503,7 +2503,7 @@ mod test {
                 .unwrap(),
             50_000
         );
-        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_T);
+        let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_T);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 200_000
@@ -2551,14 +2551,14 @@ mod test {
 
         state
             .ctx
-            .ws_cache_mut()
+            .inner_ws_cache_mut()
             .ws
             .cached()
             .set_balance(ACCOUNT_T, 500_000_000);
         let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
         let mut state = create_state(Some(ws));
-        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_A);
+        let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_T,
             max_amount: 300_000,
@@ -2589,7 +2589,7 @@ mod test {
             .operator_stake()
             .unwrap()
             .is_none());
-        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_T);
+        let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_T);
 
         assert_eq!(
             owner_balance_before,
@@ -2668,7 +2668,7 @@ mod test {
 
         let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
-        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
+        let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_A,
             max_amount: 40_000,
@@ -2709,7 +2709,7 @@ mod test {
             80_000
         );
 
-        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
+        let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 20_000
@@ -2769,7 +2769,7 @@ mod test {
 
         let ws = state.ctx.into_ws_cache().commit_to_world_state();
         let mut state = create_state(Some(ws));
-        let owner_balance_before = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
+        let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
 
         let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_A,
@@ -2810,7 +2810,7 @@ mod test {
                 .unwrap(),
             90_000
         );
-        let owner_balance_after = state.ctx.ws_cache().ws.balance(ACCOUNT_B);
+        let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
         assert_eq!(
             owner_balance_before,
             owner_balance_after + gas_used + tx_base_cost - 10_000
@@ -3182,7 +3182,7 @@ mod test {
     fn test_next_epoch_multiple_pools_and_stakes() {
         let mut state = create_state(None);
 
-        prepare_accounts_balance(&mut state.ctx.ws_cache_mut().ws);
+        prepare_accounts_balance(&mut state.ctx.inner_ws_cache_mut().ws);
 
         create_full_nvp_pool_stakes_deposits(&mut state, false, false, false);
         let ws = state.ctx.into_ws_cache().commit_to_world_state();
@@ -3207,7 +3207,7 @@ mod test {
 
         {
             // open account storage state for speed up read operations
-            let acc_state = state.ctx.ws_cache()
+            let acc_state = state.ctx.inner_ws_cache()
                 .ws
                 .account_storage_state(constants::NETWORK_ADDRESS)
                 .unwrap();
@@ -3288,7 +3288,7 @@ mod test {
 
         {
             // open account storage state for speed up read operations
-            let acc_state = state.ctx.ws_cache()
+            let acc_state = state.ctx.inner_ws_cache()
                 .ws
                 .account_storage_state(constants::NETWORK_ADDRESS)
                 .unwrap();
@@ -3366,7 +3366,7 @@ mod test {
     fn test_next_epoch_multiple_pools_and_stakes_auto_stake() {
         let mut state = create_state(None);
 
-        prepare_accounts_balance(&mut state.ctx.ws_cache_mut().ws);
+        prepare_accounts_balance(&mut state.ctx.inner_ws_cache_mut().ws);
 
         create_full_nvp_pool_stakes_deposits(&mut state, true, true, true);
         let ws = state.ctx.into_ws_cache().commit_to_world_state();
@@ -3390,7 +3390,7 @@ mod test {
 
         {
             // open account storage state for speed up read operations
-            let acc_state = state.ctx.ws_cache()
+            let acc_state = state.ctx.inner_ws_cache()
                 .ws
                 .account_storage_state(constants::NETWORK_ADDRESS)
                 .unwrap();
@@ -3472,7 +3472,7 @@ mod test {
 
         {
             // open account storage state for speed up read operations
-            let acc_state = state.ctx.ws_cache()
+            let acc_state = state.ctx.inner_ws_cache()
                 .ws
                 .account_storage_state(constants::NETWORK_ADDRESS)
                 .unwrap();
@@ -3854,8 +3854,7 @@ mod test {
             auto_stake_rewards_a,
             auto_stake_rewards_b,
         );
-        // TODO avoid Clone
-        state.ctx.ws_cache().clone().commit_to_world_state()
+        state.ctx.into_ws_cache().commit_to_world_state()
     }
 
     // pool[A].power = 100_000

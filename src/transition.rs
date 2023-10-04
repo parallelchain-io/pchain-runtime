@@ -25,11 +25,11 @@ use pchain_types::{
 };
 use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
 
-use crate::execution::runtime_gas_meter::RuntimeGasMeter;
+use crate::execution::gas_meter::GasMeter;
 use crate::{
     contract::SmartContractContext,
     execution::{execute, state::ExecutionState},
-    read_write_set::WorldStateCache,
+    world_state_cache::WorldStateCache,
     types::{BaseTx, DeferredCommand},
     wasmer::cache::Cache,
     BlockchainParams, TransitionError,
@@ -186,7 +186,7 @@ where
     /// finalize generates TransitionResult
     pub(crate) fn finalize(self, command_receipts: Vec<CommandReceipt>) -> TransitionResult<S> {
         let error = self.error;
-        let new_state = self.state.ctx.ws_cache().clone().commit_to_world_state();
+        let new_state = self.state.ctx.inner_ws_cache().clone().commit_to_world_state();
 
         TransitionResult {
             new_state,
@@ -220,7 +220,7 @@ where
     pub commands: Vec<DeferredCommand>,
 
     /// GasMeter holding state for entire txn
-    pub gas_meter: RuntimeGasMeter<S>,
+    pub gas_meter: GasMeter<S>,
 }
 
 impl<S> TransitionContext<S>
@@ -228,7 +228,7 @@ where
     S: WorldStateStorage + Send + Sync + Clone,
 {
     pub fn new(ws: WorldState<S>, gas_limit: u64) -> Self {
-        let host_gm = RuntimeGasMeter::new(WorldStateCache::new(ws), gas_limit);
+        let host_gm = GasMeter::new(WorldStateCache::new(ws), gas_limit);
 
         Self {
             sc_context: SmartContractContext {
@@ -240,21 +240,25 @@ where
         }
     }
 
-    pub fn ws_cache(&self) -> &WorldStateCache<S> {
-        self.gas_meter.ws_cache()
+    /// Get the World State Cache which allows read-write without gas metering.
+    pub fn inner_ws_cache(&self) -> &WorldStateCache<S> {
+        &self.gas_meter.ws_cache
     }
 
-    pub fn ws_cache_mut(&mut self) -> &mut WorldStateCache<S> {
-        self.gas_meter.ws_cache_mut()
+    /// Get the mutable World State Cache which allows read-write without gas metering.
+    pub fn inner_ws_cache_mut(&mut self) -> &mut WorldStateCache<S> {
+        &mut self.gas_meter.ws_cache
     }
 
+    /// Consume itself to get the World State Cache. It can be used when the transition context is
+    /// no longer needed (e.g. at the end of transition).
     pub fn into_ws_cache(self) -> WorldStateCache<S> {
-        self.gas_meter.into_ws_cache()
+        self.gas_meter.ws_cache
     }
 
     /// Discard the changes to world state
     pub fn revert_changes(&mut self) {
-        self.gas_meter.ws_cache_mut().revert();
+        self.gas_meter.ws_cache.revert();
     }
 
     // - TODO 8 - Potentially part of command lifecycle refactor
@@ -264,24 +268,18 @@ where
     //
     /// Output the CommandReceipt and clear the intermediate context for next command execution.
     pub fn extract(&mut self, exit_status: ExitStatus) -> CommandReceipt {
-        // 1. Create Command Receipt
-        let ret = CommandReceipt {
-            exit_status,
-            gas_used: self.gas_meter.get_gas_used_for_current_command(),
-            return_values: self
-                .gas_meter
-                .command_return_value
-                .clone()
-                .map_or(Vec::new(), std::convert::identity),
-            logs: self.gas_meter.command_logs.clone(),
-        };
+        // 1. Take the fields from output cache and update to gas meter at this checkpoint
+        let (gas_used_by_command, logs, return_values) = self.gas_meter.take_command_receipt();
 
-        // 2. Write command gas to the total
-        self.gas_meter.finalize_command_gas();
-
-        // 3. Clear data for next command execution
+        // 2. Clear data for next command execution
         self.commands.clear();
-        ret
+
+        CommandReceipt {
+            exit_status,
+            gas_used: gas_used_by_command,
+            return_values,
+            logs,
+        }
     }
 
     /// Pop commands from context. None if there is nothing to pop

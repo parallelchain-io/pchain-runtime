@@ -39,7 +39,7 @@ where
     // because they are internal housekeeping and not part of the txn execution
 
     let signer = state.tx.signer;
-    let ws_cache = state.ctx.ws_cache_mut();
+    let ws_cache = state.ctx.inner_ws_cache_mut();
 
     let origin_nonce = ws_cache.ws.nonce(signer);
     if state.tx.nonce != origin_nonce {
@@ -98,17 +98,6 @@ where
     S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static,
 {
     state.ctx.revert_changes();
-    // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
-    //
-    // technically the Charge phase resolves this again by doing min comparison
-    // why need to store?
-    let gas_used = std::cmp::min(
-        state.tx.gas_limit,
-        state.ctx.gas_meter.get_gas_to_be_used_in_theory(),
-    );
-
-    state.ctx.gas_meter.total_gas_used_clamped = gas_used;
-
     charge(state, Some(transition_err))
 }
 
@@ -124,16 +113,15 @@ where
     let base_fee = state.bd.this_base_fee;
     let priority_fee = state.tx.priority_fee_per_gas;
 
-    // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
-    // see also below where it is stored
-    // technically the min comparison can be replaced with state.gas_meter.get_gas_already_used(); which is already the total of each command clamped to gas limit
+    // TODO 4 - should be replaced by get_gas_already_used later. Need refactoring the execution flow.
+    // The failure command receipt should be taken first and the charge the total accumulated gas
     let gas_used = std::cmp::min(
         state.ctx.gas_meter.get_gas_to_be_used_in_theory(),
         state.tx.gas_limit,
-    ); // Safety for avoiding overflow
-    let gas_unused = state.tx.gas_limit.saturating_sub(gas_used);
+    );
+    let gas_unused = state.tx.gas_limit.saturating_sub(gas_used); // Safety for avoiding underflow
 
-    let ws_cache = state.ctx.ws_cache_mut();
+    let ws_cache = state.ctx.inner_ws_cache_mut();
 
     // Finalize signer's balance
     let signer_balance = ws_cache.purge_balance(signer);
@@ -176,13 +164,6 @@ where
     // Commit Signer's Nonce
     let nonce = ws_cache.ws.nonce(signer).saturating_add(1);
     ws_cache.ws.with_commit().set_nonce(signer, nonce);
-
-    // TODO 4 - temp keeping the total_gas_used_clamped field, but should remove if no use
-    // this looks like it's really not being used, even though the old code was saving it to state
-    //
-    // old code
-    // state.set_gas_consumed(gas_used);
-    // state.gas_meter.total_gas_used_clamped = gas_used;
 
     StateChangesResult::new(state, transition_result)
 }

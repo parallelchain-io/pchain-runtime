@@ -59,7 +59,7 @@ where
     /// remove cached writes and return the value,
     /// gas free operation, only used for accounting during charge phase
     pub fn purge_balance(&mut self, address: PublicAddress) -> u64 {
-        let balance = match self.get_uncharged(&CacheKey::Balance(address)) {
+        let balance = match self.get(&CacheKey::Balance(address)) {
             Some(CacheValue::Balance(value)) => value,
             _ => panic!(),
         };
@@ -76,17 +76,17 @@ where
 
     /// set value to contract storage. This operation does not write to world state immediately.
     /// It is gas-free operation.
-    pub fn set_app_data_uncharged(
+    pub fn set_app_data(
         &mut self,
         address: PublicAddress,
         app_key: AppKey,
         value: Vec<u8>,
     ) {
-        self.set_uncharged(CacheKey::App(address, app_key), CacheValue::App(value));
+        self.set(CacheKey::App(address, app_key), CacheValue::App(value));
     }
 
     /// check if App Key already exists. It is gas-free operation.
-    pub fn contains_app_data_from_account_storage_state_uncharged(
+    pub fn contains_app_data_from_account_storage_state(
         &self,
         account_storage_state: &AccountStorageState<S>,
         app_key: AppKey,
@@ -112,7 +112,7 @@ where
     }
 
     /// Get app data given a account storage state. It is gas-free operation.
-    pub fn app_data_from_account_storage_state_uncharged(
+    pub fn app_data_from_account_storage_state(
         &self,
         account_storage_state: &AccountStorageState<S>,
         app_key: AppKey,
@@ -140,27 +140,30 @@ where
     }
 
     // Low Level Operations
-    /// Check if readwrite set contains this key.
-    /// Not charged here as all charging is performed by RuntimeGasMeter.
-    pub fn contains_uncharged(&self, key: &CacheKey) -> bool {
-        self.writes.get(key).filter(|v| v.len() != 0).is_some()
+    /// Check if this key is set before.
+    pub fn contains(&self, key: &CacheKey) -> bool {
+        // Check if readwrite set contains this key.
+        let value_from_rw = self.writes.get(key).filter(|v| v.len() != 0).is_some()
             || self
                 .reads
                 .borrow()
                 .get(key)
                 .filter(|v| v.is_some())
-                .is_some()
-    }
+                .is_some();
 
-    /// Check if storage contains this key.
-    /// Not charged here as all charging is performed by RuntimeGasMeter.
-    pub fn contains_in_storage_uncharged(&self, address: PublicAddress, app_key: &AppKey) -> bool {
-        self.ws.contains().storage_value(&address, app_key)
+        if value_from_rw { return true }
+
+        // Check if world state contains this key.
+        match key {
+            CacheKey::App(address, app_key) => self.ws.contains().storage_value(address, app_key),
+            CacheKey::Balance(_) => true, // trivial query because balance is 0 if not set in world state
+            CacheKey::ContractCode(address) => self.ws.contains().code(*address),
+            CacheKey::CBIVersion(address) => self.ws.contains().cbi_version(address),
+        }
     }
 
     /// Get latest value from readwrite set. If not found, get from world state and then cache it.
-    /// Not charged here as all charging is performed by RuntimeGasMeter.
-    pub fn get_uncharged(&self, key: &CacheKey) -> Option<CacheValue> {
+    pub fn get(&self, key: &CacheKey) -> Option<CacheValue> {
         // 1. Return the value that was written earlier in the transaction ('read-your-write' semantics)
         if let Some(value) = self.writes.get(key) {
             return Some(value.clone());
@@ -180,8 +183,7 @@ where
     }
 
     /// Insert to write set.
-    /// Not charged here as all charging is performed by RuntimeGasMeter.
-    pub fn set_uncharged(&mut self, key: CacheKey, value: CacheValue) {
+    pub fn set(&mut self, key: CacheKey, value: CacheValue) {
         self.writes.insert(key, value);
     }
 
