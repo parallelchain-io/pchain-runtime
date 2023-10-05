@@ -40,7 +40,7 @@
 //! will modify the state and update signers nonce. Its goal is to compute the resulting state of
 //! Network Account and return changes to a validator set for next epoch in [TransitionResult].
 
-use pchain_types::blockchain::{Command, ExitStatus};
+use pchain_types::blockchain::Command;
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
@@ -52,8 +52,6 @@ use crate::{
     types::DeferredCommand,
     TransitionResult,
 };
-
-use super::abort::AbortResult;
 
 /// Backbone logic of Commands Execution
 pub(crate) fn execute_commands<S>(
@@ -75,45 +73,31 @@ where
     }
 
     // Phase: Command(s)
-    // let mut command_task_results = CommandTaskResults::new();
-    let mut command_tasks = ExecutableCommands::new();
-    command_tasks.append(commands);
+    let mut executable_commands = ExecutableCommands::new(commands);
 
-    while let Some(command_task) = command_tasks.next_task() {
-        // Execute command triggered from the Transaction
-        let (ret, is_deferred_command) = match command_task {
-            ExecutableCommand::TransactionCommmand(command) => (command.execute(state), false),
-            ExecutableCommand::DeferredCommand(deferred_command) => {
-                (deferred_command.execute(state), true)
-            }
+    while let Some(executable_command) = executable_commands.next_command() {
+
+        // Execute command
+        let result = match executable_command {
+            ExecutableCommand::TransactionCommmand(command) => 
+                command.execute(&mut state),
+            ExecutableCommand::DeferredCommand(deferred_command) =>
+                deferred_command.execute(&mut state),
         };
 
         // Proceed execution result
-        state = match ret {
+        match result {
             // command execution is not completed, continue with resulting state
-            Ok(mut state_of_success_execution) => {
-                // extract receipt from current execution result
-                let deferred_commands_from_call = state_of_success_execution
-                    .finalize_command_receipt(ExitStatus::Success, is_deferred_command);
-
+            Ok(deferred_commands_from_call) => {
                 // append command triggered from Call
                 if let Some(commands_from_call) = deferred_commands_from_call {
-                    command_tasks.append(commands_from_call);
+                    executable_commands.push_deferred_commands(commands_from_call);
                 }
-
-                state_of_success_execution
             }
-            // in case of error, create the last Command receipt and return result
-            Err(AbortResult {
-                state: mut state_of_abort_result,
-                error,
-            }) => {
-                // extract receipt from last execution result
-                state_of_abort_result
-                    .finalize_command_receipt(ExitStatus::from(&error), is_deferred_command);
-
+            // in case of error, stop and return result
+            Err(error) => {
                 // Phase: Charge (abort)
-                let (new_state, receipt) = phases::charge(state_of_abort_result).finalize();
+                let (new_state, receipt) = phases::charge(state).finalize();
 
                 return TransitionResult {
                     new_state,
@@ -122,7 +106,7 @@ where
                     validator_changes: None,
                 };
             }
-        };
+        }
     }
 
     // Phase: Charge
@@ -141,19 +125,20 @@ where
 pub(crate) struct ExecutableCommands(Vec<ExecutableCommand>);
 
 impl ExecutableCommands {
-    fn new() -> Self {
-        Self(Vec::new())
+    // initialize from transaction commands
+    fn new(commands: Vec<Command>) -> Self {
+        Self(commands.into_iter().map(ExecutableCommand::TransactionCommmand).rev().collect())
     }
 
     /// append a sequence of Commands and store as CommandTask with assigned task ID.
-    fn append<T: Into<ExecutableCommand>>(&mut self, commands: Vec<T>) {
+    fn push_deferred_commands(&mut self, commands: Vec<DeferredCommand>) {
         self.0.append(&mut Vec::<ExecutableCommand>::from_iter(
-            commands.into_iter().map(|command| command.into()).rev(),
+            commands.into_iter().map(ExecutableCommand::DeferredCommand).rev(),
         ));
     }
 
-    /// Pop the next task to execute
-    fn next_task(&mut self) -> Option<ExecutableCommand> {
+    /// Pop the next command to execute
+    fn next_command(&mut self) -> Option<ExecutableCommand> {
         self.0.pop()
     }
 }
@@ -165,16 +150,4 @@ pub(crate) enum ExecutableCommand {
     TransactionCommmand(Command),
     /// The Command that is submitted (deferred) from a Contract Call
     DeferredCommand(DeferredCommand),
-}
-
-impl From<Command> for ExecutableCommand {
-    fn from(command: Command) -> Self {
-        ExecutableCommand::TransactionCommmand(command)
-    }
-}
-
-impl From<DeferredCommand> for ExecutableCommand {
-    fn from(deferred_command: DeferredCommand) -> Self {
-        ExecutableCommand::DeferredCommand(deferred_command)
-    }
 }

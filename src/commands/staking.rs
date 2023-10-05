@@ -17,7 +17,7 @@ use pchain_world_state::{
 
 use crate::{
     execution::{
-        abort::{abort, abort_if_gas_exhausted, AbortResult},
+        abort::{abort, abort_if_gas_exhausted},
         state::ExecutionState,
     },
     TransitionError,
@@ -26,9 +26,9 @@ use crate::{
 /// Execution of [pchain_types::blockchain::Command::CreatePool]
 pub(crate) fn create_pool<S>(
     operator: PublicAddress,
-    mut state: ExecutionState<S>,
+    state: &mut ExecutionState<S>,
     commission_rate: u8,
-) -> Result<ExecutionState<S>, AbortResult<S>>
+) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -56,9 +56,9 @@ where
 /// Execution of [pchain_types::blockchain::Command::SetPoolSettings]
 pub(crate) fn set_pool_settings<S>(
     operator: PublicAddress,
-    mut state: ExecutionState<S>,
+    state: &mut ExecutionState<S>,
     new_commission_rate: u8,
-) -> Result<ExecutionState<S>, AbortResult<S>>
+) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -84,8 +84,8 @@ where
 /// Execution of [pchain_types::blockchain::Command::DeletePool]
 pub(crate) fn delete_pool<S>(
     operator: PublicAddress,
-    mut state: ExecutionState<S>,
-) -> Result<ExecutionState<S>, AbortResult<S>>
+    state: &mut ExecutionState<S>,
+) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -104,11 +104,11 @@ where
 /// Execution of [pchain_types::blockchain::Command::CreateDeposit]
 pub(crate) fn create_deposit<S>(
     owner: PublicAddress,
-    mut state: ExecutionState<S>,
+    state: &mut ExecutionState<S>,
     operator: PublicAddress,
     balance: u64,
     auto_stake_rewards: bool,
-) -> Result<ExecutionState<S>, AbortResult<S>>
+) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -140,10 +140,10 @@ where
 /// Execution of [pchain_types::blockchain::Command::SetDepositSettings]
 pub(crate) fn set_deposit_settings<S>(
     owner: PublicAddress,
-    mut state: ExecutionState<S>,
+    state: &mut ExecutionState<S>,
     operator: PublicAddress,
     new_auto_stake_rewards: bool,
-) -> Result<ExecutionState<S>, AbortResult<S>>
+) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -164,10 +164,10 @@ where
 /// Execution of [pchain_types::blockchain::Command::TopUpDeposit]
 pub(crate) fn topup_deposit<S>(
     owner: PublicAddress,
-    mut state: ExecutionState<S>,
+    state: &mut ExecutionState<S>,
     operator: PublicAddress,
     amount: u64,
-) -> Result<ExecutionState<S>, AbortResult<S>>
+) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -195,10 +195,10 @@ where
 /// Execution of [pchain_types::blockchain::Command::WithdrawDeposit]
 pub(crate) fn withdraw_deposit<S>(
     owner: PublicAddress,
-    mut state: ExecutionState<S>,
+    state: &mut ExecutionState<S>,
     operator: PublicAddress,
     max_amount: u64,
-) -> Result<ExecutionState<S>, AbortResult<S>>
+) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -288,10 +288,10 @@ where
 /// Execution of [pchain_types::blockchain::Command::StakeDeposit]
 pub(crate) fn stake_deposit<S>(
     owner: PublicAddress,
-    mut state: ExecutionState<S>,
+    state: &mut ExecutionState<S>,
     operator: PublicAddress,
     max_amount: u64,
-) -> Result<ExecutionState<S>, AbortResult<S>>
+) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -347,10 +347,10 @@ where
 /// Execution of [pchain_types::blockchain::Command::UnstakeDeposit]
 pub(crate) fn unstake_deposit<S>(
     owner: PublicAddress,
-    mut state: ExecutionState<S>,
+    state: &mut ExecutionState<S>,
     operator: PublicAddress,
     max_amount: u64,
-) -> Result<ExecutionState<S>, AbortResult<S>>
+) -> Result<(), TransitionError>
 where
     S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone,
 {

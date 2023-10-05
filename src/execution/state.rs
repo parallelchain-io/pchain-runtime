@@ -46,20 +46,24 @@ impl<S> ExecutionState<S>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
+    pub(crate) fn finalize_deferred_command_receipt(
+        &mut self,
+        exit_status: ExitStatus
+    ) {
+        // extract receipt from current execution result
+        let (cmd_receipt, _) = self.ctx.extract(exit_status);
+        self.receipt.push_deferred_command_receipt(cmd_receipt);
+
+    }
+
     pub(crate) fn finalize_command_receipt(
         &mut self,
         exit_status: ExitStatus,
-        is_deferred_command: bool,
     ) -> Option<Vec<DeferredCommand>> {
         // extract receipt from current execution result
         let (cmd_receipt, deferred_commands_from_call) = self.ctx.extract(exit_status);
-
-        if is_deferred_command {
-            self.receipt.push_deferred_command_receipt(cmd_receipt);
-        } else {
-            self.receipt.push_command_receipt(cmd_receipt);
-        }
-
+        self.receipt.push_command_receipt(cmd_receipt);
+        
         deferred_commands_from_call
     }
 

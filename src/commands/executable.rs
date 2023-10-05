@@ -4,7 +4,7 @@
 */
 
 use pchain_types::{
-    blockchain::Command,
+    blockchain::{Command, ExitStatus},
     cryptography::PublicAddress,
     runtime::{
         CallInput, CreateDepositInput, CreatePoolInput, DeployInput, SetDepositSettingsInput,
@@ -15,45 +15,70 @@ use pchain_types::{
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
-    commands::account,
-    execution::{abort::AbortResult, state::ExecutionState},
-    types::DeferredCommand,
+    commands::account, execution::state::ExecutionState, types::DeferredCommand, TransitionError,
 };
 
 use super::staking;
 
 pub(crate) trait Executable {
-    fn execute<S>(self, state: ExecutionState<S>) -> Result<ExecutionState<S>, AbortResult<S>>
+    fn execute<S>(
+        self,
+        state: &mut ExecutionState<S>,
+    ) -> Result<Option<Vec<DeferredCommand>>, TransitionError>
     where
         S: WorldStateStorage + Send + Sync + Clone + 'static;
 }
 
 impl Executable for Command {
-    fn execute<S>(self, state: ExecutionState<S>) -> Result<ExecutionState<S>, AbortResult<S>>
+    fn execute<S>(
+        self,
+        state: &mut ExecutionState<S>,
+    ) -> Result<Option<Vec<DeferredCommand>>, TransitionError>
     where
         S: WorldStateStorage + Send + Sync + Clone + 'static,
     {
         let actor = state.tx.signer;
-        execute(state, actor, self)
+
+        let result = execute(state, actor, self);
+        let exit_status = match &result {
+            Ok(_) => ExitStatus::Success,
+            Err(error) => ExitStatus::from(error)
+        };
+
+        let deferred_commands = state.finalize_command_receipt(exit_status);
+
+        result.map(|_| deferred_commands)
     }
 }
 
 impl Executable for DeferredCommand {
-    fn execute<S>(self, state: ExecutionState<S>) -> Result<ExecutionState<S>, AbortResult<S>>
+    fn execute<S>(
+        self,
+        state: &mut ExecutionState<S>,
+    ) -> Result<Option<Vec<DeferredCommand>>, TransitionError>
     where
         S: WorldStateStorage + Send + Sync + Clone + 'static,
     {
         let actor = self.contract_address;
         let command = self.command;
-        execute(state, actor, command)
+        
+        let result = execute(state, actor, command);
+        let exit_status = match &result {
+            Ok(_) => ExitStatus::Success,
+            Err(error) => ExitStatus::from(error)
+        };
+
+        state.finalize_deferred_command_receipt(exit_status);
+
+        result.map(|_| None)
     }
 }
 
 fn execute<S>(
-    state: ExecutionState<S>,
+    state: &mut ExecutionState<S>,
     actor: PublicAddress,
     command: Command,
-) -> Result<ExecutionState<S>, AbortResult<S>>
+) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {

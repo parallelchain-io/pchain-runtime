@@ -1,3 +1,8 @@
+/*
+    Copyright © 2023, ParallelChain Lab
+    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+*/
+
 use pchain_types::blockchain::{CommandReceipt, Receipt};
 
 /// Store the results of execution of a Command, which can combine
