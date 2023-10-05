@@ -19,7 +19,6 @@ use pchain_world_state::storage::WorldStateStorage;
 use crate::{
     execution::state::ExecutionState,
     formulas::{TOTAL_BASE_FEE, TREASURY_CUT_OF_BASE_FEE},
-    transition::StateChangesResult,
     TransitionError,
 };
 
@@ -31,7 +30,7 @@ where
     state
         .ctx
         .gas_meter
-        .charge_txn_pre_exec_inclusion(state.tx_size, state.commands_len)?;
+        .charge_txn_pre_exec_inclusion(state.tx.size, state.tx.commands_len)?;
 
     // note, remaining reads/ writes are performed directly on WS
     // not through GasMeter, hence not chargeable
@@ -70,10 +69,7 @@ where
 }
 
 /// Charge is a Phase in State Transition. It finalizes balance of accounts to world state.
-pub(crate) fn charge<S>(
-    mut state: ExecutionState<S>,
-    transition_result: Option<TransitionError>,
-) -> StateChangesResult<S>
+pub(crate) fn charge<S>(mut state: ExecutionState<S>) -> ExecutionState<S>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
@@ -81,10 +77,8 @@ where
     let base_fee = state.bd.this_base_fee;
     let priority_fee = state.tx.priority_fee_per_gas;
 
-    // TODO 4 - should be replaced by get_gas_already_used later. Need refactoring the execution flow.
-    // The failure command receipt should be taken first and the charge the total accumulated gas
     let gas_used = std::cmp::min(
-        state.ctx.gas_meter.get_gas_to_be_used_in_theory(),
+        state.ctx.gas_meter.total_gas_used_for_executed_commands(),
         state.tx.gas_limit,
     );
     let gas_unused = state.tx.gas_limit.saturating_sub(gas_used); // Safety for avoiding underflow
@@ -133,5 +127,5 @@ where
     let nonce = ws_cache.ws.nonce(signer).saturating_add(1);
     ws_cache.ws.with_commit().set_nonce(signer, nonce);
 
-    StateChangesResult::new(state, transition_result)
+    state
 }

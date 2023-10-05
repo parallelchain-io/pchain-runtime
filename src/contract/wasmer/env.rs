@@ -140,6 +140,6 @@ where
     }
 
     pub fn append_deferred_command(&mut self, deferred_command: DeferredCommand) {
-        self.context.commands.push(deferred_command);
+        self.context.deferred_commands.push(deferred_command);
     }
 }

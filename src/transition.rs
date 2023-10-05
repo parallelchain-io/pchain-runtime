@@ -21,7 +21,6 @@
 use pchain_types::{
     blockchain::{Command, CommandReceipt, ExitStatus, Receipt, Transaction},
     cryptography::PublicAddress,
-    serialization::Serializable,
 };
 use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
 
@@ -82,17 +81,15 @@ impl Runtime {
         ctx.sc_context.memory_limit = self.sc_memory_limit;
 
         // transaction inputs
-        let tx_size = tx.serialize().len();
         let base_tx = BaseTx::from(&tx);
         let commands = tx.commands;
 
         // initial state for transition
         let state = ExecutionState {
             tx: base_tx,
-            tx_size,
-            commands_len: commands.len(),
             ctx,
             bd,
+            receipt: Default::default(),
         };
 
         // initiate command execution
@@ -130,9 +127,7 @@ impl Runtime {
             tx: dummy_tx,
             bd: dummy_bd,
             ctx,
-            // the below fields are not cared in view call
-            tx_size: 0,
-            commands_len: 0,
+            receipt: Default::default(),
         };
 
         // execute view
@@ -157,49 +152,6 @@ where
     pub validator_changes: Option<ValidatorChanges>,
 }
 
-pub(crate) struct StateChangesResult<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
-{
-    /// resulting state in transit
-    pub state: ExecutionState<S>,
-    /// transition error
-    pub error: Option<TransitionError>,
-}
-
-impl<S> StateChangesResult<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
-{
-    pub(crate) fn new(
-        state: ExecutionState<S>,
-        transition_error: Option<TransitionError>,
-    ) -> StateChangesResult<S> {
-        Self {
-            state,
-            error: transition_error,
-        }
-    }
-
-    /// finalize generates TransitionResult
-    pub(crate) fn finalize(self, command_receipts: Vec<CommandReceipt>) -> TransitionResult<S> {
-        let error = self.error;
-        let new_state = self
-            .state
-            .ctx
-            .inner_ws_cache()
-            .clone()
-            .commit_to_world_state();
-
-        TransitionResult {
-            new_state,
-            receipt: Some(command_receipts),
-            error,
-            validator_changes: None,
-        }
-    }
-}
-
 /// Defines changes to validator set. It is the transition result from
 /// executing Command [NextEpoch](pchain_types::blockchain::Command::NextEpoch).
 #[derive(Clone)]
@@ -219,8 +171,8 @@ where
     /// Smart contract context for execution
     pub sc_context: SmartContractContext,
 
-    /// Commands that deferred from a Call Comamnd via host function specified in CBI.
-    pub commands: Vec<DeferredCommand>,
+    /// Commands that deferred from a Call Command via host function specified in CBI.
+    pub deferred_commands: Vec<DeferredCommand>,
 
     /// GasMeter holding state for entire txn
     pub gas_meter: GasMeter<S>,
@@ -238,7 +190,7 @@ where
                 cache: None,
                 memory_limit: None,
             },
-            commands: Vec::new(),
+            deferred_commands: Vec::new(),
             gas_meter: host_gm,
         }
     }
@@ -270,28 +222,25 @@ where
     // as all the tallying and state changes happen here.
     //
     /// Output the CommandReceipt and clear the intermediate context for next command execution.
-    pub fn extract(&mut self, exit_status: ExitStatus) -> CommandReceipt {
+    pub fn extract(
+        &mut self,
+        exit_status: ExitStatus,
+    ) -> (CommandReceipt, Option<Vec<DeferredCommand>>) {
         // 1. Take the fields from output cache and update to gas meter at this checkpoint
-        let (gas_used_by_command, logs, return_values) = self.gas_meter.take_command_receipt();
+        let (gas_used, logs, return_values) = self.gas_meter.take_current_command_result();
 
         // 2. Clear data for next command execution
-        self.commands.clear();
+        let deferred_commands = (!self.deferred_commands.is_empty())
+            .then_some(std::mem::take(&mut self.deferred_commands));
 
-        CommandReceipt {
-            exit_status,
-            gas_used: gas_used_by_command,
-            return_values,
-            logs,
-        }
-    }
-
-    /// Pop commands from context. None if there is nothing to pop
-    pub fn pop_commands(&mut self) -> Option<Vec<DeferredCommand>> {
-        if self.commands.is_empty() {
-            return None;
-        }
-        let mut ret = Vec::new();
-        ret.append(&mut self.commands);
-        Some(ret)
+        (
+            CommandReceipt {
+                exit_status,
+                gas_used,
+                return_values,
+                logs,
+            },
+            deferred_commands,
+        )
     }
 }

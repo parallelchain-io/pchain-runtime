@@ -5,11 +5,7 @@
 
 //! Implementation of executing [Account Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#account-commands).
 
-use pchain_types::{
-    blockchain::Command,
-    cryptography::PublicAddress,
-    runtime::{CallInput, DeployInput, TransferInput},
-};
+use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::storage::WorldStateStorage;
 use std::{
     ops::{Deref, DerefMut},
@@ -22,52 +18,19 @@ use crate::{
         wasmer::{instance::ContractValidateError, module::ModuleBuildError},
         ContractInstance, ContractModule,
     },
-    execution::abort::{abort, abort_if_gas_exhausted},
-    transition::StateChangesResult,
+    execution::abort::{abort, abort_if_gas_exhausted, AbortResult},
     types::{BaseTx, CallTx},
     TransitionError,
 };
 
-use crate::execution::{execute_commands::TryExecuteResult, state::ExecutionState};
-
-/// Execution Logic for Account Commands. Err If the Command is not Account Command.
-pub(crate) fn try_execute<S>(state: ExecutionState<S>, command: &Command) -> TryExecuteResult<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
-{
-    let ret = match command {
-        Command::Transfer(TransferInput { recipient, amount }) => {
-            transfer(state, *recipient, *amount)
-        }
-        Command::Deploy(DeployInput {
-            contract,
-            cbi_version,
-        }) => deploy(state, contract.to_vec(), *cbi_version),
-        Command::Call(CallInput {
-            target,
-            method,
-            arguments,
-            amount,
-        }) => call(
-            state,
-            false,
-            *target,
-            method.clone(),
-            arguments.clone(),
-            *amount,
-        ),
-        _ => return TryExecuteResult::Err(state),
-    };
-
-    TryExecuteResult::Ok(ret)
-}
+use crate::execution::state::ExecutionState;
 
 /// Execution of [pchain_types::blockchain::Command::Transfer]
 pub(crate) fn transfer<S>(
     mut state: ExecutionState<S>,
     recipient: PublicAddress,
     amount: u64,
-) -> Result<ExecutionState<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, AbortResult<S>>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
@@ -102,7 +65,7 @@ pub(crate) fn call<S>(
     method: String,
     arguments: Option<Vec<Vec<u8>>>,
     amount: Option<u64>,
-) -> Result<ExecutionState<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, AbortResult<S>>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -191,7 +154,7 @@ where
 
         // Check pay for storage gas cost at this point. Consider it as runtime cost because the world state write is an execution gas
         // Gas limit for init method call should be subtract the blockchain and worldstate storage cost
-        let pre_execution_baseline_gas_limit = state.ctx.gas_meter.get_gas_to_be_used_in_theory();
+        let pre_execution_baseline_gas_limit = state.ctx.gas_meter.total_gas_used();
         if state.tx.gas_limit < pre_execution_baseline_gas_limit {
             return Err((state, TransitionError::ExecutionProperGasExhausted));
         }
@@ -231,12 +194,11 @@ where
         let mut state = ExecutionState { ctx, ..self.state };
         state.ctx.gas_meter.reduce_gas(wasm_exec_gas);
 
-        let transition_err =
-            if state.tx.gas_limit < state.ctx.gas_meter.get_gas_to_be_used_in_theory() {
-                Some(TransitionError::ExecutionProperGasExhausted)
-            } else {
-                call_error.map(TransitionError::from)
-            };
+        let transition_err = if state.tx.gas_limit < state.ctx.gas_meter.total_gas_used() {
+            Some(TransitionError::ExecutionProperGasExhausted)
+        } else {
+            call_error.map(TransitionError::from)
+        };
 
         (state, transition_err)
     }
@@ -247,7 +209,7 @@ pub(crate) fn deploy<S>(
     state: ExecutionState<S>,
     contract: Vec<u8>,
     cbi_version: u32,
-) -> Result<ExecutionState<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, AbortResult<S>>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -342,7 +304,7 @@ where
         ctx.gas_meter
             .ws_set_cbi_version(contract_address, cbi_version);
 
-        if self.tx.gas_limit < self.ctx.gas_meter.get_gas_to_be_used_in_theory() {
+        if self.tx.gas_limit < self.ctx.gas_meter.total_gas_used() {
             return Err((
                 self.state,
                 DeployError::InsufficientGasForInitialWritesError,

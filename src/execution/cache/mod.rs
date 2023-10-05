@@ -8,3 +8,6 @@ pub(crate) use world_state_cache::*;
 
 pub mod command_output_cache;
 pub(crate) use command_output_cache::*;
+
+pub mod receipt_cache;
+pub(crate) use receipt_cache::*;

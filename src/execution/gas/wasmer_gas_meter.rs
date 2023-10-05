@@ -81,7 +81,7 @@ where
             memory_ctx,
             wasmer_remaining_gas,
             ws_cache: &mut gas_meter.ws_cache,
-            command_output_cache: &mut gas_meter.current_command_output_cache,
+            command_output_cache: &mut gas_meter.output_cache_of_current_command,
         }
     }
 

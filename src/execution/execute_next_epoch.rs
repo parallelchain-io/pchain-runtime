@@ -6,9 +6,7 @@
 use pchain_types::blockchain::{Command, ExitStatus};
 use pchain_world_state::storage::WorldStateStorage;
 
-use crate::{
-    commands::protocol, transition::StateChangesResult, TransitionError, TransitionResult,
-};
+use crate::{commands::protocol, TransitionError, TransitionResult};
 
 use super::state::ExecutionState;
 
@@ -51,9 +49,16 @@ where
     ws_cache.ws.with_commit().set_nonce(signer, nonce);
 
     // Extract receipt from current execution result
-    let cmd_receipt = state.ctx.extract(ExitStatus::Success);
+    let (cmd_receipt, _) = state.ctx.extract(ExitStatus::Success);
+    state.receipt.push_command_receipt(cmd_receipt);
 
-    let mut result = StateChangesResult::new(state, None).finalize(vec![cmd_receipt]);
-    result.validator_changes = Some(new_vs);
-    result
+    // Commit to New world state
+    let (new_state, receipt) = state.finalize();
+
+    TransitionResult {
+        new_state,
+        error: None,
+        validator_changes: Some(new_vs),
+        receipt: Some(receipt),
+    }
 }

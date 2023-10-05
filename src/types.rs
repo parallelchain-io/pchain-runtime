@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
+use pchain_types::serialization::Serializable;
 use pchain_types::{
     blockchain::{Command, Transaction},
     cryptography::{PublicAddress, Sha256Hash},
@@ -21,6 +22,11 @@ pub(crate) struct BaseTx {
     pub nonce: u64,
     pub gas_limit: u64,
     pub priority_fee_per_gas: u64,
+
+    // serialized size of the original transaction
+    pub size: usize,
+    /// length of commands in the transaction
+    pub commands_len: usize,
 }
 
 impl From<&Transaction> for BaseTx {
@@ -31,6 +37,8 @@ impl From<&Transaction> for BaseTx {
             nonce: tx.nonce,
             gas_limit: tx.gas_limit,
             priority_fee_per_gas: tx.priority_fee_per_gas,
+            size: tx.serialize().len(),
+            commands_len: tx.commands.len(),
         }
     }
 }

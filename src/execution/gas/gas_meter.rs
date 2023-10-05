@@ -36,16 +36,17 @@ where
     pub gas_limit: u64,
 
     /// stores txn inclusion gas separately because it is not considered to belong to a single command
-    txn_inclusion_gas_used: u64,
+    gas_used_for_txn_inclusion: u64,
 
     /// cumulative gas used for all executed commands
-    total_command_gas_used: u64,
+    total_gas_used_for_executed_commands: u64,
 
     /// stores the gas used by current command,
     /// finalized and reset at the end of each command
-    current_command_gas_used: GasUsed,
+    gas_used_for_current_command: GasUsed,
 
-    pub current_command_output_cache: CommandOutputCache,
+    /*** Mutation on the below Data should be charged. ***/
+    pub output_cache_of_current_command: CommandOutputCache,
 
     pub ws_cache: WorldStateCache<S>,
 }
@@ -58,26 +59,41 @@ where
         Self {
             ws_cache,
             gas_limit,
-            total_command_gas_used: 0,
-            txn_inclusion_gas_used: 0,
-            current_command_gas_used: GasUsed::default(),
-            current_command_output_cache: CommandOutputCache::default(),
+            total_gas_used_for_executed_commands: 0,
+            gas_used_for_txn_inclusion: 0,
+            gas_used_for_current_command: GasUsed::default(),
+            output_cache_of_current_command: CommandOutputCache::default(),
         }
     }
 
-    /// called after every command to reset command_gas_used
-    pub fn take_command_receipt(&mut self) -> (u64, Vec<Log>, Vec<u8>) {
-        let (logs, return_values) = self.current_command_output_cache.take();
+    /// A checkpoint function to be called after every command execution. It returns the
+    /// data for generating the command receipt, and updates the gas counter which is used
+    /// at the end of transaction execution.
+    pub fn take_current_command_result(&mut self) -> (u64, Vec<Log>, Vec<u8>) {
+        let (logs, return_values) = self.output_cache_of_current_command.take();
 
-        // sum to total_command_gas_used
-        let gas_used_by_command = self.get_gas_used_for_current_command();
-        self.total_command_gas_used = self
-            .total_command_gas_used
-            .saturating_add(gas_used_by_command);
-        // reset command_gas_used
-        self.current_command_gas_used.reset();
+        // check if the gas used for current command exceeds gas limit, and use the clamped value
+        // as the field 'gas_used' in the command receipt.
+        let gas_used = {
+            let gas_used_for_current_command = self.gas_used_for_current_command.chargeable_cost();
+            let max_allowable_gas_used_for_current_command = self
+                .gas_limit
+                .saturating_sub(self.total_gas_used_for_executed_commands());
+            std::cmp::min(
+                gas_used_for_current_command,
+                max_allowable_gas_used_for_current_command,
+            )
+        };
 
-        (gas_used_by_command, logs, return_values)
+        // update the total gas used
+        self.total_gas_used_for_executed_commands = self
+            .total_gas_used_for_executed_commands
+            .saturating_add(gas_used);
+
+        // reset gas counter which can be then used for next command execution
+        self.gas_used_for_current_command.reset();
+
+        (gas_used, logs, return_values)
     }
 
     //
@@ -90,43 +106,27 @@ where
     /// 1) read and write to Wasmer memory,
     /// 2) compute cost
     pub fn reduce_gas(&mut self, gas: u64) {
-        self.current_command_gas_used
+        self.gas_used_for_current_command
             .charge(CostChange::deduct(gas));
     }
 
     fn charge<T>(&self, op_receipt: OperationReceipt<T>) -> T {
-        self.current_command_gas_used.charge(op_receipt.1);
+        self.gas_used_for_current_command.charge(op_receipt.1);
         op_receipt.0
-    }
-
-    /// returns gas that has been used so far
-    /// will not exceed maximum
-    pub fn get_gas_already_used(&self) -> u64 {
-        let val = self
-            .txn_inclusion_gas_used
-            .saturating_add(self.total_command_gas_used);
-
-        // TODO CLEAN probably can remove this sanity check, should not happen as we only consume gas up to the limit
-        if self.gas_limit < val {
-            panic!("Invariant violated, we are using more gas than the limit");
-        } else {
-            val
-        }
     }
 
     /// returns the theoretical max gas used so far
     /// may exceed gas_limit
-    pub fn get_gas_to_be_used_in_theory(&self) -> u64 {
-        self.get_gas_already_used()
-            .saturating_add(self.current_command_gas_used.chargeable_cost())
+    pub fn total_gas_used(&self) -> u64 {
+        self.total_gas_used_for_executed_commands()
+            .saturating_add(self.gas_used_for_current_command.chargeable_cost())
     }
 
-    fn get_gas_used_for_current_command(&self) -> u64 {
-        if self.gas_limit < self.get_gas_to_be_used_in_theory() {
-            // consume only up to limit if exceeding
-            return self.gas_limit.saturating_sub(self.get_gas_already_used());
-        }
-        self.current_command_gas_used.chargeable_cost()
+    /// returns gas that has been used so far
+    /// will not exceed maximum
+    pub fn total_gas_used_for_executed_commands(&self) -> u64 {
+        self.gas_used_for_txn_inclusion
+            .saturating_add(self.total_gas_used_for_executed_commands)
     }
 
     //
@@ -145,14 +145,14 @@ where
         if required_cost > self.gas_limit {
             return Err(TransitionError::PreExecutionGasExhausted);
         } else {
-            self.txn_inclusion_gas_used = required_cost;
+            self.gas_used_for_txn_inclusion = required_cost;
         }
         Ok(())
     }
 
     pub fn command_output_set_return_values(&mut self, return_values: Vec<u8>) {
         let result = operation::command_output_set_return_values(
-            &mut self.current_command_output_cache.return_values,
+            &mut self.output_cache_of_current_command.return_values,
             return_values,
         );
         self.charge(result)

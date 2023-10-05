@@ -40,19 +40,20 @@
 //! will modify the state and update signers nonce. Its goal is to compute the resulting state of
 //! Network Account and return changes to a validator set for next epoch in [TransitionResult].
 
-use pchain_types::blockchain::{Command, CommandReceipt, ExitStatus};
+use pchain_types::blockchain::{Command, ExitStatus};
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
-    commands::{account, staking},
+    commands::executable::Executable,
     execution::{
         phases::{self},
         state::ExecutionState,
     },
-    transition::StateChangesResult,
     types::DeferredCommand,
     TransitionResult,
 };
+
+use super::abort::AbortResult;
 
 /// Backbone logic of Commands Execution
 pub(crate) fn execute_commands<S>(
@@ -62,208 +63,118 @@ pub(crate) fn execute_commands<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    let pre_charge_result = phases::pre_charge(&mut state);
     // Phase: Pre-Charge
-
+    let pre_charge_result = phases::pre_charge(&mut state);
     if let Err(err) = pre_charge_result {
         return TransitionResult {
-            new_state: state.ctx.into_ws_cache().ws,
+            new_state: state.finalize().0,
             receipt: None,
             error: Some(err),
             validator_changes: None,
         };
     }
+
     // Phase: Command(s)
-    let mut command_task_results = CommandTaskResults::new();
-    let mut command_tasks = CommandTasks::new();
-    command_tasks.append(
-        commands
-            .into_iter()
-            .map(CommandTaskItem::TransactionCommmand)
-            .collect(),
-        None,
-    );
+    // let mut command_task_results = CommandTaskResults::new();
+    let mut command_tasks = ExecutableCommands::new();
+    command_tasks.append(commands);
+
     while let Some(command_task) = command_tasks.next_task() {
-        let task_id = command_task.task_id;
-        let (actor, command) = match command_task.command {
-            CommandTaskItem::TransactionCommmand(command) => (state.tx.signer, command),
-            CommandTaskItem::DeferredCommand(deferred_command) => {
-                (deferred_command.contract_address, deferred_command.command)
+        // Execute command triggered from the Transaction
+        let (ret, is_deferred_command) = match command_task {
+            ExecutableCommand::TransactionCommmand(command) => (command.execute(state), false),
+            ExecutableCommand::DeferredCommand(deferred_command) => {
+                (deferred_command.execute(state), true)
             }
         };
-
-        // Execute command triggered from the Transaction
-        let ret = account::try_execute(state, &command)
-            .or_else(|state| staking::try_execute(actor, state, &command))
-            .unwrap();
 
         // Proceed execution result
         state = match ret {
             // command execution is not completed, continue with resulting state
             Ok(mut state_of_success_execution) => {
-                // append command triggered from Call
-                if let Some(commands_from_call) = state_of_success_execution.ctx.pop_commands() {
-                    command_tasks.append(
-                        commands_from_call
-                            .into_iter()
-                            .map(CommandTaskItem::DeferredCommand)
-                            .collect(),
-                        Some(task_id),
-                    );
-                }
                 // extract receipt from current execution result
-                let cmd_receipt = state_of_success_execution.ctx.extract(ExitStatus::Success);
-                command_task_results.push(task_id, cmd_receipt);
+                let deferred_commands_from_call = state_of_success_execution
+                    .finalize_command_receipt(ExitStatus::Success, is_deferred_command);
+
+                // append command triggered from Call
+                if let Some(commands_from_call) = deferred_commands_from_call {
+                    command_tasks.append(commands_from_call);
+                }
+
                 state_of_success_execution
             }
             // in case of error, create the last Command receipt and return result
-            Err(StateChangesResult {
+            Err(AbortResult {
                 state: mut state_of_abort_result,
                 error,
             }) => {
                 // extract receipt from last execution result
-                let cmd_receipt = state_of_abort_result
-                    .ctx
-                    .extract(error.as_ref().unwrap().into());
-                command_task_results.push(task_id, cmd_receipt);
-                return StateChangesResult::new(state_of_abort_result, error)
-                    .finalize(command_task_results.command_receipts());
+                state_of_abort_result
+                    .finalize_command_receipt(ExitStatus::from(&error), is_deferred_command);
+
+                // Phase: Charge (abort)
+                let (new_state, receipt) = phases::charge(state_of_abort_result).finalize();
+
+                return TransitionResult {
+                    new_state,
+                    error: Some(error),
+                    receipt: Some(receipt),
+                    validator_changes: None,
+                };
             }
         };
     }
 
     // Phase: Charge
-    phases::charge(state, None).finalize(command_task_results.command_receipts())
+    let (new_state, receipt) = phases::charge(state).finalize();
+
+    TransitionResult {
+        new_state,
+        error: None,
+        receipt: Some(receipt),
+        validator_changes: None,
+    }
 }
 
-type TaskID = u32;
-
-/// CommandTasks is a sequence of CommandTask, which follows the properties of CommandTask.
+/// ExecutableCommands is a sequence of ExecutableCommand.
 #[derive(Debug)]
-pub(crate) struct CommandTasks(Vec<CommandTask>);
+pub(crate) struct ExecutableCommands(Vec<ExecutableCommand>);
 
-impl CommandTasks {
+impl ExecutableCommands {
     fn new() -> Self {
         Self(Vec::new())
     }
 
     /// append a sequence of Commands and store as CommandTask with assigned task ID.
-    fn append(&mut self, mut commands: Vec<CommandTaskItem>, same_task_id: Option<u32>) {
-        let mut task_id = match same_task_id {
-            Some(id) => id,
-            None => self.0.last().map_or(0, |t| t.task_id + 1),
-        };
-        commands.reverse();
-        for command in commands {
-            self.0.push(CommandTask { task_id, command });
-            if same_task_id.is_none() {
-                task_id += 1;
-            }
-        }
+    fn append<T: Into<ExecutableCommand>>(&mut self, commands: Vec<T>) {
+        self.0.append(&mut Vec::<ExecutableCommand>::from_iter(
+            commands.into_iter().map(|command| command.into()).rev(),
+        ));
     }
 
     /// Pop the next task to execute
-    fn next_task(&mut self) -> Option<CommandTask> {
+    fn next_task(&mut self) -> Option<ExecutableCommand> {
         self.0.pop()
     }
 }
 
-/// CommandTask encapsulates the task to execute a command. An ID number is assigned to a task.
-/// There may be multple command tasks sharing the same Task ID. In this case, the commands are
-/// considered as one command such that their results should be combined together as one receipt.
+/// Defines types of command to be executed in the Command Execution Phase.
 #[derive(Debug)]
-pub(crate) struct CommandTask {
-    task_id: TaskID,
-    command: CommandTaskItem,
-}
-
-/// CommandTaskItem defines types of command to be executed in a Command Task.
-#[derive(Debug)]
-pub(crate) enum CommandTaskItem {
+pub(crate) enum ExecutableCommand {
     /// The Command that is submitted from Transaction input
     TransactionCommmand(Command),
     /// The Command that is submitted (deferred) from a Contract Call
     DeferredCommand(DeferredCommand),
 }
 
-/// CommandTaskResults is a sequence of CommandTaskResult, which follows the properties of CommandTaskResult.
-pub(crate) struct CommandTaskResults(Vec<CommandTaskResult>);
-
-impl CommandTaskResults {
-    fn new() -> Self {
-        Self(Vec::new())
-    }
-
-    /// push the next Command Receipt into Results. Combine with the last
-    /// receipt if Task ID is as same as the last one.
-    fn push(&mut self, task_id: TaskID, command_receipt: CommandReceipt) {
-        if let Some(last_result) = self.0.last_mut() {
-            if last_result.task_id == task_id {
-                last_result.combine(command_receipt);
-                return;
-            }
-        }
-        self.0.push(CommandTaskResult {
-            task_id,
-            command_receipt,
-        });
-    }
-
-    fn command_receipts(self) -> Vec<CommandReceipt> {
-        self.0.into_iter().map(|r| r.command_receipt).collect()
+impl From<Command> for ExecutableCommand {
+    fn from(command: Command) -> Self {
+        ExecutableCommand::TransactionCommmand(command)
     }
 }
 
-/// CommandTaskResult is the result of execution of a CommandTask, which is used to combine
-/// the Command Receipt into one if the tasks are sharing same Task ID:
-/// - Gas used is added up by the later command receipt
-/// - Exit status is overwritten by the later command receipt (i.e. if the last command fails, the exit status should also be failed.)
-/// - Return value is overwritten by the later command receipt
-pub(crate) struct CommandTaskResult {
-    task_id: TaskID,
-    command_receipt: CommandReceipt,
-}
-
-impl CommandTaskResult {
-    /// Combine the information from next Command Receipt
-    fn combine(&mut self, next_command_receipt: CommandReceipt) {
-        self.command_receipt.gas_used = self
-            .command_receipt
-            .gas_used
-            .saturating_add(next_command_receipt.gas_used);
-        self.command_receipt.exit_status = next_command_receipt.exit_status;
-        self.command_receipt.return_values = next_command_receipt.return_values;
-    }
-}
-
-/// TryExecuteResult defines what result information the Command Execution should end up with. In general,
-/// it defines two resulting states Ok (command is executed with a result) and Err (command is not accepted to be executed).
-pub(crate) enum TryExecuteResult<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
-{
-    Ok(Result<ExecutionState<S>, StateChangesResult<S>>),
-    Err(ExecutionState<S>),
-}
-
-impl<S> TryExecuteResult<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
-{
-    pub fn or_else<O: FnOnce(ExecutionState<S>) -> TryExecuteResult<S>>(
-        self,
-        op: O,
-    ) -> TryExecuteResult<S> {
-        match self {
-            TryExecuteResult::Ok(t) => TryExecuteResult::Ok(t),
-            TryExecuteResult::Err(e) => op(e),
-        }
-    }
-
-    pub fn unwrap(self) -> Result<ExecutionState<S>, StateChangesResult<S>> {
-        match self {
-            TryExecuteResult::Ok(ret) => ret,
-            TryExecuteResult::Err(_) => panic!(),
-        }
+impl From<DeferredCommand> for ExecutableCommand {
+    fn from(deferred_command: DeferredCommand) -> Self {
+        ExecutableCommand::DeferredCommand(deferred_command)
     }
 }

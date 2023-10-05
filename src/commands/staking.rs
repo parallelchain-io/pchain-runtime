@@ -5,12 +5,7 @@
 
 //! Implementation of executing [Staking Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#staking-commands).
 
-use pchain_types::blockchain::Command;
-use pchain_types::runtime::{
-    CreateDepositInput, SetDepositSettingsInput, SetPoolSettingsInput, StakeDepositInput,
-    TopUpDepositInput, UnstakeDepositInput, WithdrawDepositInput,
-};
-use pchain_types::{cryptography::PublicAddress, runtime::CreatePoolInput};
+use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{
     network::{
         network_account::{NetworkAccount, NetworkAccountStorage},
@@ -20,66 +15,20 @@ use pchain_world_state::{
     storage::WorldStateStorage,
 };
 
-use crate::execution::abort::{abort, abort_if_gas_exhausted};
-use crate::{transition::StateChangesResult, TransitionError};
-
-use crate::execution::{execute_commands::TryExecuteResult, state::ExecutionState};
-
-/// Execution Logic for Staking Commands. Err If the Command is not Staking Command.
-/// It transits the state according to Metwork Command, on behalf of actor. Actor is expected
-/// to be the signer of the transaction, or the contract that triggers deferred command.
-pub(crate) fn try_execute<S>(
-    actor: PublicAddress,
-    state: ExecutionState<S>,
-    command: &Command,
-) -> TryExecuteResult<S>
-where
-    S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone + 'static,
-{
-    let ret = match command {
-        Command::CreatePool(CreatePoolInput { commission_rate }) => {
-            create_pool(actor, state, *commission_rate)
-        }
-        Command::SetPoolSettings(SetPoolSettingsInput { commission_rate }) => {
-            set_pool_settings(actor, state, *commission_rate)
-        }
-        Command::DeletePool => delete_pool(actor, state),
-        Command::CreateDeposit(CreateDepositInput {
-            operator,
-            balance,
-            auto_stake_rewards,
-        }) => create_deposit(actor, state, *operator, *balance, *auto_stake_rewards),
-        Command::SetDepositSettings(SetDepositSettingsInput {
-            operator,
-            auto_stake_rewards,
-        }) => set_deposit_settings(actor, state, *operator, *auto_stake_rewards),
-        Command::TopUpDeposit(TopUpDepositInput { operator, amount }) => {
-            topup_deposit(actor, state, *operator, *amount)
-        }
-        Command::WithdrawDeposit(WithdrawDepositInput {
-            operator,
-            max_amount,
-        }) => withdraw_deposit(actor, state, *operator, *max_amount),
-        Command::StakeDeposit(StakeDepositInput {
-            operator,
-            max_amount,
-        }) => stake_deposit(actor, state, *operator, *max_amount),
-        Command::UnstakeDeposit(UnstakeDepositInput {
-            operator,
-            max_amount,
-        }) => unstake_deposit(actor, state, *operator, *max_amount),
-        _ => return TryExecuteResult::Err(state),
-    };
-
-    TryExecuteResult::Ok(ret)
-}
+use crate::{
+    execution::{
+        abort::{abort, abort_if_gas_exhausted, AbortResult},
+        state::ExecutionState,
+    },
+    TransitionError,
+};
 
 /// Execution of [pchain_types::blockchain::Command::CreatePool]
 pub(crate) fn create_pool<S>(
     operator: PublicAddress,
     mut state: ExecutionState<S>,
     commission_rate: u8,
-) -> Result<ExecutionState<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, AbortResult<S>>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -109,7 +58,7 @@ pub(crate) fn set_pool_settings<S>(
     operator: PublicAddress,
     mut state: ExecutionState<S>,
     new_commission_rate: u8,
-) -> Result<ExecutionState<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, AbortResult<S>>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -136,7 +85,7 @@ where
 pub(crate) fn delete_pool<S>(
     operator: PublicAddress,
     mut state: ExecutionState<S>,
-) -> Result<ExecutionState<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, AbortResult<S>>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -159,7 +108,7 @@ pub(crate) fn create_deposit<S>(
     operator: PublicAddress,
     balance: u64,
     auto_stake_rewards: bool,
-) -> Result<ExecutionState<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, AbortResult<S>>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -194,7 +143,7 @@ pub(crate) fn set_deposit_settings<S>(
     mut state: ExecutionState<S>,
     operator: PublicAddress,
     new_auto_stake_rewards: bool,
-) -> Result<ExecutionState<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, AbortResult<S>>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -218,7 +167,7 @@ pub(crate) fn topup_deposit<S>(
     mut state: ExecutionState<S>,
     operator: PublicAddress,
     amount: u64,
-) -> Result<ExecutionState<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, AbortResult<S>>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -249,7 +198,7 @@ pub(crate) fn withdraw_deposit<S>(
     mut state: ExecutionState<S>,
     operator: PublicAddress,
     max_amount: u64,
-) -> Result<ExecutionState<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, AbortResult<S>>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -342,7 +291,7 @@ pub(crate) fn stake_deposit<S>(
     mut state: ExecutionState<S>,
     operator: PublicAddress,
     max_amount: u64,
-) -> Result<ExecutionState<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, AbortResult<S>>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -401,7 +350,7 @@ pub(crate) fn unstake_deposit<S>(
     mut state: ExecutionState<S>,
     operator: PublicAddress,
     max_amount: u64,
-) -> Result<ExecutionState<S>, StateChangesResult<S>>
+) -> Result<ExecutionState<S>, AbortResult<S>>
 where
     S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone,
 {

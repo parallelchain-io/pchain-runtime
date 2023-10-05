@@ -9,7 +9,6 @@ use pchain_types::{
     blockchain::{Command, ExitStatus, Transaction},
     cryptography::PublicAddress,
     runtime::*,
-    serialization::Serializable,
 };
 use pchain_world_state::{
     network::{
@@ -3280,10 +3279,9 @@ fn create_state(init_ws: Option<WorldState<SimpleStore>>) -> ExecutionState<Simp
 
     ExecutionState {
         bd: create_bd(),
-        tx_size: tx.serialize().len(),
-        commands_len: 0,
         tx: base_tx,
         ctx,
+        receipt: Default::default(),
     }
 }
 
@@ -3295,10 +3293,9 @@ fn set_tx(
 ) -> u64 {
     let mut tx = create_tx(signer);
     tx.nonce = nonce;
-    state.tx_size = tx.serialize().len();
+    tx.commands = commands.clone();
     state.tx = BaseTx::from(&tx);
-    state.commands_len = commands.len();
-    gas::tx_inclusion_cost(state.tx_size, state.commands_len)
+    gas::tx_inclusion_cost(state.tx.size, state.tx.commands_len)
 }
 
 fn create_tx(signer: PublicAddress) -> Transaction {
