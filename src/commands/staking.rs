@@ -33,13 +33,13 @@ where
     S: WorldStateStorage + Send + Sync + Clone,
 {
     if commission_rate > 100 {
-        return Err(abort(state, TransitionError::InvalidPoolPolicy));
+        abort!(state, TransitionError::InvalidPoolPolicy)
     }
 
     // Create Pool
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if pool.exists() {
-        return Err(abort(state, TransitionError::PoolAlreadyExists));
+        abort!(state, TransitionError::PoolAlreadyExists)
     }
     pool.set_operator(operator);
     pool.set_power(0);
@@ -63,17 +63,17 @@ where
     S: WorldStateStorage + Send + Sync + Clone,
 {
     if new_commission_rate > 100 {
-        return Err(abort(state, TransitionError::InvalidPoolPolicy));
+        abort!(state, TransitionError::InvalidPoolPolicy)
     }
 
     // Update Pool
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
-        return Err(abort(state, TransitionError::PoolNotExists));
+        abort!(state, TransitionError::PoolNotExists)
     }
 
     if pool.commission_rate() == Some(new_commission_rate) {
-        return Err(abort(state, TransitionError::InvalidPoolPolicy));
+        abort!(state, TransitionError::InvalidPoolPolicy)
     }
 
     pool.set_commission_rate(new_commission_rate);
@@ -91,7 +91,7 @@ where
 {
     let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
-        return Err(abort(state, TransitionError::PoolNotExists));
+        abort!(state, TransitionError::PoolNotExists)
     }
 
     NetworkAccount::nvp(&mut state.ctx.gas_meter).remove_item(&operator);
@@ -114,16 +114,16 @@ where
 {
     let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
-        return Err(abort(state, TransitionError::PoolNotExists));
+        abort!(state, TransitionError::PoolNotExists)
     }
 
     if NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner).exists() {
-        return Err(abort(state, TransitionError::DepositsAlreadyExists));
+        abort!(state, TransitionError::DepositsAlreadyExists)
     }
 
     let owner_balance = state.ctx.gas_meter.ws_get_balance(owner);
     if owner_balance < balance {
-        return Err(abort(state, TransitionError::NotEnoughBalanceForTransfer));
+        abort!(state, TransitionError::NotEnoughBalanceForTransfer)
     }
     state
         .ctx
@@ -149,11 +149,11 @@ where
 {
     let mut deposits = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
     if !deposits.exists() {
-        return Err(abort(state, TransitionError::DepositsNotExists));
+        abort!(state, TransitionError::DepositsNotExists)
     }
 
     if deposits.auto_stake_rewards() == Some(new_auto_stake_rewards) {
-        return Err(abort(state, TransitionError::InvalidDepositPolicy));
+        abort!(state, TransitionError::InvalidDepositPolicy)
     }
 
     deposits.set_auto_stake_rewards(new_auto_stake_rewards);
@@ -172,12 +172,12 @@ where
     S: WorldStateStorage + Send + Sync + Clone,
 {
     if !NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner).exists() {
-        return Err(abort(state, TransitionError::DepositsNotExists));
+        abort!(state, TransitionError::DepositsNotExists)
     }
 
     let owner_balance = state.ctx.gas_meter.ws_get_balance(owner);
     if owner_balance < amount {
-        return Err(abort(state, TransitionError::NotEnoughBalanceForTransfer));
+        abort!(state, TransitionError::NotEnoughBalanceForTransfer)
     }
 
     state
@@ -205,7 +205,7 @@ where
     // 1. Check if there is any deposit to withdraw
     let deposits = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
     if !deposits.exists() {
-        return Err(abort(state, TransitionError::DepositsNotExists));
+        abort!(state, TransitionError::DepositsNotExists)
     }
     let deposit_balance = deposits.balance().unwrap();
 
@@ -241,7 +241,7 @@ where
     // 3. Abort if there is no amount currently available to withdraw.
     if new_deposit_balance == deposit_balance {
         // e.g. max_amount = 0  or deposit_balance == locked_power
-        return Err(abort(state, TransitionError::InvalidStakeAmount));
+        abort!(state, TransitionError::InvalidStakeAmount)
     }
 
     // 4. Update the deposit's balance to reflect the withdrawal.
@@ -298,14 +298,14 @@ where
     // 1. Check if there is a Deposit to stake
     let deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
     if !deposit.exists() {
-        return Err(abort(state, TransitionError::DepositsNotExists));
+        abort!(state, TransitionError::DepositsNotExists)
     }
     let deposit_balance = deposit.balance().unwrap();
 
     // 2. Check if there is a Pool to stake to.
     let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
-        return Err(abort(state, TransitionError::PoolNotExists));
+        abort!(state, TransitionError::PoolNotExists)
     }
     let prev_pool_power = pool.power().unwrap();
 
@@ -317,7 +317,7 @@ where
         deposit_balance.saturating_sub(stake_power.unwrap_or(0)),
     );
     if stake_power_to_increase == 0 {
-        return Err(abort(state, TransitionError::InvalidStakeAmount));
+        abort!(state, TransitionError::InvalidStakeAmount)
     }
 
     // Update Stakes and the Pool's power and its position in the Next Validator Set.
@@ -331,7 +331,7 @@ where
         true,
     ) {
         Ok(_) => {}
-        Err(_) => return Err(abort(state, TransitionError::InvalidStakeAmount)),
+        Err(_) => abort!(state, TransitionError::InvalidStakeAmount)
     };
 
     // Set the staked amount to return_value
@@ -356,19 +356,19 @@ where
 {
     // 1. Check if there is a Deposit to unstake.
     if !NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner).exists() {
-        return Err(abort(state, TransitionError::DepositsNotExists));
+        abort!(state, TransitionError::DepositsNotExists)
     }
 
     // 2. If there is no Pool, then there is no Stake to unstake.
     let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
-        return Err(abort(state, TransitionError::PoolNotExists));
+        abort!(state, TransitionError::PoolNotExists)
     }
     let prev_pool_power = pool.power().unwrap();
 
     let stake_power = match stake_of_pool(&mut state.ctx.gas_meter, operator, owner) {
         Some(stake_power) => stake_power,
-        None => return Err(abort(state, TransitionError::PoolHasNoStakes)),
+        None => abort!(state, TransitionError::PoolHasNoStakes),
     };
 
     // 3. Reduce the Stake's power.

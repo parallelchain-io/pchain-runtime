@@ -35,7 +35,7 @@ where
     let origin_balance = state.ctx.gas_meter.ws_get_balance(signer);
 
     if origin_balance < amount {
-        return Err(abort(state, TransitionError::NotEnoughBalanceForTransfer));
+        abort!(state, TransitionError::NotEnoughBalanceForTransfer)
     }
 
     // Always deduct the amount specified in the transaction
@@ -72,7 +72,7 @@ where
         // check balance
         let origin_balance = state.ctx.gas_meter.ws_get_balance(signer);
         if origin_balance < amount {
-            return Err(abort(state, TransitionError::NotEnoughBalanceForTransfer));
+            abort!(state, TransitionError::NotEnoughBalanceForTransfer);
         }
 
         // Always deduct the amount specified in the transaction
@@ -93,12 +93,12 @@ where
     let instance =
         match CallInstance::instantiate(state, is_view, target, method, arguments, amount) {
             Ok(instance) => instance,
-            Err(transition_err) => return Err(abort(state, transition_err)),
+            Err(transition_err) => abort!(state, transition_err),
         };
 
     // Call the contract
     match instance.call() {
-        Some(err) => Err(abort(state, err)),
+        Some(err) => abort!(state, err),
         None => abort_if_gas_exhausted(state),
     }
 }
@@ -218,15 +218,18 @@ where
 
     // Instantiate instant to preform contract deployment.
     let instance = match DeployInstance::instantiate(state, contract, cbi_version, contract_address)
+        .map_err(|err| TransitionError::from(err))
     {
         Ok(instance) => instance,
-        Err(err) => return Err(abort(state, err.into())),
+        Err(err) => abort!(state, err),
     };
 
     // Deploy the contract
-    match instance.deploy() {
+    match instance.deploy()
+        .map_err(|err| TransitionError::from(err))
+    {
         Ok(()) => abort_if_gas_exhausted(state),
-        Err(err) => Err(abort(state, err.into())),
+        Err(err) => abort!(state, err),
     }
 }
 
