@@ -516,8 +516,11 @@ where
         let signature = gas_meter.read_bytes(signature_ptr, 64)?;
         let address = gas_meter.read_bytes(address_ptr, 32)?;
 
-        gas_meter
-            .verify_ed25519_signature(message, signature, address)
+        gas_meter.verify_ed25519_signature(
+                message,
+                signature.try_into().unwrap(),
+                address.try_into().unwrap()
+            )
             .map_err(|_| FuncError::Internal)
     }
 }

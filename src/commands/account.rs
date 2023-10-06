@@ -273,7 +273,7 @@ where
 
     /// Deploy by writing contract to storage and transit to the state.
     fn deploy(self) -> Option<TransitionError> {
-        let contract_address: [u8; 32] = self.contract_address;
+        let contract_address = self.contract_address;
 
         // cache the module
         if let Some(sc_cache) = &self.state.ctx.sc_context.cache {

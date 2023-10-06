@@ -169,18 +169,15 @@ pub(crate) fn ripemd(input_bytes: Vec<u8>) -> OperationReceipt<Vec<u8>> {
 
 pub(crate) fn verify_ed25519_signature(
     message: Vec<u8>,
-    signature: Vec<u8>,
-    pub_key: Vec<u8>,
+    signature: [u8; 64],
+    pub_key: [u8; 32],
 ) -> OperationReceipt<Result<i32, anyhow::Error>> {
     let cost = CostChange::deduct(gas::crypto_verify_ed25519_signature_cost(message.len()));
-    let public_key = match ed25519_dalek::PublicKey::from_bytes(&pub_key) {
+    let public_key = match ed25519_dalek::VerifyingKey::from_bytes(&pub_key) {
         Ok(public_key) => public_key,
         Err(e) => return (Err(e.into()), cost),
     };
-    let dalek_signature = match ed25519_dalek::Signature::from_bytes(&signature) {
-        Ok(dalek_signature) => dalek_signature,
-        Err(e) => return (Err(e.into()), cost),
-    };
+    let dalek_signature = ed25519_dalek::Signature::from_bytes(&signature);
     let is_ok = public_key.verify(&message, &dalek_signature).is_ok();
 
     (Ok(is_ok as i32), cost)

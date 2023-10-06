@@ -195,8 +195,8 @@ where
     pub fn verify_ed25519_signature(
         &self,
         message: Vec<u8>,
-        signature: Vec<u8>,
-        pub_key: Vec<u8>,
+        signature: [u8; 64],
+        pub_key: [u8; 32],
     ) -> Result<i32, anyhow::Error> {
         let result = operation::verify_ed25519_signature(message, signature, pub_key);
         self.charge(result)

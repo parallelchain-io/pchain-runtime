@@ -13,7 +13,7 @@ doctest = false
 [dependencies]
 anyhow = "1.0"
 blake2 = "0.10"
-ed25519-dalek = "1.0.1"
+ed25519-dalek = "2.0.0"
 keccak-hasher = "0.15.3"
 loupe = "0.1"
 pchain-types = "0.4"
