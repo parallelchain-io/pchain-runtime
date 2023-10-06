@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use pchain_types::{
-    blockchain::{Command, ExitStatus, Transaction},
+    blockchain::{Command, ExitCodeV1, TransactionV1},
     cryptography::PublicAddress,
     runtime::*,
 };
@@ -94,9 +94,9 @@ fn test_transfer() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
 
     assert_eq!(extract_gas_used(&ret), 32820);
@@ -118,9 +118,9 @@ fn test_create_pool() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 334610);
 
@@ -179,9 +179,9 @@ fn test_create_pool_set_policy() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
 
     assert_eq!(extract_gas_used(&ret), 354770);
@@ -250,9 +250,9 @@ fn test_create_delete_pool() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 334610);
     let mut state = create_state(Some(ret.new_state));
@@ -300,9 +300,9 @@ fn test_create_pool_create_deposit() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
 
     let mut state = create_state(Some(ret.new_state));
@@ -316,9 +316,9 @@ fn test_create_pool_create_deposit() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 82810);
 
@@ -409,9 +409,9 @@ fn test_create_deposit_set_policy() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 109050);
 
@@ -486,9 +486,9 @@ fn test_create_deposit_topupdeposit() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 134910);
 
@@ -565,9 +565,9 @@ fn test_stake_deposit_delegated_stakes() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -649,9 +649,9 @@ fn test_stake_deposit_delegated_stakes_nvp_change_key() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -712,9 +712,9 @@ fn test_stake_deposit_delegated_stakes_nvp_insert() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -780,9 +780,9 @@ fn test_stake_deposit_delegated_stakes_insert() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -812,9 +812,9 @@ fn test_stake_deposit_delegated_stakes_insert() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 82810);
     // and then stake deposit
@@ -854,9 +854,9 @@ fn test_stake_deposit_delegated_stakes_change_key() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -911,9 +911,9 @@ fn test_stake_deposit_delegated_stakes_existing() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -956,9 +956,9 @@ fn test_stake_deposit_same_owner() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -999,9 +999,9 @@ fn test_stake_deposit_same_owner_nvp_change_key() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -1066,9 +1066,9 @@ fn test_stake_deposit_same_owner_nvp_insert() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -1130,9 +1130,9 @@ fn test_stake_deposit_same_owner_existing() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -1185,9 +1185,9 @@ fn test_unstake_deposit_delegated_stakes() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -1220,9 +1220,9 @@ fn test_unstake_deposit_delegated_stakes() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 516870);
     let mut state = create_state(Some(ret.new_state));
@@ -1236,9 +1236,9 @@ fn test_unstake_deposit_delegated_stakes() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 82810);
     // and then UnstakeDeposit
@@ -1257,9 +1257,9 @@ fn test_unstake_deposit_delegated_stakes() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 0);
     // then UnstakeDeposit
@@ -1306,9 +1306,9 @@ fn test_unstake_deposit_delegated_stakes_remove() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -1367,9 +1367,9 @@ fn test_unstake_deposit_delegated_stakes_nvp_change_key() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -1434,9 +1434,9 @@ fn test_unstake_deposit_delegated_stakes_nvp_remove() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -1493,9 +1493,9 @@ fn test_unstake_deposit_same_owner() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -1562,9 +1562,9 @@ fn test_unstake_deposit_same_owner_nvp_change_key() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -1634,9 +1634,9 @@ fn test_unstake_deposit_same_owner_nvp_remove() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -1701,9 +1701,9 @@ fn test_withdrawal_deposit_delegated_stakes() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -1756,9 +1756,9 @@ fn test_withdrawal_deposit_delegated_stakes() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 0);
     // Then unstake
@@ -1774,9 +1774,9 @@ fn test_withdrawal_deposit_delegated_stakes() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 242150);
     // pvp: 0, vp: 60_000, nvp: 50_000, deposit: 60_000, Try withdraw
@@ -1801,9 +1801,9 @@ fn test_withdrawal_deposit_delegated_stakes() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 0);
     // pvp: 60_000, vp: 50_000, nvp: 50_000, deposit: 60_013, Deduce deposit to 60_000
@@ -1819,9 +1819,9 @@ fn test_withdrawal_deposit_delegated_stakes() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 83580);
     // pvp: 60_000, vp: 50_000, nvp: 50_000, deposit: 60_000, Try Withdraw
@@ -1874,9 +1874,9 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_change_key() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -1970,9 +1970,9 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_remove() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -2059,9 +2059,9 @@ fn test_withdrawal_deposit_same_owner() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -2137,9 +2137,9 @@ fn test_withdrawal_deposit_same_owner_nvp_change_key() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -2229,9 +2229,9 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -2339,9 +2339,9 @@ fn test_withdrawal_deposit_bounded_by_vp() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -2441,9 +2441,9 @@ fn test_withdrawal_deposit_bounded_by_pvp() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(
         ret.receipt.as_ref().unwrap().last().unwrap().return_values,
@@ -3227,9 +3227,9 @@ fn test_change_of_validators() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 357250);
 
@@ -3248,9 +3248,9 @@ fn test_change_of_validators() {
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     assert_eq!(extract_gas_used(&ret), 1432070);
     let mut state = create_state(Some(ret.new_state));
@@ -3298,8 +3298,8 @@ fn set_tx(
     gas::tx_inclusion_cost(state.tx.size, state.tx.commands_len)
 }
 
-fn create_tx(signer: PublicAddress) -> Transaction {
-    Transaction {
+fn create_tx(signer: PublicAddress) -> TransactionV1 {
+    TransactionV1 {
         signer,
         gas_limit: 10_000_000,
         priority_fee_per_gas: 0,
@@ -3569,9 +3569,9 @@ fn execute_next_epoch(state: ExecutionState<SimpleStore>) -> ExecutionState<Simp
     assert_eq!(
         (
             &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_status
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
         ),
-        (&None, &ExitStatus::Success)
+        (&None, &ExitCodeV1::Success)
     );
     let gas_used = ret.receipt.unwrap().iter().map(|g| g.gas_used).sum::<u64>();
     println!("gas_consumed {}", gas_used);

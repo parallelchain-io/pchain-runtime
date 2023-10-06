@@ -8,7 +8,7 @@
 //! This state is not as same as the concept of state in World State. Execution encapsulates the changing information
 //! during execution life-cycle. It is the state of execution model, but not referring to blockchain storage.
 
-use pchain_types::blockchain::{ExitStatus, Receipt};
+use pchain_types::blockchain::{ExitCodeV1, ReceiptV1};
 use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
 
 use crate::{
@@ -48,7 +48,7 @@ where
 {
     pub(crate) fn finalize_deferred_command_receipt(
         &mut self,
-        exit_status: ExitStatus
+        exit_status: ExitCodeV1
     ) {
         // extract receipt from current execution result
         let (cmd_receipt, _) = self.ctx.extract(exit_status);
@@ -57,7 +57,7 @@ where
 
     pub(crate) fn finalize_command_receipt(
         &mut self,
-        exit_status: ExitStatus,
+        exit_status: ExitCodeV1,
     ) -> Option<Vec<DeferredCommand>> {
         // extract receipt from current execution result
         let (cmd_receipt, deferred_commands_from_call) = self.ctx.extract(exit_status);
@@ -67,10 +67,10 @@ where
     }
 
     /// finalize the world state
-    pub(crate) fn finalize(self) -> (WorldState<S>, Receipt) {
+    pub(crate) fn finalize(self) -> (WorldState<S>, ReceiptV1) {
         (
             self.ctx.into_ws_cache().commit_to_world_state(),
-            Receipt::from(self.receipt),
+            ReceiptV1::from(self.receipt),
         )
     }
 }

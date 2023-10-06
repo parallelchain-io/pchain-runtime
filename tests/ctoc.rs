@@ -1,8 +1,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use pchain_types::blockchain::{ExitStatus, Transaction};
+use pchain_types::{blockchain::{ExitCodeV1, TransactionV1}, cryptography::contract_address_v1};
 
 use crate::common::{
-    compute_contract_address, gas::extract_gas_used, ArgsBuilder, CallResult, SimulateWorldState,
+    gas::extract_gas_used, ArgsBuilder, CallResult, SimulateWorldState,
     TestData,
 };
 
@@ -25,7 +25,7 @@ fn test_ctoc_api() {
     // Set data in the First Contract.
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new().add(12345_i32).make_call(
                 Some(0),
                 contract_addr_1,
@@ -38,14 +38,14 @@ fn test_ctoc_api() {
     );
     assert_eq!(extract_gas_used(&result), 2262500);
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
 
     // make contract call from Second Contract to call get_data_only from First Contract.
     let function_args = Vec::<Vec<u8>>::new().try_to_vec().unwrap();
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new()
                 .add(contract_addr_1.clone()) // contract address
                 .add("get_data_only".to_string()) // function name
@@ -60,7 +60,7 @@ fn test_ctoc_api() {
     );
     assert_eq!(extract_gas_used(&result), 4467014);
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
 
     // Check result of "call_other_contract" -> "get_data_only"
@@ -80,7 +80,7 @@ fn test_ctoc_api() {
 
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new()
                 .add(contract_addr_1.clone()) // contract address
                 .add("set_data_only".to_string()) // function name
@@ -95,7 +95,7 @@ fn test_ctoc_api() {
     );
     assert_eq!(extract_gas_used(&result), 4483108);
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
 
     assert_eq!(
@@ -120,7 +120,7 @@ fn test_ctoc_use_contract() {
     // Call the Second contract to make cross contract call to First contract
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new().add(0u64).make_call(
                 Some(0),
                 contract_addr_2,
@@ -133,7 +133,7 @@ fn test_ctoc_use_contract() {
     );
     assert_eq!(extract_gas_used(&result), 3473496);
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
 
     // Check result of "call_other_contract_using_macro" -> "hello".
@@ -156,7 +156,7 @@ fn test_ctoc_use_contract() {
     // Call the Second contract to make cross contract call to First contract by using macro.
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new()
                 .add("testing name".to_string()) // input
                 .add(0u64)
@@ -172,7 +172,7 @@ fn test_ctoc_use_contract() {
     );
     assert_eq!(extract_gas_used(&result), 3489103);
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let _: SimulateWorldState = result.new_state.into();
 
     // Check the result of "call_other_contract_using_macro_with_input".
@@ -210,7 +210,7 @@ fn test_ctoc_with_insufficient_gas_limit() {
 
     // make contract call from Second Contract to call get_data_only from First Contract
     let function_args = Vec::<Vec<u8>>::new().try_to_vec().unwrap();
-    let tx = Transaction {
+    let tx = TransactionV1 {
         commands: vec![ArgsBuilder::new()
             .add(contract_addr_1.clone()) // contract address
             .add("get_data_only".to_string()) // function name
@@ -229,8 +229,8 @@ fn test_ctoc_with_insufficient_gas_limit() {
     assert_eq!(extract_gas_used(&result), 6862810);
     let receipt = result.receipt.unwrap();
     assert_eq!(
-        receipt.last().unwrap().exit_status,
-        ExitStatus::GasExhausted
+        receipt.last().unwrap().exit_code,
+        ExitCodeV1::GasExhausted
     );
     assert_eq!(
         receipt.last().unwrap().gas_used,
@@ -247,12 +247,8 @@ fn deploy_two_contracts(
     let contract_code_1 = TestData::get_test_contract_code(contract_name_1);
     let contract_code_2 = TestData::get_test_contract_code(contract_name_2);
     let origin_address = TestData::get_origin_address();
-    let contract_address_1 = compute_contract_address(origin_address, 0)
-        .try_into()
-        .unwrap();
-    let contract_address_2 = compute_contract_address(origin_address, 1)
-        .try_into()
-        .unwrap();
+    let contract_address_1 = contract_address_v1(&origin_address, 0);
+    let contract_address_2 = contract_address_v1(&origin_address, 1);
 
     let bd = TestData::block_params();
 
@@ -275,7 +271,7 @@ fn deploy_two_contracts(
 
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
 
     let deploy_2 = if call_init_2 {
@@ -295,7 +291,7 @@ fn deploy_two_contracts(
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
     assert_eq!(extract_gas_used(&result), 220290230);
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
 
     (sws, contract_address_1, contract_address_2)

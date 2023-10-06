@@ -5,7 +5,7 @@
 
 //! Implementation of executing [Account Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#account-commands).
 
-use pchain_types::cryptography::{PublicAddress, contract_address};
+use pchain_types::cryptography::{PublicAddress, contract_address_v1};
 use pchain_world_state::storage::WorldStateStorage;
 use std::sync::{Arc, Mutex};
 
@@ -198,7 +198,7 @@ pub(crate) fn deploy<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    let contract_address = contract_address(&state.tx.signer, state.tx.nonce);
+    let contract_address = contract_address_v1(&state.tx.signer, state.tx.nonce);
 
     // Instantiate instant to preform contract deployment.
     let instance = match DeployInstance::instantiate(state, contract, cbi_version, contract_address) {

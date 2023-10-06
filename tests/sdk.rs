@@ -3,16 +3,16 @@ use std::path::Path;
 use borsh::BorshDeserialize;
 use pchain_runtime::Cache;
 use pchain_types::{
-    blockchain::{Command, ExitStatus, Transaction},
+    blockchain::{Command, ExitCodeV1, TransactionV1},
     runtime::{
         CreateDepositInput, SetDepositSettingsInput, StakeDepositInput, TopUpDepositInput,
         UnstakeDepositInput, WithdrawDepositInput,
-    },
+    }, cryptography::contract_address_v1,
 };
 use pchain_world_state::network::constants::NETWORK_ADDRESS;
 
 use crate::common::{
-    compute_contract_address, gas::extract_gas_used, ArgsBuilder, CallResult, SimulateWorldState,
+    gas::extract_gas_used, ArgsBuilder, CallResult, SimulateWorldState,
     TestData, CONTRACT_CACHE_FOLDER,
 };
 
@@ -24,7 +24,7 @@ mod common;
 fn test_success_etoc_tx_with_different_setters_getters() {
     let contract_code = TestData::get_test_contract_code("basic_contract");
     let origin_address = [1u8; 32];
-    let contract_address = compute_contract_address(origin_address, 0);
+    let contract_address = contract_address_v1(&origin_address, 0);
 
     let bd = TestData::block_params();
 
@@ -43,8 +43,8 @@ fn test_success_etoc_tx_with_different_setters_getters() {
     let result = runtime.transition(sws.world_state, tx, bd.clone());
     assert_eq!(extract_gas_used(&result), 121925230);
     assert_eq!(
-        result.receipt.unwrap().last().unwrap().exit_status,
-        ExitStatus::Success
+        result.receipt.unwrap().last().unwrap().exit_code,
+        ExitCodeV1::Success
     );
     let sws: SimulateWorldState = result.new_state.into();
 
@@ -56,7 +56,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
     // 1. set data using the self setter.
     let result = runtime.transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new().add(1234_u64).make_call(
                 Some(0),
                 contract_address,
@@ -68,8 +68,8 @@ fn test_success_etoc_tx_with_different_setters_getters() {
         bd.clone(),
     );
     assert_eq!(
-        result.receipt.unwrap().last().unwrap().exit_status,
-        ExitStatus::Success
+        result.receipt.unwrap().last().unwrap().exit_code,
+        ExitCodeV1::Success
     );
     let sws: SimulateWorldState = result.new_state.into();
 
@@ -82,7 +82,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
     // 2. set data without using the self getter.
     let result = runtime.transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new().add(5678_u64).make_call(
                 Some(0),
                 contract_address,
@@ -95,8 +95,8 @@ fn test_success_etoc_tx_with_different_setters_getters() {
     );
     assert_eq!(extract_gas_used(&result), 1279914);
     assert_eq!(
-        result.receipt.unwrap().last().unwrap().exit_status,
-        ExitStatus::Success
+        result.receipt.unwrap().last().unwrap().exit_code,
+        ExitCodeV1::Success
     );
     let sws: SimulateWorldState = result.new_state.into();
 
@@ -109,7 +109,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
     // 3. get data using the self getter.
     let result = runtime.transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new().make_call(
                 Some(0),
                 contract_address,
@@ -122,7 +122,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
     );
     assert_eq!(extract_gas_used(&result), 1324005);
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
 
     // Check the result of "get_state_with_self".
@@ -133,7 +133,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
     // 4. get data without using the self getter.
     let result = runtime.transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new().make_call(
                 Some(0),
                 contract_address,
@@ -146,7 +146,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
     );
     assert_eq!(extract_gas_used(&result), 1259335);
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
 
     // Check the result of "get_state_without_self".
     let return_value: u64 =
@@ -170,7 +170,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
 fn test_success_etoc_multiple_methods() {
     let contract_code = TestData::get_test_contract_code("basic_contract");
     let origin_address = [1u8; 32];
-    let contract_address = compute_contract_address(origin_address, 0);
+    let contract_address = contract_address_v1(&origin_address, 0);
 
     let bd = TestData::block_params();
 
@@ -187,8 +187,8 @@ fn test_success_etoc_multiple_methods() {
     assert_eq!(extract_gas_used(&result), 121925230);
 
     assert_eq!(
-        result.receipt.unwrap().last().unwrap().exit_status,
-        ExitStatus::Success
+        result.receipt.unwrap().last().unwrap().exit_code,
+        ExitCodeV1::Success
     );
     let sws: SimulateWorldState = result.new_state.into();
 
@@ -200,7 +200,7 @@ fn test_success_etoc_multiple_methods() {
     // 1. get data from contract storage (should be default value).
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new().make_call(
                 Some(0),
                 contract_address,
@@ -214,7 +214,7 @@ fn test_success_etoc_multiple_methods() {
     assert_eq!(extract_gas_used(&result), 1258440);
 
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
 
     // Check result of "set_data" by "init";
@@ -225,7 +225,7 @@ fn test_success_etoc_multiple_methods() {
     // 2. set data to contract storage.
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new().add(i32::MAX).make_call(
                 Some(0),
                 contract_address,
@@ -238,8 +238,8 @@ fn test_success_etoc_multiple_methods() {
     );
     assert_eq!(extract_gas_used(&result), 1279345);
     assert_eq!(
-        result.receipt.unwrap().last().unwrap().exit_status,
-        ExitStatus::Success
+        result.receipt.unwrap().last().unwrap().exit_code,
+        ExitCodeV1::Success
     );
     let sws: SimulateWorldState = result.new_state.into();
 
@@ -252,7 +252,7 @@ fn test_success_etoc_multiple_methods() {
     // 3. get data from contract storage (should be latest updated value).
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new().make_call(
                 Some(0),
                 contract_address,
@@ -264,7 +264,7 @@ fn test_success_etoc_multiple_methods() {
         bd.clone(),
     );
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
 
     // Check result of "set_data" by the second call to "set_data_to_storage";
@@ -275,7 +275,7 @@ fn test_success_etoc_multiple_methods() {
     // 4. enter entrypoint with multiple arguments.
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new()
                 .add(i32::MIN)
                 .add("argument to multiple_inputs".to_string())
@@ -289,7 +289,7 @@ fn test_success_etoc_multiple_methods() {
     assert_eq!(extract_gas_used(&result), 1275515);
 
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
 
     // Check result of "multiple_inputs".
@@ -306,7 +306,7 @@ fn test_success_etoc_multiple_methods() {
     // 5. check print event
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new().make_call(Some(0), contract_address, "print_event")],
             nonce: 5,
             ..base_tx
@@ -315,7 +315,7 @@ fn test_success_etoc_multiple_methods() {
     );
     assert_eq!(extract_gas_used(&result), 1259021);
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
 
     // Check return value from print_event is None.
@@ -336,7 +336,7 @@ fn test_success_etoc_multiple_methods() {
     // 6. test for non-existing keys.
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new().add([0u8, 1].to_vec()).make_call(
                 Some(0),
                 contract_address,
@@ -349,7 +349,7 @@ fn test_success_etoc_multiple_methods() {
     );
     assert_eq!(extract_gas_used(&result), 1260899);
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
 
     // Check result of "raw_get" should be None for non-existing key.
@@ -360,7 +360,7 @@ fn test_success_etoc_multiple_methods() {
     // 7. test for key with empty vec (using field `arr` in contract storage).
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new().add([2u8].to_vec()).make_call(
                 Some(0),
                 contract_address,
@@ -373,7 +373,7 @@ fn test_success_etoc_multiple_methods() {
     );
     assert_eq!(extract_gas_used(&result), 1261720);
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
 
     // Check result of "raw_get" should be the init state variable.
     let return_value: Option<Vec<u8>> =
@@ -390,9 +390,7 @@ fn test_success_etoc_multiple_methods() {
 fn test_success_etoc_set_all_contract_fields() {
     let contract_code = TestData::get_test_contract_code("all_features");
     let origin_address = [1u8; 32];
-    let contract_address = compute_contract_address(origin_address, 0)
-        .try_into()
-        .unwrap();
+    let contract_address = contract_address_v1(&origin_address, 0);
 
     let bd = TestData::block_params();
 
@@ -411,15 +409,15 @@ fn test_success_etoc_set_all_contract_fields() {
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
     assert_eq!(extract_gas_used(&result), 220290230);
     assert_eq!(
-        result.receipt.unwrap().last().unwrap().exit_status,
-        ExitStatus::Success
+        result.receipt.unwrap().last().unwrap().exit_code,
+        ExitCodeV1::Success
     );
     let sws: SimulateWorldState = result.new_state.into();
 
     // 1. Call entrypoint to mutate data in contract storage.
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             signer: origin_address,
             commands: vec![ArgsBuilder::new().make_call(
                 Some(0),
@@ -437,8 +435,8 @@ fn test_success_etoc_set_all_contract_fields() {
     );
     assert_eq!(extract_gas_used(&result), 2495040);
     assert_eq!(
-        result.receipt.unwrap().last().unwrap().exit_status,
-        ExitStatus::Success
+        result.receipt.unwrap().last().unwrap().exit_code,
+        ExitCodeV1::Success
     );
     let sws: SimulateWorldState = result.new_state.into();
 
@@ -474,9 +472,7 @@ fn test_success_etoc_set_all_contract_fields() {
 fn test_success_etoc_network_state() {
     let contract_code = TestData::get_test_contract_code("all_features");
     let origin_address = [1u8; 32];
-    let contract_address = compute_contract_address(origin_address, 0)
-        .try_into()
-        .unwrap();
+    let contract_address = contract_address_v1(&origin_address, 0);
     let network_state_app_key = vec![5u8];
     let network_state_app_value = 13579_u64.to_le_bytes().to_vec();
 
@@ -524,15 +520,15 @@ fn test_success_etoc_network_state() {
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
     assert_eq!(extract_gas_used(&result), 220290230);
     assert_eq!(
-        result.receipt.unwrap().last().unwrap().exit_status,
-        ExitStatus::Success
+        result.receipt.unwrap().last().unwrap().exit_code,
+        ExitCodeV1::Success
     );
     let sws: SimulateWorldState = result.new_state.into();
 
     // 1. Call entrypoint to mutate data in contract storage.
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             signer: origin_address,
             commands: vec![
                 ArgsBuilder::new().add(network_state_app_key).make_call(
@@ -549,7 +545,7 @@ fn test_success_etoc_network_state() {
     );
     assert_eq!(extract_gas_used(&result), 2246202);
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
 
     // Check result of "get_network_state";
@@ -577,7 +573,7 @@ fn test_success_etoc_network_state() {
     });
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             signer: origin_address,
             commands: vec![ArgsBuilder::new()
                 .add(vec![
@@ -594,7 +590,7 @@ fn test_success_etoc_network_state() {
         bd.clone(),
     );
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     assert_eq!(
         receipt.last().unwrap().return_values,
         1000u64.to_le_bytes().to_vec()
@@ -628,7 +624,7 @@ fn test_success_etoc_network_state() {
     });
     let result = pchain_runtime::Runtime::new().transition(
         sws.world_state,
-        Transaction {
+        TransactionV1 {
             signer: origin_address,
             commands: vec![ArgsBuilder::new()
                 .add(vec![network_command_5, network_command_6])
@@ -641,7 +637,7 @@ fn test_success_etoc_network_state() {
     );
     assert_eq!(extract_gas_used(&result), 2220638);
     let receipt = result.receipt.unwrap();
-    assert_eq!(receipt.last().unwrap().exit_status, ExitStatus::Success);
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     assert_eq!(
         receipt.last().unwrap().return_values,
         1235u64.to_le_bytes().to_vec()
@@ -669,9 +665,7 @@ fn test_success_etoc_network_state() {
 fn test_failure_etoc_tx_with_invalid_argument_data_type() {
     let contract_code = TestData::get_test_contract_code("basic_contract");
     let origin_address = [1u8; 32];
-    let contract_address = compute_contract_address(origin_address, 0)
-        .try_into()
-        .unwrap();
+    let contract_address = contract_address_v1(&origin_address, 0);
 
     let bd = TestData::block_params();
 
@@ -688,13 +682,13 @@ fn test_failure_etoc_tx_with_invalid_argument_data_type() {
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
     assert_eq!(extract_gas_used(&result), 121925230);
     assert_eq!(
-        result.receipt.unwrap().last().unwrap().exit_status,
-        ExitStatus::Success
+        result.receipt.unwrap().last().unwrap().exit_code,
+        ExitCodeV1::Success
     );
     let sws: SimulateWorldState = result.new_state.into();
 
     // 1. Passing criteria: smart contract should fail to get the correct arguments (u64) as it is set to u32 for now.
-    let tx = Transaction {
+    let tx = TransactionV1 {
         signer: origin_address,
         commands: vec![ArgsBuilder::new().add(1234_u32).make_call(
             Some(0),
@@ -708,8 +702,8 @@ fn test_failure_etoc_tx_with_invalid_argument_data_type() {
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
     assert_eq!(extract_gas_used(&result), 1264607);
     assert_eq!(
-        result.receipt.unwrap().last().unwrap().exit_status,
-        ExitStatus::Failed
+        result.receipt.unwrap().last().unwrap().exit_code,
+        ExitCodeV1::Failed
     );
 }
 
@@ -719,7 +713,7 @@ fn test_failure_etoc_tx_with_invalid_argument_data_type() {
 fn test_failure_etoc_tx_with_invalid_method_name() {
     let contract_code = TestData::get_test_contract_code("basic_contract");
     let origin_address = [1u8; 32];
-    let contract_address = compute_contract_address(origin_address, 0);
+    let contract_address = contract_address_v1(&origin_address, 0);
 
     let bd = TestData::block_params();
 
@@ -735,13 +729,13 @@ fn test_failure_etoc_tx_with_invalid_method_name() {
 
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
     assert_eq!(
-        result.receipt.unwrap().last().unwrap().exit_status,
-        ExitStatus::Success
+        result.receipt.unwrap().last().unwrap().exit_code,
+        ExitCodeV1::Success
     );
     let sws: SimulateWorldState = result.new_state.into();
 
     // 1. EtoC call with non-exist method name
-    let tx = Transaction {
+    let tx = TransactionV1 {
         signer: origin_address,
         commands: vec![ArgsBuilder::new().add(1234_u64).make_call(
             Some(0),
@@ -756,8 +750,8 @@ fn test_failure_etoc_tx_with_invalid_method_name() {
     let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
     assert_eq!(extract_gas_used(&result), 1255007);
     assert_eq!(
-        result.receipt.unwrap().last().unwrap().exit_status,
-        ExitStatus::Failed
+        result.receipt.unwrap().last().unwrap().exit_code,
+        ExitCodeV1::Failed
     );
 }
 
@@ -766,7 +760,7 @@ fn test_failure_etoc_tx_with_invalid_method_name() {
 fn test_success_etoc_crypto_functions() {
     let contract_code = TestData::get_test_contract_code("all_features");
     let origin_address = [1u8; 32];
-    let contract_address = compute_contract_address(origin_address, 0);
+    let contract_address = contract_address_v1(&origin_address, 0);
 
     let bd = TestData::block_params();
 
@@ -784,8 +778,8 @@ fn test_success_etoc_crypto_functions() {
 
     let result = runtime.transition(sws.world_state, tx, bd.clone());
     assert_eq!(
-        result.receipt.unwrap().last().unwrap().exit_status,
-        ExitStatus::Success
+        result.receipt.unwrap().last().unwrap().exit_code,
+        ExitCodeV1::Success
     );
     let sws: SimulateWorldState = result.new_state.into();
 
@@ -797,7 +791,7 @@ fn test_success_etoc_crypto_functions() {
     // 1. Check Sha256
     let result = runtime.transition(
         sws.world_state.clone(),
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new()
                 .add(0u8)
                 .add("1234".as_bytes().to_vec())
@@ -809,7 +803,7 @@ fn test_success_etoc_crypto_functions() {
     );
     assert_eq!(extract_gas_used(&result), 2216086);
     let receipt = result.receipt.unwrap().pop().unwrap();
-    assert_eq!(receipt.exit_status, ExitStatus::Success);
+    assert_eq!(receipt.exit_code, ExitCodeV1::Success);
     let hash: Vec<u8> = CallResult::parse(receipt.return_values).unwrap();
     assert_eq!(
         hash, // Hash of "1234" checked by online conversion tool
@@ -823,7 +817,7 @@ fn test_success_etoc_crypto_functions() {
     // 2. Check Keccak256
     let result = runtime.transition(
         sws.world_state.clone(),
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new()
                 .add(1u8)
                 .add("1234".as_bytes().to_vec())
@@ -835,7 +829,7 @@ fn test_success_etoc_crypto_functions() {
     );
     assert_eq!(extract_gas_used(&result), 2216087);
     let receipt = result.receipt.unwrap().pop().unwrap();
-    assert_eq!(receipt.exit_status, ExitStatus::Success);
+    assert_eq!(receipt.exit_code, ExitCodeV1::Success);
     let hash: Vec<u8> = CallResult::parse(receipt.return_values).unwrap();
     assert_eq!(
         hash, // Hash of "1234" checked by online conversion tool
@@ -849,7 +843,7 @@ fn test_success_etoc_crypto_functions() {
     // 3. Check Ripemd
     let result = runtime.transition(
         sws.world_state.clone(),
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new()
                 .add(2u8)
                 .add("1234".as_bytes().to_vec())
@@ -861,7 +855,7 @@ fn test_success_etoc_crypto_functions() {
     );
     assert_eq!(extract_gas_used(&result), 2215625);
     let receipt = result.receipt.unwrap().pop().unwrap();
-    assert_eq!(receipt.exit_status, ExitStatus::Success);
+    assert_eq!(receipt.exit_code, ExitCodeV1::Success);
     let hash: Vec<u8> = CallResult::parse(receipt.return_values).unwrap();
     assert_eq!(
         hash, // Hash of "1234" checked by online conversion tool
@@ -887,7 +881,7 @@ fn test_success_etoc_crypto_functions() {
     ];
     let result = runtime.transition(
         sws.world_state.clone(),
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new()
                 .add("1234".as_bytes().to_vec())
                 .add(correct_signature.to_vec())
@@ -901,7 +895,7 @@ fn test_success_etoc_crypto_functions() {
 
     assert_eq!(extract_gas_used(&result), 3619156);
     let receipt = result.receipt.unwrap().pop().unwrap();
-    assert_eq!(receipt.exit_status, ExitStatus::Success);
+    assert_eq!(receipt.exit_code, ExitCodeV1::Success);
     let is_correct: bool = CallResult::parse(receipt.return_values).unwrap();
     assert!(is_correct);
 
@@ -915,7 +909,7 @@ fn test_success_etoc_crypto_functions() {
     let incorrect_signature = [9u8; 64];
     let result = runtime.transition(
         sws.world_state.clone(),
-        Transaction {
+        TransactionV1 {
             commands: vec![ArgsBuilder::new()
                 .add("1234".as_bytes().to_vec())
                 .add(incorrect_signature.to_vec())
@@ -928,7 +922,7 @@ fn test_success_etoc_crypto_functions() {
     );
     assert_eq!(extract_gas_used(&result), 3619156);
     let receipt = result.receipt.unwrap().pop().unwrap();
-    assert_eq!(receipt.exit_status, ExitStatus::Success);
+    assert_eq!(receipt.exit_code, ExitCodeV1::Success);
     let is_correct: bool = CallResult::parse(receipt.return_values).unwrap();
     assert!(!is_correct);
 }

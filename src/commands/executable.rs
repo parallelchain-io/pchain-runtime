@@ -4,7 +4,7 @@
 */
 
 use pchain_types::{
-    blockchain::{Command, ExitStatus},
+    blockchain::{Command, ExitCodeV1},
     cryptography::PublicAddress,
     runtime::{
         CallInput, CreateDepositInput, CreatePoolInput, DeployInput, SetDepositSettingsInput,
@@ -41,8 +41,8 @@ impl Executable for Command {
 
         let result = execute(state, actor, self);
         let exit_status = match &result {
-            Ok(_) => ExitStatus::Success,
-            Err(error) => ExitStatus::from(error)
+            Ok(_) => ExitCodeV1::Success,
+            Err(error) => ExitCodeV1::from(error)
         };
 
         let deferred_commands = state.finalize_command_receipt(exit_status);
@@ -64,8 +64,8 @@ impl Executable for DeferredCommand {
         
         let result = execute(state, actor, command);
         let exit_status = match &result {
-            Ok(_) => ExitStatus::Success,
-            Err(error) => ExitStatus::from(error)
+            Ok(_) => ExitCodeV1::Success,
+            Err(error) => ExitCodeV1::from(error)
         };
 
         state.finalize_deferred_command_receipt(exit_status);

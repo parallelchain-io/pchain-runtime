@@ -19,7 +19,7 @@
 //! [Runtime] also provides method to execute a [view call](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
 
 use pchain_types::{
-    blockchain::{Command, CommandReceipt, ExitStatus, Receipt, Transaction},
+    blockchain::{Command, CommandReceiptV1, ExitCodeV1, ReceiptV1, TransactionV1},
     cryptography::PublicAddress,
 };
 use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
@@ -70,7 +70,7 @@ impl Runtime {
     pub fn transition<S: WorldStateStorage + Send + Sync + Clone + 'static>(
         &self,
         ws: WorldState<S>,
-        tx: Transaction,
+        tx: TransactionV1,
         bd: BlockchainParams,
     ) -> TransitionResult<S> {
         // create transition context from world state
@@ -106,7 +106,7 @@ impl Runtime {
         target: PublicAddress,
         method: String,
         arguments: Option<Vec<Vec<u8>>>,
-    ) -> (CommandReceipt, Option<TransitionError>) {
+    ) -> (CommandReceiptV1, Option<TransitionError>) {
         // create transition context from world state
         let mut ctx = TransitionContext::new(ws, gas_limit);
         ctx.sc_context.cache = self.sc_cache.clone();
@@ -142,7 +142,7 @@ where
     /// New world state (ws') after state transition
     pub new_state: WorldState<S>,
     /// Transaction receipt. None if the transition receipt is not includable in the block
-    pub receipt: Option<Receipt>,
+    pub receipt: Option<ReceiptV1>,
     /// Transition error. None if no error.
     pub error: Option<TransitionError>,
     /// Changes in validate set.
@@ -222,8 +222,8 @@ where
     /// Output the CommandReceipt and clear the intermediate context for next command execution.
     pub fn extract(
         &mut self,
-        exit_status: ExitStatus,
-    ) -> (CommandReceipt, Option<Vec<DeferredCommand>>) {
+        exit_code: ExitCodeV1,
+    ) -> (CommandReceiptV1, Option<Vec<DeferredCommand>>) {
         // 1. Take the fields from output cache and update to gas meter at this checkpoint
         let (gas_used, logs, return_values) = self.gas_meter.take_current_command_result();
 
@@ -232,8 +232,8 @@ where
             .then_some(std::mem::take(&mut self.deferred_commands));
 
         (
-            CommandReceipt {
-                exit_status,
+            CommandReceiptV1 {
+                exit_code,
                 gas_used,
                 return_values,
                 logs,

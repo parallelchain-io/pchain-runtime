@@ -1,8 +1,8 @@
 use pchain_runtime::TransitionError;
-use pchain_types::blockchain::ExitStatus;
+use pchain_types::{blockchain::ExitCodeV1, cryptography::contract_address_v1};
 
 use crate::common::{
-    compute_contract_address, ArgsBuilder, CallResult, SimulateWorldState, TestData,
+    ArgsBuilder, CallResult, SimulateWorldState, TestData,
     CONTRACT_CACHE_FOLDER,
 };
 
@@ -16,7 +16,7 @@ mod common;
 fn test_view() {
     let wasm_bytes = TestData::get_test_contract_code("basic_contract");
     let method_args = "arg".to_string();
-    let contract_address = compute_contract_address([123u8; 32], 0);
+    let contract_address = contract_address_v1(&[123u8; 32], 0);
 
     // initialize world state
     let mut sws = SimulateWorldState::default();
@@ -79,7 +79,7 @@ fn test_view() {
             "emit_event_with_return".to_string(),
             ArgsBuilder::new().add(method_args.clone()).args,
         );
-    assert_eq!(receipt.exit_status, ExitStatus::Failed);
+    assert_eq!(receipt.exit_code, ExitCodeV1::Failed);
     assert_eq!(error, Some(TransitionError::InvalidCBI));
 
     // Clear sc cache folders.
@@ -111,7 +111,7 @@ fn test_view_failure() {
             .add(1u8) // incorrect method argument type.
             .args,
     );
-    assert_eq!(receipt.exit_status, ExitStatus::Failed);
+    assert_eq!(receipt.exit_code, ExitCodeV1::Failed);
     assert_eq!(error, Some(TransitionError::RuntimeError));
 
     // 2. fail for gas exhausted
@@ -122,7 +122,7 @@ fn test_view_failure() {
         "emit_event_with_return".to_string(),
         ArgsBuilder::new().add("arg".to_string()).args,
     );
-    assert_eq!(receipt.exit_status, ExitStatus::GasExhausted);
+    assert_eq!(receipt.exit_code, ExitCodeV1::GasExhausted);
     assert_eq!(error, Some(TransitionError::ExecutionProperGasExhausted));
 
     let (receipt, error) = pchain_runtime::Runtime::new().view(
@@ -132,6 +132,6 @@ fn test_view_failure() {
         "set_state_without_self".to_string(),
         ArgsBuilder::new().add(1u8).args,
     );
-    assert_eq!(receipt.exit_status, ExitStatus::Failed);
+    assert_eq!(receipt.exit_code, ExitCodeV1::Failed);
     assert_eq!(error, Some(TransitionError::RuntimeError));
 }

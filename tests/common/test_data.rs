@@ -1,5 +1,5 @@
 use pchain_runtime::BlockchainParams;
-use pchain_types::blockchain::Transaction;
+use pchain_types::blockchain::TransactionV1;
 
 pub const EXPECTED_CBI_VERSION: u32 = 0;
 pub const MIN_BASE_FEE: u64 = 8;
@@ -16,8 +16,8 @@ pub const CONTRACT_CACHE_FOLDER: &str = "tests/sc_cache";
 pub struct TestData {}
 
 impl TestData {
-    pub fn transaction() -> Transaction {
-        Transaction {
+    pub fn transaction() -> TransactionV1 {
+        TransactionV1 {
             signer: [1u8; 32],
             commands: Vec::new(),
             priority_fee_per_gas: 0,

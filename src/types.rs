@@ -10,7 +10,7 @@ use std::ops::{Deref, DerefMut};
 
 use pchain_types::serialization::Serializable;
 use pchain_types::{
-    blockchain::{Command, Transaction},
+    blockchain::{Command, TransactionV1},
     cryptography::{PublicAddress, Sha256Hash},
 };
 
@@ -29,8 +29,8 @@ pub(crate) struct BaseTx {
     pub commands_len: usize,
 }
 
-impl From<&Transaction> for BaseTx {
-    fn from(tx: &Transaction) -> Self {
+impl From<&TransactionV1> for BaseTx {
+    fn from(tx: &TransactionV1) -> Self {
         Self {
             signer: tx.signer,
             hash: tx.hash,

@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-use pchain_types::blockchain::{Command, ExitStatus};
+use pchain_types::blockchain::{Command, ExitCodeV1};
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{commands::protocol, TransitionError, TransitionResult};
@@ -49,7 +49,7 @@ where
     ws_cache.ws.with_commit().set_nonce(signer, nonce);
 
     // Extract receipt from current execution result
-    let (cmd_receipt, _) = state.ctx.extract(ExitStatus::Success);
+    let (cmd_receipt, _) = state.ctx.extract(ExitCodeV1::Success);
     state.receipt.push_command_receipt(cmd_receipt);
 
     // Commit to New world state
