@@ -23,7 +23,7 @@ fn test_ctoc_api() {
     base_tx.gas_limit = 200_000_000;
 
     // Set data in the First Contract.
-    let result = pchain_runtime::Runtime::new().transition(
+    let result = pchain_runtime::Runtime::new().transition_v1(
         sws.world_state,
         TransactionV1 {
             commands: vec![ArgsBuilder::new().add(12345_i32).make_call(
@@ -43,7 +43,7 @@ fn test_ctoc_api() {
 
     // make contract call from Second Contract to call get_data_only from First Contract.
     let function_args = Vec::<Vec<u8>>::new().try_to_vec().unwrap();
-    let result = pchain_runtime::Runtime::new().transition(
+    let result = pchain_runtime::Runtime::new().transition_v1(
         sws.world_state,
         TransactionV1 {
             commands: vec![ArgsBuilder::new()
@@ -78,7 +78,7 @@ fn test_ctoc_api() {
     let function_args_bs: Vec<Vec<u8>> = vec![set_data_value_bs];
     BorshSerialize::serialize(&function_args_bs, &mut function_args).unwrap();
 
-    let result = pchain_runtime::Runtime::new().transition(
+    let result = pchain_runtime::Runtime::new().transition_v1(
         sws.world_state,
         TransactionV1 {
             commands: vec![ArgsBuilder::new()
@@ -118,7 +118,7 @@ fn test_ctoc_use_contract() {
     base_tx.gas_limit = 200_000_000;
 
     // Call the Second contract to make cross contract call to First contract
-    let result = pchain_runtime::Runtime::new().transition(
+    let result = pchain_runtime::Runtime::new().transition_v1(
         sws.world_state,
         TransactionV1 {
             commands: vec![ArgsBuilder::new().add(0u64).make_call(
@@ -154,7 +154,7 @@ fn test_ctoc_use_contract() {
         .is_some());
 
     // Call the Second contract to make cross contract call to First contract by using macro.
-    let result = pchain_runtime::Runtime::new().transition(
+    let result = pchain_runtime::Runtime::new().transition_v1(
         sws.world_state,
         TransactionV1 {
             commands: vec![ArgsBuilder::new()
@@ -221,11 +221,11 @@ fn test_ctoc_with_insufficient_gas_limit() {
         nonce: 0,
         ..base_tx
     };
-    let tx_base_cost = pchain_runtime::gas::tx_inclusion_cost(
+    let tx_base_cost = pchain_runtime::gas::tx_inclusion_cost_v1(
         pchain_types::serialization::Serializable::serialize(&tx).len(),
         tx.commands.len(),
     );
-    let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd.clone());
     assert_eq!(extract_gas_used(&result), 6862810);
     let receipt = result.receipt.unwrap();
     assert_eq!(
@@ -269,7 +269,7 @@ fn deploy_two_contracts(
     tx.commands = vec![deploy_1];
     tx.gas_limit = 300_000_000;
 
-    let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd.clone());
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -288,7 +288,7 @@ fn deploy_two_contracts(
     tx.nonce = 1;
     tx.gas_limit = 300_000_000;
 
-    let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd.clone());
     assert_eq!(extract_gas_used(&result), 220290230);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);

@@ -13,6 +13,8 @@ pub(crate) struct CommandOutputCache {
     /// value returned by a call transaction using the `return_value` SDK function.
     /// It is None if the execution has not/did not return anything.
     pub(in crate::execution) return_values: Option<Vec<u8>>,
+    
+    // TODO - Support V2 output
 }
 
 impl CommandOutputCache {

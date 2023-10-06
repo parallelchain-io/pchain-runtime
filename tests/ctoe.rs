@@ -30,7 +30,7 @@ fn test_success_ctoe() {
         .empty_args()
         .make_deploy(contract_code, 0)];
 
-    let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd.clone());
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState = result.new_state.into();
@@ -40,7 +40,7 @@ fn test_success_ctoe() {
     base_tx.gas_limit = 100_000_000;
 
     // make transfer balance to contract itself
-    let result = pchain_runtime::Runtime::new().transition(
+    let result = pchain_runtime::Runtime::new().transition_v1(
         sws.world_state,
         TransactionV1 {
             commands: vec![ArgsBuilder::new()
@@ -62,7 +62,7 @@ fn test_success_ctoe() {
     assert_eq!(contract_balance, 100_000_u64);
 
     // make transfer balance to another address itself
-    let result = pchain_runtime::Runtime::new().transition(
+    let result = pchain_runtime::Runtime::new().transition_v1(
         sws.world_state,
         TransactionV1 {
             commands: vec![ArgsBuilder::new()
@@ -114,7 +114,7 @@ fn test_ctoe_tx_with_insufficient_balance() {
         signature: [0u8; 64],
     };
 
-    let result = pchain_runtime::Runtime::new().transition(sws.world_state, tx, bd.clone());
+    let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd.clone());
     assert_eq!(extract_gas_used(&result), 220290230);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
@@ -125,7 +125,7 @@ fn test_ctoe_tx_with_insufficient_balance() {
     base_tx.gas_limit = 100_000_000;
 
     // make transfer balance
-    let result = pchain_runtime::Runtime::new().transition(
+    let result = pchain_runtime::Runtime::new().transition_v1(
         sws.world_state,
         TransactionV1 {
             commands: vec![ArgsBuilder::new()

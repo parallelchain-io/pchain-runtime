@@ -226,6 +226,7 @@ where
         // by default, fields would be inherited from parent transaction
         let call_tx = CallTx {
             base_tx: BaseTx {
+                command_kinds: env.call_tx.command_kinds.clone(),
                 signer: env.call_tx.target,
                 gas_limit: gas_meter.remaining_gas(),
                 ..env.call_tx.base_tx

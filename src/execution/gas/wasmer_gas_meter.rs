@@ -6,7 +6,7 @@ use wasmer::Global;
 
 use crate::{
     contract::{wasmer::memory::MemoryContext, ContractModule, SmartContractContext},
-    execution::cache::{CacheKey, CacheValue, CommandOutputCache, WorldStateCache},
+    execution::cache::{CacheKey, CacheValue, CommandOutputCache, WorldStateCache}, types::TxnVersion,
 };
 
 use super::{
@@ -61,6 +61,7 @@ where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
     M: MemoryContext,
 {
+    version: TxnVersion,
     memory_ctx: &'a M,
     wasmer_remaining_gas: &'a WasmerRemainingGas,
     command_output_cache: &'a mut CommandOutputCache,
@@ -78,6 +79,7 @@ where
         gas_meter: &'a mut GasMeter<S>,
     ) -> Self {
         Self {
+            version: gas_meter.version,
             memory_ctx,
             wasmer_remaining_gas,
             ws_cache: &mut gas_meter.ws_cache,
@@ -120,6 +122,7 @@ where
 
     pub fn ws_set_app_data(&mut self, address: PublicAddress, app_key: AppKey, value: Vec<u8>) {
         let result = operation::ws_set(
+            self.version,
             self.ws_cache,
             CacheKey::App(address, app_key),
             CacheValue::App(value),
@@ -130,6 +133,7 @@ where
     /// Sets balance in the write set. It does not write to WS immediately.
     pub fn ws_set_balance(&mut self, address: PublicAddress, value: u64) {
         let result = operation::ws_set(
+            self.version,
             self.ws_cache,
             CacheKey::Balance(address),
             CacheValue::Balance(value),

@@ -8,15 +8,18 @@
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
-use pchain_types::serialization::Serializable;
 use pchain_types::{
-    blockchain::{Command, TransactionV1},
+    blockchain::{Command, TransactionV1, TransactionV2},
     cryptography::{PublicAddress, Sha256Hash},
+    serialization::Serializable,
 };
 
 /// BaseTx consists of common fields inside [Transaction].
 #[derive(Clone, Default)]
 pub(crate) struct BaseTx {
+    pub version: TxnVersion,
+    pub command_kinds: Vec<CommandKind>,
+
     pub signer: PublicAddress,
     pub hash: Sha256Hash,
     pub nonce: u64,
@@ -32,6 +35,8 @@ pub(crate) struct BaseTx {
 impl From<&TransactionV1> for BaseTx {
     fn from(tx: &TransactionV1) -> Self {
         Self {
+            version: TxnVersion::V1,
+            command_kinds: tx.commands.iter().map(CommandKind::from).collect(),
             signer: tx.signer,
             hash: tx.hash,
             nonce: tx.nonce,
@@ -39,6 +44,71 @@ impl From<&TransactionV1> for BaseTx {
             priority_fee_per_gas: tx.priority_fee_per_gas,
             size: tx.serialize().len(),
             commands_len: tx.commands.len(),
+        }
+    }
+}
+
+impl From<&TransactionV2> for BaseTx {
+    fn from(tx: &TransactionV2) -> Self {
+        Self {
+            version: TxnVersion::V2,
+            command_kinds: tx.commands.iter().map(CommandKind::from).collect(),
+            signer: tx.signer,
+            hash: tx.hash,
+            nonce: tx.nonce,
+            gas_limit: tx.gas_limit,
+            priority_fee_per_gas: tx.priority_fee_per_gas,
+            size: tx.serialize().len(),
+            commands_len: tx.commands.len(),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum TxnVersion {
+    V1,
+    V2
+}
+
+impl Default for TxnVersion {
+    fn default() -> Self {
+        Self::V1
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum CommandKind {
+    Transfer,
+    Deploy,
+    Call, 
+    CreatePool,
+    SetPoolSettings,
+    DeletePool,
+    CreateDeposit,
+    SetDepositSettings,
+    TopUpDeposit,
+    WithdrawDeposit,
+    StakeDeposit,
+    UnstakeDeposit,
+    NextEpoch
+}
+
+impl From<&Command> for CommandKind {
+    fn from(command: &Command) -> Self {
+        match command {
+            Command::Transfer(_) => CommandKind::Transfer,
+            Command::Deploy(_) => CommandKind::Deploy,
+            Command::Call(_) => CommandKind::Call,
+            Command::CreatePool(_) => CommandKind::CreatePool,
+            Command::SetPoolSettings(_) => CommandKind::SetPoolSettings,
+            Command::DeletePool => CommandKind::DeletePool,
+            Command::CreateDeposit(_) => CommandKind::CreateDeposit,
+            Command::SetDepositSettings(_) => CommandKind::SetDepositSettings,
+            Command::TopUpDeposit(_) => CommandKind::TopUpDeposit,
+            Command::WithdrawDeposit(_) => CommandKind::WithdrawDeposit,
+            Command::StakeDeposit(_) => CommandKind::StakeDeposit,
+            Command::UnstakeDeposit(_) => CommandKind::UnstakeDeposit,
+            Command::NextEpoch => CommandKind::NextEpoch,
         }
     }
 }

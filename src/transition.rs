@@ -19,7 +19,7 @@
 //! [Runtime] also provides method to execute a [view call](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
 
 use pchain_types::{
-    blockchain::{Command, CommandReceiptV1, ExitCodeV1, ReceiptV1, TransactionV1},
+    blockchain::{Command, CommandReceiptV1, ReceiptV1, TransactionV1, TransactionV2, ReceiptV2, Log},
     cryptography::PublicAddress,
 };
 use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
@@ -27,8 +27,8 @@ use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
 use crate::{
     contract::SmartContractContext,
     execution::{cache::WorldStateCache, execute_commands, state::ExecutionState},
-    execution::{execute_next_epoch_command, execute_view, gas::GasMeter},
-    types::{BaseTx, DeferredCommand},
+    execution::{execute_next_epoch_command_v1, execute_view, gas::GasMeter, execute_next_epoch_command_v2},
+    types::{BaseTx, DeferredCommand, TxnVersion},
     BlockchainParams, Cache, TransitionError,
 };
 
@@ -42,10 +42,7 @@ pub const fn cbi_version() -> u32 {
 /// differ in configurations such as data cache for smart contract and memory limit to WASM execution.
 #[derive(Default)]
 pub struct Runtime {
-    /// Smart Contract Cache
-    sc_cache: Option<Cache>,
-    /// Memory limit to wasm linear memory in contract execution
-    sc_memory_limit: Option<usize>,
+    sc_context: SmartContractContext,
 }
 
 impl Runtime {
@@ -55,32 +52,35 @@ impl Runtime {
 
     /// specify smart contract cache to improve performance for contract code compilation.
     pub fn set_smart_contract_cache(mut self, sc_cache: Cache) -> Self {
-        self.sc_cache = Some(sc_cache);
+        self.sc_context.cache = Some(sc_cache);
         self
     }
 
     /// specify the limit to wasm linear memory in contract execution.
     /// It is a tunable maximum guest memory limit that is made available to the VM
     pub fn set_smart_contract_memory_limit(mut self, memory_limit: usize) -> Self {
-        self.sc_memory_limit = Some(memory_limit);
+        self.sc_context.memory_limit = Some(memory_limit);
         self
     }
 
     /// state transition of world state (WS) from transaction (tx) and blockchain data (bd) as inputs.
-    pub fn transition<S: WorldStateStorage + Send + Sync + Clone + 'static>(
+    pub fn transition_v1<S: WorldStateStorage + Send + Sync + Clone + 'static>(
         &self,
         ws: WorldState<S>,
         tx: TransactionV1,
         bd: BlockchainParams,
-    ) -> TransitionResult<S> {
-        // create transition context from world state
-        let mut ctx = TransitionContext::new(ws, tx.gas_limit);
-        ctx.sc_context.cache = self.sc_cache.clone();
-        ctx.sc_context.memory_limit = self.sc_memory_limit;
-
+    ) -> TransitionResultV1<S> {
         // transaction inputs
         let base_tx = BaseTx::from(&tx);
         let commands = tx.commands;
+
+        // create transition context from world state
+        let mut ctx = TransitionContext::new(
+            base_tx.version,
+            ws,
+            tx.gas_limit
+        );
+        ctx.sc_context = self.sc_context.clone();
 
         // initial state for transition
         let state = ExecutionState {
@@ -92,14 +92,49 @@ impl Runtime {
 
         // initiate command execution
         if commands.iter().any(|c| matches!(c, Command::NextEpoch)) {
-            execute_next_epoch_command(state, commands)
+            execute_next_epoch_command_v1(state, commands)
         } else {
-            execute_commands::execute_commands(state, commands)
+            execute_commands::execute_commands_v1(state, commands)
+        }
+    }
+
+    /// state transition of world state (WS) from transaction (tx) and blockchain data (bd) as inputs.
+    pub fn transition_v2<S: WorldStateStorage + Send + Sync + Clone + 'static>(
+        &self,
+        ws: WorldState<S>,
+        tx: TransactionV2,
+        bd: BlockchainParams,
+    ) -> TransitionResultV2<S> {
+        // transaction inputs
+        let base_tx = BaseTx::from(&tx);
+        let commands = tx.commands;
+
+        // create transition context from world state
+        let mut ctx = TransitionContext::new(
+            base_tx.version,
+            ws,
+            tx.gas_limit
+        );
+        ctx.sc_context = self.sc_context.clone();
+
+        // initial state for transition
+        let state = ExecutionState {
+            tx: base_tx,
+            ctx,
+            bd,
+            receipt: Default::default(),
+        };
+
+        // initiate command execution
+        if commands.iter().any(|c| matches!(c, Command::NextEpoch)) {
+            execute_next_epoch_command_v2(state, commands)
+        } else {
+            execute_commands::execute_commands_v2(state, commands)
         }
     }
 
     /// view performs view call to a target contract
-    pub fn view<S: WorldStateStorage + Send + Sync + Clone + 'static>(
+    pub fn view_v1<S: WorldStateStorage + Send + Sync + Clone + 'static>(
         &self,
         ws: WorldState<S>,
         gas_limit: u64,
@@ -108,9 +143,8 @@ impl Runtime {
         arguments: Option<Vec<Vec<u8>>>,
     ) -> (CommandReceiptV1, Option<TransitionError>) {
         // create transition context from world state
-        let mut ctx = TransitionContext::new(ws, gas_limit);
-        ctx.sc_context.cache = self.sc_cache.clone();
-        ctx.sc_context.memory_limit = self.sc_memory_limit;
+        let mut ctx = TransitionContext::new(TxnVersion::V1, ws, gas_limit);
+        ctx.sc_context = self.sc_context.clone();
 
         // create a dummy transaction
         let dummy_tx = BaseTx {
@@ -135,7 +169,7 @@ impl Runtime {
 
 /// Result of state transition. It is the return type of `pchain_runtime::Runtime::transition`.
 #[derive(Clone)]
-pub struct TransitionResult<S>
+pub struct TransitionResultV1<S>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
@@ -143,6 +177,26 @@ where
     pub new_state: WorldState<S>,
     /// Transaction receipt. None if the transition receipt is not includable in the block
     pub receipt: Option<ReceiptV1>,
+    /// Transition error. None if no error.
+    pub error: Option<TransitionError>,
+    /// Changes in validate set.
+    /// It is specific to [Next Epoch](pchain_types::blockchain::Command::NextEpoch) Command. None for other commands.
+    pub validator_changes: Option<ValidatorChanges>,
+}
+
+/// Result of state transition. It is the return type of `pchain_runtime::Runtime::transition`.
+/// 
+/// [V1](TransitionResultV1) -> V2:
+/// - TODO
+#[derive(Clone)]
+pub struct TransitionResultV2<S>
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
+{
+    /// New world state (ws') after state transition
+    pub new_state: WorldState<S>,
+    /// Transaction receipt. None if the transition receipt is not includable in the block
+    pub receipt: Option<ReceiptV2>,
     /// Transition error. None if no error.
     pub error: Option<TransitionError>,
     /// Changes in validate set.
@@ -180,14 +234,11 @@ impl<S> TransitionContext<S>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    pub fn new(ws: WorldState<S>, gas_limit: u64) -> Self {
-        let host_gm = GasMeter::new(WorldStateCache::new(ws), gas_limit);
+    pub fn new(version: TxnVersion, ws: WorldState<S>, gas_limit: u64) -> Self {
+        let host_gm = GasMeter::new(version, WorldStateCache::new(ws), gas_limit);
 
         Self {
-            sc_context: SmartContractContext {
-                cache: None,
-                memory_limit: None,
-            },
+            sc_context: Default::default(),
             deferred_commands: Vec::new(),
             gas_meter: host_gm,
         }
@@ -221,9 +272,8 @@ where
     //
     /// Output the CommandReceipt and clear the intermediate context for next command execution.
     pub fn extract(
-        &mut self,
-        exit_code: ExitCodeV1,
-    ) -> (CommandReceiptV1, Option<Vec<DeferredCommand>>) {
+        &mut self
+    ) -> (u64, Vec<Log>, Vec<u8>, Option<Vec<DeferredCommand>>) {
         // 1. Take the fields from output cache and update to gas meter at this checkpoint
         let (gas_used, logs, return_values) = self.gas_meter.take_current_command_result();
 
@@ -232,12 +282,9 @@ where
             .then_some(std::mem::take(&mut self.deferred_commands));
 
         (
-            CommandReceiptV1 {
-                exit_code,
-                gas_used,
-                return_values,
-                logs,
-            },
+            gas_used,
+            logs,
+            return_values,
             deferred_commands,
         )
     }

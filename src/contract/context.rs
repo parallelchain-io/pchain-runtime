@@ -9,7 +9,7 @@
 use super::wasmer::cache::Cache;
 
 /// Smart Contract Context stores useful information for contract execution.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct SmartContractContext {
     /// smart contract cache for storing compiled wasmer module to save transition time
     pub cache: Option<Cache>,

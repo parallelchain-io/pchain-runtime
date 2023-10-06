@@ -29,7 +29,8 @@
 //! |G_wkeccak256   | [CRYPTO_KECCAK256_PER_BYTE]   |
 //! |G_wripemd160   | [CRYPTO_RIPEMD160_PER_BYTE]   |
 //! |G_wvrfy25519   | [crypto_verify_ed25519_signature_cost]  |
-//! |G_txincl       | [tx_inclusion_cost] |
+//! |G_txincl       | [tx_inclusion_cost_v1] |
+//! |G_txinclv2     | [tx_inclusion_cost_v2] |
 //!
 
 /* ↓↓↓ Gas Costs for WASM opcode execution ↓↓↓ */
@@ -228,7 +229,33 @@ pub const MIN_CMDRECP_SIZE: u64 = 17;
 ///     - signer's balance during two phases
 ///     - proposer's balance
 ///     - treasury's balance
-pub fn tx_inclusion_cost(tx_size: usize, commands_len: usize) -> u64 {
+pub fn tx_inclusion_cost_v1(tx_size: usize, commands_len: usize) -> u64 {
+    // (1) Transaction storage size
+    let tx_size = tx_size as u64;
+    // (2) Minimum size of receipt
+    let min_receipt_size = minimum_receipt_size(commands_len);
+    // (3) Cost for 5 read-write operations
+    let rw_key_cost = (
+        // Read cost
+        get_cost(ACCOUNT_STATE_KEY_LENGTH, 8)
+            // Write cost
+            .saturating_add(set_cost_write_new_value(8))
+            .saturating_add(set_cost_rehash(ACCOUNT_STATE_KEY_LENGTH))
+    )
+    .saturating_mul(5);
+
+    // Multiply by blockchain storage write cost and add the cost of 5 read-write operations.
+    tx_size
+        .saturating_add(min_receipt_size)
+        .saturating_mul(BLOCKCHAIN_WRITE_PER_BYTE_COST)
+        .saturating_add(rw_key_cost)
+}
+
+/// tx_inclusion_cost is the minimum cost for a transaction to be included in the blockchain.
+///
+/// [V1](tx_inclusion_cost_v1) -> V2:
+/// - TODO
+pub fn tx_inclusion_cost_v2(tx_size: usize, commands_len: usize) -> u64 {
     // (1) Transaction storage size
     let tx_size = tx_size as u64;
     // (2) Minimum size of receipt

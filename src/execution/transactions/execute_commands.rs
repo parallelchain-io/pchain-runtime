@@ -50,22 +50,22 @@ use crate::{
         state::ExecutionState,
     },
     types::DeferredCommand,
-    TransitionResult,
+    TransitionResultV1, transition::TransitionResultV2,
 };
 
 /// Backbone logic of Commands Execution
-pub(crate) fn execute_commands<S>(
+pub(crate) fn execute_commands_v1<S>(
     mut state: ExecutionState<S>,
     commands: Vec<Command>,
-) -> TransitionResult<S>
+) -> TransitionResultV1<S>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
     // Phase: Pre-Charge
     let pre_charge_result = phases::pre_charge(&mut state);
     if let Err(err) = pre_charge_result {
-        return TransitionResult {
-            new_state: state.finalize().0,
+        return TransitionResultV1 {
+            new_state: state.finalize_v1().0,
             receipt: None,
             error: Some(err),
             validator_changes: None,
@@ -74,15 +74,19 @@ where
 
     // Phase: Command(s)
     let mut executable_commands = ExecutableCommands::new(commands);
+    let mut cmd_index = 0;
 
     while let Some(executable_command) = executable_commands.next_command() {
 
         // Execute command
         let result = match executable_command {
-            ExecutableCommand::TransactionCommmand(command) => 
-                command.execute(&mut state),
-            ExecutableCommand::DeferredCommand(deferred_command) =>
-                deferred_command.execute(&mut state),
+            ExecutableCommand::TransactionCommmand(command) => {
+                let result = command.execute(&mut state, cmd_index);
+                cmd_index += 1;
+                result
+            } ExecutableCommand::DeferredCommand(deferred_command) => {
+                deferred_command.execute(&mut state, cmd_index)
+            }
         };
 
         // Proceed execution result
@@ -97,9 +101,9 @@ where
             // in case of error, stop and return result
             Err(error) => {
                 // Phase: Charge (abort)
-                let (new_state, receipt) = phases::charge(state).finalize();
+                let (new_state, receipt) = phases::charge(state).finalize_v1();
 
-                return TransitionResult {
+                return TransitionResultV1 {
                     new_state,
                     error: Some(error),
                     receipt: Some(receipt),
@@ -110,9 +114,80 @@ where
     }
 
     // Phase: Charge
-    let (new_state, receipt) = phases::charge(state).finalize();
+    let (new_state, receipt) = phases::charge(state).finalize_v1();
 
-    TransitionResult {
+    TransitionResultV1 {
+        new_state,
+        error: None,
+        receipt: Some(receipt),
+        validator_changes: None,
+    }
+}
+
+/// Backbone logic of Commands Execution
+pub(crate) fn execute_commands_v2<S>(
+    mut state: ExecutionState<S>,
+    commands: Vec<Command>,
+) -> TransitionResultV2<S>
+where
+    S: WorldStateStorage + Send + Sync + Clone,
+{
+    // Phase: Pre-Charge
+    let pre_charge_result = phases::pre_charge(&mut state);
+    if let Err(err) = pre_charge_result {
+        return TransitionResultV2 {
+            new_state: state.finalize_v2().0,
+            receipt: None,
+            error: Some(err),
+            validator_changes: None,
+        };
+    }
+
+    // Phase: Command(s)
+    let mut executable_commands = ExecutableCommands::new(commands);
+    let mut cmd_index = 0;
+
+    while let Some(executable_command) = executable_commands.next_command() {
+
+        // Execute command
+        let result = match executable_command {
+            ExecutableCommand::TransactionCommmand(command) => {
+                let result = command.execute(&mut state, cmd_index);
+                cmd_index += 1;
+                result
+            }
+            ExecutableCommand::DeferredCommand(deferred_command) =>
+                deferred_command.execute(&mut state, cmd_index),
+        };
+
+        // Proceed execution result
+        match result {
+            // command execution is not completed, continue with resulting state
+            Ok(deferred_commands_from_call) => {
+                // append command triggered from Call
+                if let Some(commands_from_call) = deferred_commands_from_call {
+                    executable_commands.push_deferred_commands(commands_from_call);
+                }
+            }
+            // in case of error, stop and return result
+            Err(error) => {
+                // Phase: Charge (abort)
+                let (new_state, receipt) = phases::charge(state).finalize_v2();
+
+                return TransitionResultV2 {
+                    new_state,
+                    error: Some(error),
+                    receipt: Some(receipt),
+                    validator_changes: None,
+                };
+            }
+        }
+    }
+
+    // Phase: Charge
+    let (new_state, receipt) = phases::charge(state).finalize_v2();
+
+    TransitionResultV2 {
         new_state,
         error: None,
         receipt: Some(receipt),

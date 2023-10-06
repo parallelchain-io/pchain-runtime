@@ -1,7 +1,7 @@
 use super::SimulateWorldStateStorage;
-use pchain_runtime::TransitionResult;
+use pchain_runtime::TransitionResultV1;
 
-pub(crate) fn extract_gas_used(ret: &TransitionResult<SimulateWorldStateStorage>) -> u64 {
+pub(crate) fn extract_gas_used(ret: &TransitionResultV1<SimulateWorldStateStorage>) -> u64 {
     ret.receipt
         .as_ref()
         .unwrap()

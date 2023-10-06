@@ -23,14 +23,19 @@ pub(crate) fn execute_view<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    match account::call(&mut state, true, target, method, arguments, None) {
-        Ok(()) => {
-            let (cmd_receipt, _) = state.ctx.extract(ExitCodeV1::Success);
-            (cmd_receipt, None)
-        }
-        Err(error) => {
-            let (cmd_receipt, _) = state.ctx.extract(ExitCodeV1::from(&error));
-            (cmd_receipt, Some(error))
-        }
-    }
+    let (exit_code, transition_error) = match account::call(&mut state, true, target, method, arguments, None) {
+        Ok(()) => (ExitCodeV1::Success, None),
+        Err(error) => (ExitCodeV1::from(&error), Some(error))
+    };
+    let (gas_used, logs, return_values, _) = state.ctx.extract();
+
+    (
+        CommandReceiptV1 {
+            exit_code,
+            gas_used, 
+            logs, 
+            return_values
+        },
+        transition_error
+    )
 }

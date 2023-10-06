@@ -15,7 +15,7 @@ use pchain_world_state::{
 
 use crate::{
     contract::{ContractModule, SmartContractContext},
-    gas, TransitionError,
+    gas, TransitionError, types::TxnVersion,
 };
 
 use super::{
@@ -32,6 +32,8 @@ pub(crate) struct GasMeter<S>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
+    pub version: TxnVersion,
+
     /// gas limit of the entire txn
     pub gas_limit: u64,
 
@@ -55,8 +57,9 @@ impl<S> GasMeter<S>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    pub fn new(ws_cache: WorldStateCache<S>, gas_limit: u64) -> Self {
+    pub fn new(version: TxnVersion, ws_cache: WorldStateCache<S>, gas_limit: u64) -> Self {
         Self {
+            version,
             ws_cache,
             gas_limit,
             total_gas_used_for_executed_commands: 0,
@@ -141,7 +144,7 @@ where
         commands_len: usize,
     ) -> Result<(), TransitionError> {
         // stored separately because it is not considered to belong to a single command
-        let required_cost = gas::tx_inclusion_cost(tx_size, commands_len);
+        let required_cost = gas::tx_inclusion_cost_v1(tx_size, commands_len);
         if required_cost > self.gas_limit {
             return Err(TransitionError::PreExecutionGasExhausted);
         } else {
@@ -226,6 +229,7 @@ where
     //
     pub fn ws_set_app_data(&mut self, address: PublicAddress, app_key: AppKey, value: Vec<u8>) {
         let result = operation::ws_set(
+            self.version,
             &mut self.ws_cache,
             CacheKey::App(address, app_key),
             CacheValue::App(value),
@@ -236,6 +240,7 @@ where
     /// Sets balance in the write set. It does not write to WS immediately.
     pub fn ws_set_balance(&mut self, address: PublicAddress, value: u64) {
         let result = operation::ws_set(
+            self.version,
             &mut self.ws_cache,
             CacheKey::Balance(address),
             CacheValue::Balance(value),
@@ -246,6 +251,7 @@ where
     /// Sets CBI version in the write set. It does not write to WS immediately.
     pub fn ws_set_cbi_version(&mut self, address: PublicAddress, cbi_version: u32) {
         let result = operation::ws_set(
+            self.version,
             &mut self.ws_cache,
             CacheKey::CBIVersion(address),
             CacheValue::CBIVersion(cbi_version),
@@ -256,6 +262,7 @@ where
     /// Sets contract bytecode in the write set. It does not write to WS immediately.
     pub fn ws_set_code(&mut self, address: PublicAddress, code: Vec<u8>) {
         let result = operation::ws_set(
+            self.version,
             &mut self.ws_cache,
             CacheKey::ContractCode(address),
             CacheValue::ContractCode(code),

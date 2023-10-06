@@ -4,7 +4,7 @@
 */
 
 use pchain_types::{
-    blockchain::{Command, ExitCodeV1},
+    blockchain::{Command, ExitCodeV1, ExitCodeV2},
     cryptography::PublicAddress,
     runtime::{
         CallInput, CreateDepositInput, CreatePoolInput, DeployInput, SetDepositSettingsInput,
@@ -15,7 +15,7 @@ use pchain_types::{
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
-    commands::account, execution::state::ExecutionState, types::DeferredCommand, TransitionError,
+    commands::account, execution::state::ExecutionState, types::{DeferredCommand, TxnVersion, CommandKind}, TransitionError,
 };
 
 use super::staking;
@@ -24,6 +24,7 @@ pub(crate) trait Executable {
     fn execute<S>(
         self,
         state: &mut ExecutionState<S>,
+        command_index: usize,
     ) -> Result<Option<Vec<DeferredCommand>>, TransitionError>
     where
         S: WorldStateStorage + Send + Sync + Clone + 'static;
@@ -33,19 +34,34 @@ impl Executable for Command {
     fn execute<S>(
         self,
         state: &mut ExecutionState<S>,
+        command_index: usize,
     ) -> Result<Option<Vec<DeferredCommand>>, TransitionError>
     where
         S: WorldStateStorage + Send + Sync + Clone + 'static,
     {
         let actor = state.tx.signer;
+        let command_kind = CommandKind::from(&self);
 
-        let result = execute(state, actor, self);
-        let exit_status = match &result {
-            Ok(_) => ExitCodeV1::Success,
-            Err(error) => ExitCodeV1::from(error)
+        let result = execute(state, command_index, actor, self);
+
+        let deferred_commands =  match state.tx.version {
+            TxnVersion::V1 => {
+                let exit_code = match &result {
+                    Ok(_) => ExitCodeV1::Success,
+                    Err(error) => ExitCodeV1::from(error)
+                };
+        
+                state.finalize_command_receipt_v1(exit_code)
+            },
+            TxnVersion::V2 => {
+                let exit_code = match &result {
+                    Ok(_) => ExitCodeV2::Ok,
+                    Err(error) => ExitCodeV2::from(error)
+                };
+                
+                state.finalize_command_receipt_v2(command_kind, exit_code)
+            }
         };
-
-        let deferred_commands = state.finalize_command_receipt(exit_status);
 
         result.map(|_| deferred_commands)
     }
@@ -55,20 +71,35 @@ impl Executable for DeferredCommand {
     fn execute<S>(
         self,
         state: &mut ExecutionState<S>,
+        command_index: usize,
     ) -> Result<Option<Vec<DeferredCommand>>, TransitionError>
     where
         S: WorldStateStorage + Send + Sync + Clone + 'static,
     {
         let actor = self.contract_address;
         let command = self.command;
+        let command_kind = CommandKind::from(&command);
         
-        let result = execute(state, actor, command);
-        let exit_status = match &result {
-            Ok(_) => ExitCodeV1::Success,
-            Err(error) => ExitCodeV1::from(error)
-        };
+        let result = execute(state, command_index, actor, command);
 
-        state.finalize_deferred_command_receipt(exit_status);
+        match state.tx.version {
+            TxnVersion::V1 => {
+                let exit_status = match &result {
+                    Ok(_) => ExitCodeV1::Success,
+                    Err(error) => ExitCodeV1::from(error)
+                };
+        
+                state.finalize_deferred_command_receipt_v1(exit_status);
+            },
+            TxnVersion::V2 => {
+                let exit_status = match &result {
+                    Ok(_) => ExitCodeV2::Ok,
+                    Err(error) => ExitCodeV2::from(error)
+                };
+                state.finalize_deferred_command_receipt_v2(command_kind, exit_status);
+            }
+        }
+        
 
         result.map(|_| None)
     }
@@ -76,6 +107,7 @@ impl Executable for DeferredCommand {
 
 fn execute<S>(
     state: &mut ExecutionState<S>,
+    command_index: usize,
     actor: PublicAddress,
     command: Command,
 ) -> Result<(), TransitionError>
@@ -89,7 +121,7 @@ where
         Command::Deploy(DeployInput {
             contract,
             cbi_version,
-        }) => account::deploy(state, contract.to_vec(), cbi_version),
+        }) => account::deploy(state, command_index as u32, contract.to_vec(), cbi_version),
         Command::Call(CallInput {
             target,
             method,

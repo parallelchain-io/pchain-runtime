@@ -24,12 +24,12 @@ use pchain_world_state::{
 use crate::{
     commands::protocol,
     execution::{
-        execute_commands::execute_commands, execute_next_epoch_command, state::ExecutionState,
+        execute_commands::execute_commands_v1, execute_next_epoch_command_v1, state::ExecutionState,
     },
     gas,
     transition::TransitionContext,
-    types::BaseTx,
-    BlockProposalStats, BlockchainParams, TransitionError, TransitionResult, ValidatorPerformance,
+    types::{BaseTx, TxnVersion},
+    BlockProposalStats, BlockchainParams, TransitionError, TransitionResultV1, ValidatorPerformance,
 };
 
 const TEST_MAX_VALIDATOR_SET_SIZE: u16 = constants::MAX_VALIDATOR_SET_SIZE;
@@ -64,7 +64,7 @@ fn test_empty_commands() {
     let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
 
     let tx_base_cost = set_tx(&mut state, ACCOUNT_A, 0, &vec![]);
-    let ret = execute_commands(state, vec![]);
+    let ret = execute_commands_v1(state, vec![]);
     assert_eq!((&ret.error, &ret.receipt), (&None, &Some(vec![])));
     let gas_used = extract_gas_used(&ret);
     assert_eq!(gas_used, 0);
@@ -83,7 +83,7 @@ fn test_transfer() {
     let state = create_state(None);
 
     let amount = 999_999;
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::Transfer(TransferInput {
             recipient: ACCOUNT_B,
@@ -111,7 +111,7 @@ fn test_transfer() {
 #[test]
 fn test_create_pool() {
     let state = create_state(None);
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })],
     );
@@ -142,7 +142,7 @@ fn test_create_pool() {
 
     let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
     state.tx.nonce = 1;
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })],
     );
@@ -151,7 +151,7 @@ fn test_create_pool() {
 
     let mut state = create_state(Some(ret.new_state));
     state.tx.nonce = 2;
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::CreatePool(CreatePoolInput {
             commission_rate: 101,
@@ -169,7 +169,7 @@ fn test_create_pool() {
 #[test]
 fn test_create_pool_set_policy() {
     let state = create_state(None);
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![
             Command::CreatePool(CreatePoolInput { commission_rate: 1 }),
@@ -198,7 +198,7 @@ fn test_create_pool_set_policy() {
 
     let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
     state.tx.signer = ACCOUNT_B;
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::SetPoolSettings(SetPoolSettingsInput {
             commission_rate: 3,
@@ -211,7 +211,7 @@ fn test_create_pool_set_policy() {
     let mut state = create_state(Some(ret.new_state));
     state.tx.signer = ACCOUNT_A;
     state.tx.nonce = 1;
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::SetPoolSettings(SetPoolSettingsInput {
             commission_rate: 101,
@@ -223,7 +223,7 @@ fn test_create_pool_set_policy() {
 
     let mut state = create_state(Some(ret.new_state));
     state.tx.nonce = 2;
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::SetPoolSettings(SetPoolSettingsInput {
             commission_rate: 2,
@@ -240,7 +240,7 @@ fn test_create_pool_set_policy() {
 #[test]
 fn test_create_delete_pool() {
     let state = create_state(None);
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![
             Command::CreatePool(CreatePoolInput { commission_rate: 1 }),
@@ -279,7 +279,7 @@ fn test_create_delete_pool() {
 
     let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
     state.tx.signer = ACCOUNT_B;
-    let ret = execute_commands(state, vec![Command::DeletePool]);
+    let ret = execute_commands_v1(state, vec![Command::DeletePool]);
     assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
     assert_eq!(extract_gas_used(&ret), 1980);
 }
@@ -293,7 +293,7 @@ fn test_create_delete_pool() {
 #[test]
 fn test_create_pool_create_deposit() {
     let state = create_state(None);
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })],
     );
@@ -312,7 +312,7 @@ fn test_create_pool_create_deposit() {
         auto_stake_rewards: false,
     })];
     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -340,7 +340,7 @@ fn test_create_pool_create_deposit() {
 
     let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
     state.tx.nonce = 1;
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::CreateDeposit(CreateDepositInput {
             operator: ACCOUNT_B,
@@ -358,7 +358,7 @@ fn test_create_pool_create_deposit() {
         auto_stake_rewards: false,
     })];
     set_tx(&mut state, ACCOUNT_B, 1, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(ret.error, Some(TransitionError::DepositsAlreadyExists));
     assert_eq!(extract_gas_used(&ret), 4600);
 
@@ -369,7 +369,7 @@ fn test_create_pool_create_deposit() {
         auto_stake_rewards: false,
     })];
     set_tx(&mut state, ACCOUNT_C, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         ret.error,
         Some(TransitionError::NotEnoughBalanceForTransfer)
@@ -405,7 +405,7 @@ fn test_create_deposit_set_policy() {
         }),
     ];
     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -431,7 +431,7 @@ fn test_create_deposit_set_policy() {
 
     let state = create_state(Some(state.ctx.into_ws_cache().ws));
 
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::SetDepositSettings(SetDepositSettingsInput {
             operator: ACCOUNT_B,
@@ -449,7 +449,7 @@ fn test_create_deposit_set_policy() {
         }), // Same deposit plocy
     ];
     set_tx(&mut state, ACCOUNT_B, 1, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(ret.error, Some(TransitionError::InvalidDepositPolicy));
     assert_eq!(extract_gas_used(&ret), 5290);
 }
@@ -482,7 +482,7 @@ fn test_create_deposit_topupdeposit() {
         }),
     ];
     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -508,7 +508,7 @@ fn test_create_deposit_topupdeposit() {
 
     ///// Exceptions: /////
     let state = create_state(Some(state.ctx.into_ws_cache().ws));
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::TopUpDeposit(TopUpDepositInput {
             operator: ACCOUNT_A,
@@ -525,7 +525,7 @@ fn test_create_deposit_topupdeposit() {
         auto_stake_rewards: false,
     })];
     set_tx(&mut state, ACCOUNT_C, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         ret.error,
         Some(TransitionError::NotEnoughBalanceForTransfer)
@@ -561,7 +561,7 @@ fn test_stake_deposit_delegated_stakes() {
         }), // stake more than deposit
     ];
     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -591,7 +591,7 @@ fn test_stake_deposit_delegated_stakes() {
         max_amount: 20_000,
     })];
     set_tx(&mut state, ACCOUNT_C, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(ret.error, Some(TransitionError::DepositsNotExists));
     assert_eq!(extract_gas_used(&ret), 2620);
 
@@ -601,7 +601,7 @@ fn test_stake_deposit_delegated_stakes() {
         max_amount: 1,
     })];
     set_tx(&mut state, ACCOUNT_B, 1, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(ret.error, Some(TransitionError::InvalidStakeAmount));
     assert_eq!(extract_gas_used(&ret), 16920);
 
@@ -609,7 +609,7 @@ fn test_stake_deposit_delegated_stakes() {
     let mut state = create_state(Some(ret.new_state));
     let commands = vec![Command::DeletePool];
     set_tx(&mut state, ACCOUNT_A, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(ret.error, None);
     assert_eq!(extract_gas_used(&ret), 0);
 
@@ -620,7 +620,7 @@ fn test_stake_deposit_delegated_stakes() {
         max_amount: 20_000,
     })];
     set_tx(&mut state, ACCOUNT_B, 2, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
     assert_eq!(extract_gas_used(&ret), 7620);
 }
@@ -645,7 +645,7 @@ fn test_stake_deposit_delegated_stakes_nvp_change_key() {
         max_amount: 6_300_000,
     })];
     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -708,7 +708,7 @@ fn test_stake_deposit_delegated_stakes_nvp_insert() {
         max_amount: 6_500_000,
     })];
     set_tx(&mut state, ACCOUNT_C, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -776,7 +776,7 @@ fn test_stake_deposit_delegated_stakes_insert() {
         max_amount: 250_000,
     })];
     set_tx(&mut state, ACCOUNT_C, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -808,7 +808,7 @@ fn test_stake_deposit_delegated_stakes_insert() {
         auto_stake_rewards: false,
     })];
     set_tx(&mut state, ACCOUNT_D, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -824,7 +824,7 @@ fn test_stake_deposit_delegated_stakes_insert() {
         max_amount: 100_000,
     })];
     set_tx(&mut state, ACCOUNT_D, 1, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(ret.error, Some(TransitionError::InvalidStakeAmount));
     assert_eq!(extract_gas_used(&ret), 18920);
 }
@@ -850,7 +850,7 @@ fn test_stake_deposit_delegated_stakes_change_key() {
         max_amount: 110_000,
     })];
     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -907,7 +907,7 @@ fn test_stake_deposit_delegated_stakes_existing() {
         max_amount: 40_000,
     })];
     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -946,7 +946,7 @@ fn test_stake_deposit_same_owner() {
 
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
     let state = create_state(Some(ws));
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::StakeDeposit(StakeDepositInput {
             operator: ACCOUNT_A,
@@ -995,7 +995,7 @@ fn test_stake_deposit_same_owner_nvp_change_key() {
         max_amount: 110_000,
     })];
     set_tx(&mut state, ACCOUNT_A, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1062,7 +1062,7 @@ fn test_stake_deposit_same_owner_nvp_insert() {
         max_amount: 150_000,
     })];
     set_tx(&mut state, ACCOUNT_C, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1120,7 +1120,7 @@ fn test_stake_deposit_same_owner_existing() {
 
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
     let state = create_state(Some(ws));
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::StakeDeposit(StakeDepositInput {
             operator: ACCOUNT_A,
@@ -1181,7 +1181,7 @@ fn test_unstake_deposit_delegated_stakes() {
         max_amount: 40_000,
     })];
     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1209,14 +1209,14 @@ fn test_unstake_deposit_delegated_stakes() {
         max_amount: 40_000,
     })];
     set_tx(&mut state, ACCOUNT_B, 1, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(ret.error, Some(TransitionError::DepositsNotExists));
     assert_eq!(extract_gas_used(&ret), 2620);
     // create Pool and deposit first
     let mut state = create_state(Some(ret.new_state));
     let commands = vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })];
     set_tx(&mut state, ACCOUNT_C, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1232,7 +1232,7 @@ fn test_unstake_deposit_delegated_stakes() {
         auto_stake_rewards: false,
     })];
     set_tx(&mut state, ACCOUNT_B, 2, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1248,12 +1248,12 @@ fn test_unstake_deposit_delegated_stakes() {
         max_amount: 10_000,
     })];
     set_tx(&mut state, ACCOUNT_B, 3, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(ret.error, Some(TransitionError::PoolHasNoStakes));
     assert_eq!(extract_gas_used(&ret), 9620);
     // delete pool first
     let state = create_state(Some(ret.new_state));
-    let ret = execute_commands(state, vec![Command::DeletePool]);
+    let ret = execute_commands_v1(state, vec![Command::DeletePool]);
     assert_eq!(
         (
             &ret.error,
@@ -1269,7 +1269,7 @@ fn test_unstake_deposit_delegated_stakes() {
         max_amount: 10_000,
     })];
     set_tx(&mut state, ACCOUNT_B, 4, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
     assert_eq!(extract_gas_used(&ret), 4600);
 }
@@ -1302,7 +1302,7 @@ fn test_unstake_deposit_delegated_stakes_remove() {
         max_amount: stake.power,
     })];
     set_tx(&mut state, biggest, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1363,7 +1363,7 @@ fn test_unstake_deposit_delegated_stakes_nvp_change_key() {
         }), // unstake more than staked
     ];
     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1430,7 +1430,7 @@ fn test_unstake_deposit_delegated_stakes_nvp_remove() {
         max_amount: 200_000,
     })];
     set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1483,7 +1483,7 @@ fn test_unstake_deposit_same_owner() {
 
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
     let state = create_state(Some(ws));
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::UnstakeDeposit(UnstakeDepositInput {
             operator: ACCOUNT_A,
@@ -1512,7 +1512,7 @@ fn test_unstake_deposit_same_owner() {
 
     let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
     state.tx.nonce = 1;
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::UnstakeDeposit(UnstakeDepositInput {
             operator: ACCOUNT_A,
@@ -1558,7 +1558,7 @@ fn test_unstake_deposit_same_owner_nvp_change_key() {
         max_amount: 190_000,
     })];
     set_tx(&mut state, ACCOUNT_T, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1630,7 +1630,7 @@ fn test_unstake_deposit_same_owner_nvp_remove() {
         max_amount: 200_000,
     })];
     set_tx(&mut state, ACCOUNT_T, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1697,7 +1697,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
         max_amount: 40_000,
     })];
     let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1739,7 +1739,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
     ///// Exceptions: /////
 
     let state = create_state(Some(state.ctx.into_ws_cache().ws));
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::WithdrawDeposit(WithdrawDepositInput {
             operator: ACCOUNT_A,
@@ -1752,7 +1752,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
     // First proceed next epoch
     let mut state = create_state(Some(ret.new_state));
     state.tx.nonce = 1;
-    let ret = execute_next_epoch_command(state, vec![Command::NextEpoch]);
+    let ret = execute_next_epoch_command_v1(state, vec![Command::NextEpoch]);
     assert_eq!(
         (
             &ret.error,
@@ -1770,7 +1770,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
         }), // 60_000 - 10_000
     ];
     set_tx(&mut state, ACCOUNT_B, 1, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1786,7 +1786,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
         max_amount: 10_000,
     })];
     set_tx(&mut state, ACCOUNT_B, 2, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(ret.error, Some(TransitionError::InvalidStakeAmount));
     assert_eq!(extract_gas_used(&ret), 19780);
 
@@ -1797,7 +1797,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
         ACCOUNT_A,
         TEST_MAX_VALIDATOR_SET_SIZE as u32,
     ));
-    let ret = execute_next_epoch_command(state, vec![Command::NextEpoch]);
+    let ret = execute_next_epoch_command_v1(state, vec![Command::NextEpoch]);
     assert_eq!(
         (
             &ret.error,
@@ -1815,7 +1815,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
         }), // reduce deposit to 60_000
     ];
     set_tx(&mut state, ACCOUNT_B, 3, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1831,7 +1831,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
         max_amount: 10_000,
     })];
     set_tx(&mut state, ACCOUNT_B, 4, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(ret.error, Some(TransitionError::InvalidStakeAmount));
     assert_eq!(extract_gas_used(&ret), 29960);
 }
@@ -1870,7 +1870,7 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_change_key() {
         max_amount: 200_000,
     })];
     let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -1966,7 +1966,7 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_remove() {
         max_amount: 300_000,
     })];
     let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -2055,7 +2055,7 @@ fn test_withdrawal_deposit_same_owner() {
         max_amount: 45_000,
     })];
     let tx_base_cost = set_tx(&mut state, ACCOUNT_A, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -2133,7 +2133,7 @@ fn test_withdrawal_deposit_same_owner_nvp_change_key() {
         max_amount: 200_000,
     })];
     let tx_base_cost = set_tx(&mut state, ACCOUNT_T, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -2225,7 +2225,7 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
         max_amount: 300_000,
     })];
     let tx_base_cost = set_tx(&mut state, ACCOUNT_T, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -2335,7 +2335,7 @@ fn test_withdrawal_deposit_bounded_by_vp() {
         max_amount: 40_000,
     })];
     let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -2437,7 +2437,7 @@ fn test_withdrawal_deposit_bounded_by_pvp() {
         max_amount: 40_000,
     })];
     let tx_base_cost = set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands(state, commands);
+    let ret = execute_commands_v1(state, commands);
     assert_eq!(
         (
             &ret.error,
@@ -3223,7 +3223,7 @@ fn test_change_of_validators() {
     let mut state = execute_next_epoch(state);
 
     state.tx.nonce = 1;
-    let ret = execute_commands(state, vec![Command::DeletePool]);
+    let ret = execute_commands_v1(state, vec![Command::DeletePool]);
     assert_eq!(
         (
             &ret.error,
@@ -3241,7 +3241,7 @@ fn test_change_of_validators() {
     let mut state = create_state(Some(state.ctx.into_ws_cache().ws));
     state.tx.signer = ACCOUNT_B;
     state.tx.nonce = 0;
-    let ret = execute_commands(
+    let ret = execute_commands_v1(
         state,
         vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })],
     );
@@ -3274,7 +3274,7 @@ fn create_state(init_ws: Option<WorldState<SimpleStore>>) -> ExecutionState<Simp
         }
     };
     let tx = create_tx(ACCOUNT_A);
-    let ctx = TransitionContext::new(ws, tx.gas_limit);
+    let ctx = TransitionContext::new(TxnVersion::V1, ws, tx.gas_limit);
     let base_tx = BaseTx::from(&tx);
 
     ExecutionState {
@@ -3295,7 +3295,7 @@ fn set_tx(
     tx.nonce = nonce;
     tx.commands = commands.clone();
     state.tx = BaseTx::from(&tx);
-    gas::tx_inclusion_cost(state.tx.size, state.tx.commands_len)
+    gas::tx_inclusion_cost_v1(state.tx.size, state.tx.commands_len)
 }
 
 fn create_tx(signer: PublicAddress) -> TransactionV1 {
@@ -3565,7 +3565,7 @@ fn setup_pool(
 }
 
 fn execute_next_epoch(state: ExecutionState<SimpleStore>) -> ExecutionState<SimpleStore> {
-    let ret = execute_next_epoch_command(state, vec![Command::NextEpoch]);
+    let ret = execute_next_epoch_command_v1(state, vec![Command::NextEpoch]);
     assert_eq!(
         (
             &ret.error,
@@ -3594,7 +3594,7 @@ fn execute_next_epoch(state: ExecutionState<SimpleStore>) -> ExecutionState<Simp
     create_state(Some(ret.new_state))
 }
 
-fn extract_gas_used(ret: &TransitionResult<SimpleStore>) -> u64 {
+fn extract_gas_used(ret: &TransitionResultV1<SimpleStore>) -> u64 {
     ret.receipt
         .as_ref()
         .unwrap()

@@ -8,7 +8,7 @@
 //! Transition Error is not failure code specified in [ExitStatus], which is not included
 //! in the block for transaction failure. The error types are for the purpose of diagnosis.
 
-use pchain_types::blockchain::ExitCodeV1;
+use pchain_types::blockchain::{ExitCodeV1, ExitCodeV2};
 
 use crate::contract::{wasmer::instance::MethodCallError, FuncError};
 
@@ -123,6 +123,16 @@ impl<'a> From<&'a TransitionError> for ExitCodeV1 {
             TransitionError::ExecutionProperGasExhausted
             | TransitionError::InternalExecutionProperGasExhaustion => ExitCodeV1::GasExhausted,
             _ => ExitCodeV1::Failed,
+        }
+    }
+}
+
+impl<'a> From<&'a TransitionError> for ExitCodeV2 {
+    fn from(value: &'a TransitionError) -> Self {
+        match value {
+            TransitionError::ExecutionProperGasExhausted
+            | TransitionError::InternalExecutionProperGasExhaustion => ExitCodeV2::GasExhausted,
+            _ => ExitCodeV2::Error
         }
     }
 }

@@ -27,7 +27,7 @@ fn test_view() {
         .set_smart_contract_cache(pchain_runtime::Cache::new(std::path::Path::new(
             CONTRACT_CACHE_FOLDER,
         )))
-        .view(
+        .view_v1(
             sws.world_state.clone(),
             u64::MAX,
             contract_address,
@@ -57,7 +57,7 @@ fn test_view() {
         .set_smart_contract_cache(pchain_runtime::Cache::new(std::path::Path::new(
             CONTRACT_CACHE_FOLDER,
         )))
-        .view(
+        .view_v1(
             sws.world_state.clone(),
             u64::MAX,
             contract_address,
@@ -72,7 +72,7 @@ fn test_view() {
         .set_smart_contract_cache(pchain_runtime::Cache::new(std::path::Path::new(
             CONTRACT_CACHE_FOLDER,
         )))
-        .view(
+        .view_v1(
             sws.world_state,
             u64::MAX,
             [123u8; 32],
@@ -102,7 +102,7 @@ fn test_view_failure() {
     sws.add_contract(target, wasm_bytes, pchain_runtime::cbi_version());
 
     // 1. wasm execution fails
-    let (receipt, error) = pchain_runtime::Runtime::new().view(
+    let (receipt, error) = pchain_runtime::Runtime::new().view_v1(
         sws.world_state.clone(),
         u64::MAX,
         target,
@@ -115,7 +115,7 @@ fn test_view_failure() {
     assert_eq!(error, Some(TransitionError::RuntimeError));
 
     // 2. fail for gas exhausted
-    let (receipt, error) = pchain_runtime::Runtime::new().view(
+    let (receipt, error) = pchain_runtime::Runtime::new().view_v1(
         sws.world_state.clone(),
         1_000_000, // smaller than gas_used in success case
         target,
@@ -125,7 +125,7 @@ fn test_view_failure() {
     assert_eq!(receipt.exit_code, ExitCodeV1::GasExhausted);
     assert_eq!(error, Some(TransitionError::ExecutionProperGasExhausted));
 
-    let (receipt, error) = pchain_runtime::Runtime::new().view(
+    let (receipt, error) = pchain_runtime::Runtime::new().view_v1(
         sws.world_state,
         u64::MAX,
         target,

@@ -5,7 +5,7 @@
 
 //! Implementation of executing [Account Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#account-commands).
 
-use pchain_types::cryptography::{PublicAddress, contract_address_v1};
+use pchain_types::cryptography::{PublicAddress, contract_address_v1, contract_address_v2};
 use pchain_world_state::storage::WorldStateStorage;
 use std::sync::{Arc, Mutex};
 
@@ -16,7 +16,7 @@ use crate::{
         ContractInstance, ContractModule, is_cbi_compatible,
     },
     execution::abort::{abort, abort_if_gas_exhausted},
-    types::{BaseTx, CallTx},
+    types::{BaseTx, CallTx, TxnVersion},
     TransitionError,
 };
 
@@ -155,6 +155,7 @@ where
 
         let call_tx = CallTx {
             base_tx: BaseTx {
+                command_kinds: state.tx.command_kinds.clone(),
                 gas_limit: gas_limit_for_execution,
                 ..state.tx
             },
@@ -192,13 +193,17 @@ where
 /// Execution of [pchain_types::blockchain::Command::Deploy]
 pub(crate) fn deploy<S>(
     state: &mut ExecutionState<S>,
+    cmd_index: u32,
     contract: Vec<u8>,
     cbi_version: u32,
 ) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    let contract_address = contract_address_v1(&state.tx.signer, state.tx.nonce);
+    let contract_address = match state.tx.version {
+        TxnVersion::V1 => contract_address_v1(&state.tx.signer, state.tx.nonce),
+        TxnVersion::V2 => contract_address_v2(&state.tx.signer, state.tx.nonce, cmd_index)
+    };
 
     // Instantiate instant to preform contract deployment.
     let instance = match DeployInstance::instantiate(state, contract, cbi_version, contract_address) {

@@ -8,7 +8,7 @@ use tiny_keccak::{Hasher as _, Keccak};
 use crate::{
     contract::{wasmer::memory::MemoryContext, ContractModule, SmartContractContext},
     execution::cache::{CacheKey, CacheValue, WorldStateCache},
-    gas,
+    gas, types::TxnVersion,
 };
 
 use super::CostChange;
@@ -16,6 +16,7 @@ use super::CostChange;
 pub(crate) type OperationReceipt<T> = (T, CostChange);
 
 pub(crate) fn ws_set<S>(
+    version: TxnVersion,
     ws_cache: &mut WorldStateCache<S>,
     key: CacheKey,
     value: CacheValue,
@@ -23,7 +24,10 @@ pub(crate) fn ws_set<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    let key_len = key.len();
+    let key_len = match version {
+        TxnVersion::V1 => key.len_v1(),
+        TxnVersion::V2 => key.len_v2()
+    };
 
     let new_val_len = value.len();
     let (old_val_len, get_cost) = ws_get(ws_cache, key.clone());
@@ -56,7 +60,7 @@ where
             CostChange::deduct(gas::get_code_cost(value.as_ref().map_or(0, |v| v.len())))
         }
         _ => CostChange::deduct(gas::get_cost(
-            key.len(),
+            key.len_v1(),
             value.as_ref().map_or(0, |v| v.len()),
         )),
     };
@@ -70,7 +74,7 @@ pub(crate) fn ws_contains<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    let cost_change = CostChange::deduct(gas::contains_cost(key.len()));
+    let cost_change = CostChange::deduct(gas::contains_cost(key.len_v1()));
     let ret = ws_cache.contains(key);
     (ret, cost_change)
 }

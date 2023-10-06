@@ -212,10 +212,22 @@ pub(crate) enum CacheKey {
 
 impl CacheKey {
     /// length of the value as an input to gas calculation
-    pub fn len(&self) -> usize {
+    pub fn len_v1(&self) -> usize {
         match self {
             CacheKey::App(address, key) => {
                 gas::ACCOUNT_STATE_KEY_LENGTH + address.len() + key.len()
+            }
+            CacheKey::Balance(_) | CacheKey::ContractCode(_) | CacheKey::CBIVersion(_) => {
+                gas::ACCOUNT_STATE_KEY_LENGTH
+            }
+        }
+    }
+
+    /// length of the value as an input to gas calculation
+    pub fn len_v2(&self) -> usize {
+        match self {
+            CacheKey::App(_address, key) => {
+                gas::ACCOUNT_STATE_KEY_LENGTH + key.len()
             }
             CacheKey::Balance(_) | CacheKey::ContractCode(_) | CacheKey::CBIVersion(_) => {
                 gas::ACCOUNT_STATE_KEY_LENGTH
