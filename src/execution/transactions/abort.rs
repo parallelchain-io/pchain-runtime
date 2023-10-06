@@ -28,7 +28,7 @@ where
 {
     if state.tx.gas_limit < state.ctx.gas_meter.total_gas_used() {
         state.ctx.revert_changes();
-        return Err(TransitionError::ExecutionProperGasExhausted)
+        return Err(TransitionError::ExecutionProperGasExhausted);
     }
     Ok(())
 }

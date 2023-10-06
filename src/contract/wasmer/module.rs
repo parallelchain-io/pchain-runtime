@@ -94,6 +94,7 @@ impl Module {
     }
 
     /// instantiate creates a new instance of this contract Module.
+    #[allow(clippy::result_large_err)]
     pub fn instantiate(
         &self,
         importable: &Importable,

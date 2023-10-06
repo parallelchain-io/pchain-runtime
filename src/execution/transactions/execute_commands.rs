@@ -127,13 +127,22 @@ pub(crate) struct ExecutableCommands(Vec<ExecutableCommand>);
 impl ExecutableCommands {
     // initialize from transaction commands
     fn new(commands: Vec<Command>) -> Self {
-        Self(commands.into_iter().map(ExecutableCommand::TransactionCommmand).rev().collect())
+        Self(
+            commands
+                .into_iter()
+                .map(ExecutableCommand::TransactionCommmand)
+                .rev()
+                .collect()
+        )
     }
 
     /// append a sequence of Commands and store as CommandTask with assigned task ID.
     fn push_deferred_commands(&mut self, commands: Vec<DeferredCommand>) {
         self.0.append(&mut Vec::<ExecutableCommand>::from_iter(
-            commands.into_iter().map(ExecutableCommand::DeferredCommand).rev(),
+            commands.
+                into_iter()
+                .map(ExecutableCommand::DeferredCommand)
+                .rev(),
         ));
     }
 

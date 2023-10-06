@@ -51,7 +51,7 @@ where
             .saturating_sub(remaining_gas);
 
         // Get the updated TransitionContext
-        let ctx = self.environment.context.lock().unwrap().clone(); // TODO better to take out from Arc Mutext rather than clone
+        let ctx = self.environment.context.lock().unwrap().clone(); // TODO Avoid clone, better to take out from Arc Mutext rather than clone
         (ctx, total_gas, call_error)
     }
 }

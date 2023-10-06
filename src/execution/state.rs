@@ -53,7 +53,6 @@ where
         // extract receipt from current execution result
         let (cmd_receipt, _) = self.ctx.extract(exit_status);
         self.receipt.push_deferred_command_receipt(cmd_receipt);
-
     }
 
     pub(crate) fn finalize_command_receipt(
@@ -63,7 +62,7 @@ where
         // extract receipt from current execution result
         let (cmd_receipt, deferred_commands_from_call) = self.ctx.extract(exit_status);
         self.receipt.push_command_receipt(cmd_receipt);
-        
+
         deferred_commands_from_call
     }
 

@@ -40,6 +40,7 @@ pub const fn cbi_version() -> u32 {
 
 /// A Runtime for state transition. Instants of runtime share the same execution logic, but
 /// differ in configurations such as data cache for smart contract and memory limit to WASM execution.
+#[derive(Default)]
 pub struct Runtime {
     /// Smart Contract Cache
     sc_cache: Option<Cache>,
@@ -49,10 +50,7 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn new() -> Self {
-        Self {
-            sc_cache: None,
-            sc_memory_limit: None,
-        }
+        Default::default()
     }
 
     /// specify smart contract cache to improve performance for contract code compilation.

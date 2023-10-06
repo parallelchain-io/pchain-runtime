@@ -30,11 +30,6 @@
 //! When transiting the state by executing smart [contract], it uses [wasmer] as underlying WebAssembly runtime,
 //! which is gas-metered, and the [gas] [cost] incurred will be set to transaction receipt.
 
-#![cfg_attr(
-    feature = "cargo-clippy",
-    allow(clippy::new_without_default, clippy::result_large_err)
-)]
-
 pub mod commands;
 
 pub mod contract;
