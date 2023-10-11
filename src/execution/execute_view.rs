@@ -27,14 +27,14 @@ where
         Ok(()) => (ExitCodeV1::Success, None),
         Err(error) => (ExitCodeV1::from(&error), Some(error))
     };
-    let (gas_used, logs, return_values, _) = state.ctx.extract();
+    let (gas_used, command_output, _) = state.ctx.extract();
 
     (
         CommandReceiptV1 {
             exit_code,
             gas_used, 
-            logs, 
-            return_values
+            logs: command_output.logs, 
+            return_values: command_output.return_values
         },
         transition_error
     )

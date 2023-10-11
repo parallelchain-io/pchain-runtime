@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-use pchain_types::blockchain::{Command, ExitCodeV1, CommandReceiptV1, ExitCodeV2};
+use pchain_types::blockchain::{Command, ExitCodeV1, ExitCodeV2};
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{commands::protocol, TransitionError, TransitionResultV1, transition::TransitionResultV2, types::CommandKind};
@@ -49,14 +49,8 @@ where
     ws_cache.ws.with_commit().set_nonce(signer, nonce);
 
     // Extract receipt from current execution result
-    let (gas_used, logs, return_values, _) = state.ctx.extract();
-    let cmd_receipt = CommandReceiptV1 {
-        exit_code: ExitCodeV1::Success,
-        gas_used, 
-        logs, 
-        return_values
-    };
-    state.receipt.push_command_receipt_v1(cmd_receipt);
+    let (gas_used, command_output, _) = state.ctx.extract();
+    state.receipt.push_command_receipt_v1(CommandKind::NextEpoch, ExitCodeV1::Success, gas_used, command_output);
 
     // Commit to New world state
     let (new_state, receipt) = state.finalize_v1();
@@ -108,8 +102,8 @@ where
     ws_cache.ws.with_commit().set_nonce(signer, nonce);
 
     // Extract receipt from current execution result
-    let (gas_used, logs, return_values, _) = state.ctx.extract();
-    state.receipt.push_command_receipt_v2(CommandKind::NextEpoch, ExitCodeV2::Ok, gas_used, logs, return_values);
+    let (gas_used, command_output, _) = state.ctx.extract();
+    state.receipt.push_command_receipt_v2(CommandKind::NextEpoch, ExitCodeV2::Ok, gas_used, command_output);
 
     // Commit to New world state
     let (new_state, receipt) = state.finalize_v2();

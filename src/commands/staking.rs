@@ -20,7 +20,7 @@ use crate::{
         abort::{abort, abort_if_gas_exhausted},
         state::ExecutionState,
     },
-    TransitionError,
+    TransitionError, types::TxnVersion,
 };
 
 /// Execution of [pchain_types::blockchain::Command::CreatePool]
@@ -277,11 +277,22 @@ where
     }
 
     // 5. Set the withdrawal amount to return_value
-    let return_value = withdrawal_amount.to_le_bytes().to_vec();
-    state
-        .ctx
-        .gas_meter
-        .command_output_set_return_values(return_value);
+    match state.tx.version {
+        TxnVersion::V1 => {
+            let return_value = withdrawal_amount.to_le_bytes().to_vec();
+            state
+                .ctx
+                .gas_meter
+                .command_output_set_return_values(return_value);
+        }
+        TxnVersion::V2 => {
+            state
+                .ctx
+                .gas_meter
+                .command_output_set_amount_withdrawn(withdrawal_amount);
+        }
+    }
+    
     abort_if_gas_exhausted(state)
 }
 
@@ -335,11 +346,21 @@ where
     };
 
     // Set the staked amount to return_value
-    let return_value = stake_power_to_increase.to_le_bytes().to_vec();
-    state
-        .ctx
-        .gas_meter
-        .command_output_set_return_values(return_value);
+    match state.tx.version {
+        TxnVersion::V1 => {
+            let return_value = stake_power_to_increase.to_le_bytes().to_vec();
+            state
+                .ctx
+                .gas_meter
+                .command_output_set_return_values(return_value);
+        }
+        TxnVersion::V2 => {
+            state
+                .ctx
+                .gas_meter
+                .command_output_set_amount_staked(stake_power_to_increase);
+        }
+    }
 
     abort_if_gas_exhausted(state)
 }
@@ -382,11 +403,21 @@ where
     );
 
     // 4. set the unstaked amount to return_value
-    let return_value = amount_unstaked.to_le_bytes().to_vec();
-    state
-        .ctx
-        .gas_meter
-        .command_output_set_return_values(return_value);
+    match state.tx.version {
+        TxnVersion::V1 => {
+            let return_value = amount_unstaked.to_le_bytes().to_vec();
+            state
+                .ctx
+                .gas_meter
+                .command_output_set_return_values(return_value);
+        }
+        TxnVersion::V2 => {
+            state
+                .ctx
+                .gas_meter
+                .command_output_set_amount_unstaked(amount_unstaked);
+        }
+    }
 
     abort_if_gas_exhausted(state)
 }

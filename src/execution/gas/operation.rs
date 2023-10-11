@@ -137,11 +137,38 @@ pub(crate) fn command_output_append_log(logs: &mut Vec<Log>, log: Log) -> Operat
 }
 
 pub(crate) fn command_output_set_return_values(
-    command_output_return_values: &mut Option<Vec<u8>>,
+    command_output_return_values: &mut Vec<u8>,
     return_values: Vec<u8>,
 ) -> OperationReceipt<()> {
     let cost = CostChange::deduct(gas::blockchain_return_values_cost(return_values.len()));
-    *command_output_return_values = Some(return_values);
+    *command_output_return_values = return_values;
+    ((), cost)
+}
+
+pub(crate) fn command_output_set_amount_withdrawn(
+    command_output_amount_withdrawn: &mut u64,
+    amount_withdrawn: u64,
+) -> OperationReceipt<()> {
+    let cost = CostChange::deduct(gas::blockchain_return_values_cost(std::mem::size_of::<u64>()));
+    *command_output_amount_withdrawn = amount_withdrawn;
+    ((), cost)
+}
+
+pub(crate) fn command_output_set_amount_staked(
+    command_output_amount_staked: &mut u64,
+    amount_staked: u64,
+) -> OperationReceipt<()> {
+    let cost = CostChange::deduct(gas::blockchain_return_values_cost(std::mem::size_of::<u64>()));
+    *command_output_amount_staked = amount_staked;
+    ((), cost)
+}
+
+pub(crate) fn command_output_set_amount_unstaked(
+    command_output_amount_unstaked: &mut u64,
+    amount_unstaked: u64,
+) -> OperationReceipt<()> {
+    let cost = CostChange::deduct(gas::blockchain_return_values_cost(std::mem::size_of::<u64>()));
+    *command_output_amount_unstaked = amount_unstaked;
     ((), cost)
 }
 

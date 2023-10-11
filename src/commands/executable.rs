@@ -51,7 +51,7 @@ impl Executable for Command {
                     Err(error) => ExitCodeV1::from(error)
                 };
         
-                state.finalize_command_receipt_v1(exit_code)
+                state.finalize_command_receipt_v1(command_kind, exit_code)
             },
             TxnVersion::V2 => {
                 let exit_code = match &result {
@@ -89,7 +89,7 @@ impl Executable for DeferredCommand {
                     Err(error) => ExitCodeV1::from(error)
                 };
         
-                state.finalize_deferred_command_receipt_v1(exit_status);
+                state.finalize_deferred_command_receipt_v1(command_kind, exit_status);
             },
             TxnVersion::V2 => {
                 let exit_status = match &result {

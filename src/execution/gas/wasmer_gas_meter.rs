@@ -163,13 +163,14 @@ where
     }
 
     pub fn command_output_append_log(&mut self, log: Log) {
-        let result = operation::command_output_append_log(&mut self.command_output_cache.logs, log);
+        
+        let result = operation::command_output_append_log(self.command_output_cache.logs.as_mut(), log);
         self.charge(result)
     }
 
     pub fn command_output_set_return_values(&mut self, return_values: Vec<u8>) {
         let result = operation::command_output_set_return_values(
-            &mut self.command_output_cache.return_values,
+            self.command_output_cache.return_values.as_mut(),
             return_values,
         );
         self.charge(result)

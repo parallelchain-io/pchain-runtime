@@ -6,7 +6,7 @@
 use core::panic;
 use std::cell::RefCell;
 
-use pchain_types::{blockchain::Log, cryptography::PublicAddress};
+use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{
     keys::AppKey,
     network::{constants::NETWORK_ADDRESS, network_account::NetworkAccountStorage},
@@ -15,7 +15,7 @@ use pchain_world_state::{
 
 use crate::{
     contract::{ContractModule, SmartContractContext},
-    gas, TransitionError, types::TxnVersion,
+    gas, TransitionError, types::TxnVersion, execution::cache::CommandOutput,
 };
 
 use super::{
@@ -72,8 +72,8 @@ where
     /// A checkpoint function to be called after every command execution. It returns the
     /// data for generating the command receipt, and updates the gas counter which is used
     /// at the end of transaction execution.
-    pub fn take_current_command_result(&mut self) -> (u64, Vec<Log>, Vec<u8>) {
-        let (logs, return_values) = self.output_cache_of_current_command.take();
+    pub fn take_current_command_result(&mut self) -> (u64, CommandOutput) {
+        let command_output = self.output_cache_of_current_command.take();
 
         // check if the gas used for current command exceeds gas limit, and use the clamped value
         // as the field 'gas_used' in the command receipt.
@@ -96,7 +96,7 @@ where
         // reset gas counter which can be then used for next command execution
         self.gas_used_for_current_command.reset();
 
-        (gas_used, logs, return_values)
+        (gas_used, command_output)
     }
 
     //
@@ -155,8 +155,32 @@ where
 
     pub fn command_output_set_return_values(&mut self, return_values: Vec<u8>) {
         let result = operation::command_output_set_return_values(
-            &mut self.output_cache_of_current_command.return_values,
+            self.output_cache_of_current_command.return_values.as_mut(),
             return_values,
+        );
+        self.charge(result)
+    }
+
+    pub fn command_output_set_amount_withdrawn(&mut self, amount_withdrawn: u64) {
+        let result = operation::command_output_set_amount_withdrawn(
+            self.output_cache_of_current_command.amount_withdrawn.as_mut(),
+            amount_withdrawn,
+        );
+        self.charge(result)
+    }
+
+    pub fn command_output_set_amount_staked(&mut self, amount_staked: u64) {
+        let result = operation::command_output_set_amount_staked(
+            self.output_cache_of_current_command.amount_staked.as_mut(),
+            amount_staked,
+        );
+        self.charge(result)
+    }
+
+    pub fn command_output_set_amount_unstaked(&mut self, amount_unstaked: u64) {
+        let result = operation::command_output_set_amount_unstaked(
+            self.output_cache_of_current_command.amount_unstaked.as_mut(),
+            amount_unstaked,
         );
         self.charge(result)
     }

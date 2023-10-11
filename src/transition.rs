@@ -19,7 +19,7 @@
 //! [Runtime] also provides method to execute a [view call](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
 
 use pchain_types::{
-    blockchain::{Command, CommandReceiptV1, ReceiptV1, TransactionV1, TransactionV2, ReceiptV2, Log},
+    blockchain::{Command, CommandReceiptV1, ReceiptV1, TransactionV1, TransactionV2, ReceiptV2},
     cryptography::PublicAddress,
 };
 use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
@@ -27,7 +27,7 @@ use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
 use crate::{
     contract::SmartContractContext,
     execution::{cache::WorldStateCache, execute_commands, state::ExecutionState},
-    execution::{execute_next_epoch_command_v1, execute_view, gas::GasMeter, execute_next_epoch_command_v2},
+    execution::{execute_next_epoch_command_v1, execute_view, gas::GasMeter, execute_next_epoch_command_v2, cache::CommandOutput},
     types::{BaseTx, DeferredCommand, TxnVersion},
     BlockchainParams, Cache, TransitionError,
 };
@@ -273,9 +273,9 @@ where
     /// Output the CommandReceipt and clear the intermediate context for next command execution.
     pub fn extract(
         &mut self
-    ) -> (u64, Vec<Log>, Vec<u8>, Option<Vec<DeferredCommand>>) {
+    ) -> (u64, CommandOutput, Option<Vec<DeferredCommand>>) {
         // 1. Take the fields from output cache and update to gas meter at this checkpoint
-        let (gas_used, logs, return_values) = self.gas_meter.take_current_command_result();
+        let (gas_used, command_output) = self.gas_meter.take_current_command_result();
 
         // 2. Clear data for next command execution
         let deferred_commands = (!self.deferred_commands.is_empty())
@@ -283,8 +283,7 @@ where
 
         (
             gas_used,
-            logs,
-            return_values,
+            command_output,
             deferred_commands,
         )
     }
