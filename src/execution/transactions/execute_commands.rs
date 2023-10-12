@@ -40,7 +40,7 @@
 //! will modify the state and update signers nonce. Its goal is to compute the resulting state of
 //! Network Account and return changes to a validator set for next epoch in [TransitionResult].
 
-use pchain_types::blockchain::{Command, ReceiptV2, ReceiptV1};
+use pchain_types::blockchain::{Command, ReceiptV2, ReceiptV1, CommandReceiptV2, CommandReceiptV1};
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
@@ -49,50 +49,62 @@ use crate::{
         phases::{self},
         state::{ExecutionState, FinalizeState},
     },
-    types::DeferredCommand,
-    TransitionResultV1, transition::TransitionResultV2,
+    types::{DeferredCommand, CommandKind},
+    TransitionResultV1, transition::TransitionResultV2, TransitionError,
 };
 
-/// Backbone logic of Commands Execution
-pub(crate) fn execute_commands_v1<S>(
-    mut state: ExecutionState<S>,
-    commands: Vec<Command>,
-) -> TransitionResultV1<S>
+trait ExecutionBehavior<S, E, R>
 where
     S: WorldStateStorage + Send + Sync + Clone,
+{
+    fn handle_precharge_error(state: ExecutionState<S, E>, error: TransitionError) -> R;
+    fn handle_command_execution_result(state: &mut ExecutionState<S, E>, command_kind: CommandKind, execution_result: &Result<(), TransitionError>) -> Option<Vec<DeferredCommand>>;
+    fn handle_abort(state: ExecutionState<S, E>, error: TransitionError) -> R;
+    fn handle_charge(state: ExecutionState<S, E>) -> R;
+}
+
+fn execute_commands<S, E, R, P>(
+    mut state: ExecutionState<S, E>,
+    commands: Vec<Command>,
+) -> R
+where
+    S: WorldStateStorage + Send + Sync + Clone,
+    P: ExecutionBehavior<S, E, R>
 {
     // Phase: Pre-Charge
     let pre_charge_result = phases::pre_charge(&mut state);
     if let Err(err) = pre_charge_result {
-        return TransitionResultV1 {
-            new_state: <ExecutionState<S> as FinalizeState<S, ReceiptV1>>::finalize(state).0, // TODO
-            receipt: None,
-            error: Some(err),
-            validator_changes: None,
-        };
+        return P::handle_precharge_error(state, err)
     }
 
     // Phase: Command(s)
     let mut executable_commands = ExecutableCommands::new(commands);
-    let mut cmd_index = 0;
+    let mut command_index = 0;
 
     while let Some(executable_command) = executable_commands.next_command() {
-
         // Execute command
-        let result = match executable_command {
+        let (command_kind, execution_result) = match executable_command {
             ExecutableCommand::TransactionCommmand(command) => {
-                let result = command.execute(&mut state, cmd_index);
-                cmd_index += 1;
-                result
-            } ExecutableCommand::DeferredCommand(deferred_command) => {
-                deferred_command.execute(&mut state, cmd_index)
+                let command_kind = CommandKind::from(&command);
+                let execute_result = command.execute(&mut state, command_index);
+
+                command_index += 1;
+                (command_kind, execute_result)
+            },
+            ExecutableCommand::DeferredCommand(deferred_command) => {
+                (
+                    CommandKind::from(&deferred_command.command),
+                    deferred_command.execute(&mut state, command_index)
+                )
             }
         };
 
+        let deferred_commands_from_call = P::handle_command_execution_result(&mut state, command_kind, &execution_result);
+
         // Proceed execution result
-        match result {
+        match execution_result {
             // command execution is not completed, continue with resulting state
-            Ok(deferred_commands_from_call) => {
+            Ok(()) => {
                 // append command triggered from Call
                 if let Some(commands_from_call) = deferred_commands_from_call {
                     executable_commands.push_deferred_commands(commands_from_call);
@@ -101,97 +113,116 @@ where
             // in case of error, stop and return result
             Err(error) => {
                 // Phase: Charge (abort)
-                let (new_state, receipt) = phases::charge(state).finalize();
-
-                return TransitionResultV1 {
-                    new_state,
-                    error: Some(error),
-                    receipt: Some(receipt),
-                    validator_changes: None,
-                };
+                return P::handle_abort(state, error)
             }
         }
     }
 
     // Phase: Charge
-    let (new_state, receipt) = phases::charge(state).finalize();
+    P::handle_charge(state)
+}
 
-    TransitionResultV1 {
-        new_state,
-        error: None,
-        receipt: Some(receipt),
-        validator_changes: None,
+pub(crate) fn execute_commands_v1<S>(
+    state: ExecutionState<S, CommandReceiptV1>,
+    commands: Vec<Command>
+) -> TransitionResultV1<S> 
+where
+    S: WorldStateStorage + Send + Sync + Clone,
+{
+    execute_commands::<_, _, _, ExecuteCommandsV1>(state, commands)
+}
+
+struct ExecuteCommandsV1;
+
+impl<S> ExecutionBehavior<S, CommandReceiptV1, TransitionResultV1<S>> for ExecuteCommandsV1
+where
+    S: WorldStateStorage + Send + Sync + Clone,
+{
+    fn handle_precharge_error(state: ExecutionState<S, CommandReceiptV1>, error: TransitionError) -> TransitionResultV1<S> {
+        let (new_state, _): (_, ReceiptV1) = state.finalize();
+        return TransitionResultV1 {
+            new_state,
+            receipt: None,
+            error: Some(error),
+            validator_changes: None,
+        };
+    }
+
+    fn handle_command_execution_result(state: &mut ExecutionState<S, CommandReceiptV1>, command_kind: CommandKind, execution_result: &Result<(), TransitionError>) -> Option<Vec<DeferredCommand>> {
+        state.finalize_command_receipt(command_kind, &execution_result)
+    }
+
+    fn handle_abort(state: ExecutionState<S, CommandReceiptV1>, error: TransitionError) -> TransitionResultV1<S> {
+        let (new_state, receipt) = phases::charge(state).finalize();
+        
+        TransitionResultV1 {
+            new_state,
+            error: Some(error),
+            receipt: Some(receipt),
+            validator_changes: None,
+        }
+    }
+
+    fn handle_charge(state: ExecutionState<S, CommandReceiptV1>) -> TransitionResultV1<S> {
+        let (new_state, receipt) = phases::charge(state).finalize();
+
+        TransitionResultV1 {
+            new_state,
+            error: None,
+            receipt: Some(receipt),
+            validator_changes: None,
+        }
     }
 }
 
-/// Backbone logic of Commands Execution
 pub(crate) fn execute_commands_v2<S>(
-    mut state: ExecutionState<S>,
-    commands: Vec<Command>,
-) -> TransitionResultV2<S>
+    state: ExecutionState<S, CommandReceiptV2>,
+    commands: Vec<Command>
+) -> TransitionResultV2<S> 
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    // Phase: Pre-Charge
-    let pre_charge_result = phases::pre_charge(&mut state);
-    if let Err(err) = pre_charge_result {
+    execute_commands::<_, _, _, ExecuteCommandsV2>(state, commands)
+}
+
+struct ExecuteCommandsV2;
+
+impl<S> ExecutionBehavior<S, CommandReceiptV2, TransitionResultV2<S>> for ExecuteCommandsV2
+where
+    S: WorldStateStorage + Send + Sync + Clone,
+{
+    fn handle_precharge_error(state: ExecutionState<S, CommandReceiptV2>, error: TransitionError) -> TransitionResultV2<S> {
+        let (new_state, _): (_, ReceiptV2) = state.finalize();
         return TransitionResultV2 {
-            new_state: <ExecutionState<S> as FinalizeState<S, ReceiptV2>>::finalize(state).0, // TODO
+            new_state,
             receipt: None,
-            error: Some(err),
+            error: Some(error),
             validator_changes: None,
         };
     }
-
-    // Phase: Command(s)
-    let mut executable_commands = ExecutableCommands::new(commands);
-    let mut cmd_index = 0;
-
-    while let Some(executable_command) = executable_commands.next_command() {
-
-        // Execute command
-        let result = match executable_command {
-            ExecutableCommand::TransactionCommmand(command) => {
-                let result = command.execute(&mut state, cmd_index);
-                cmd_index += 1;
-                result
-            }
-            ExecutableCommand::DeferredCommand(deferred_command) =>
-                deferred_command.execute(&mut state, cmd_index),
-        };
-
-        // Proceed execution result
-        match result {
-            // command execution is not completed, continue with resulting state
-            Ok(deferred_commands_from_call) => {
-                // append command triggered from Call
-                if let Some(commands_from_call) = deferred_commands_from_call {
-                    executable_commands.push_deferred_commands(commands_from_call);
-                }
-            }
-            // in case of error, stop and return result
-            Err(error) => {
-                // Phase: Charge (abort)
-                let (new_state, receipt) = phases::charge(state).finalize();
-
-                return TransitionResultV2 {
-                    new_state,
-                    error: Some(error),
-                    receipt: Some(receipt),
-                    validator_changes: None,
-                };
-            }
+    
+    fn handle_command_execution_result(state: &mut ExecutionState<S, CommandReceiptV2>, command_kind: CommandKind, execution_result: &Result<(), TransitionError>) -> Option<Vec<DeferredCommand>> {
+        state.finalize_command_receipt(command_kind, &execution_result)
+    }
+    
+    fn handle_abort(state: ExecutionState<S, CommandReceiptV2>, error: TransitionError) -> TransitionResultV2<S> {
+        let (new_state, receipt) = phases::charge(state).finalize();
+        TransitionResultV2 {
+            new_state,
+            error: Some(error),
+            receipt: Some(receipt),
+            validator_changes: None,
         }
     }
 
-    // Phase: Charge
-    let (new_state, receipt) = phases::charge(state).finalize();
-
-    TransitionResultV2 {
-        new_state,
-        error: None,
-        receipt: Some(receipt),
-        validator_changes: None,
+    fn handle_charge(state: ExecutionState<S, CommandReceiptV2>) -> TransitionResultV2<S> {
+        let (new_state, receipt) = phases::charge(state).finalize();
+        TransitionResultV2 {
+            new_state,
+            error: None,
+            receipt: Some(receipt),
+            validator_changes: None,
+        }
     }
 }
 

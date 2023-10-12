@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// Pre-Charge is a Phase in State Transition. It transits state and returns gas consumption if success.
-pub(crate) fn pre_charge<S>(state: &mut ExecutionState<S>) -> Result<(), TransitionError>
+pub(crate) fn pre_charge<S, E>(state: &mut ExecutionState<S, E>) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
@@ -69,7 +69,7 @@ where
 }
 
 /// Charge is a Phase in State Transition. It finalizes balance of accounts to world state.
-pub(crate) fn charge<S>(mut state: ExecutionState<S>) -> ExecutionState<S>
+pub(crate) fn charge<S, E>(mut state: ExecutionState<S, E>) -> ExecutionState<S, E>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {

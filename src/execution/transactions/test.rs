@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use pchain_types::{
-    blockchain::{Command, ExitCodeV1, TransactionV1},
+    blockchain::{Command, ExitCodeV1, TransactionV1, CommandReceiptV1},
     cryptography::PublicAddress,
     runtime::*,
 };
@@ -24,7 +24,7 @@ use pchain_world_state::{
 use crate::{
     commands::protocol,
     execution::{
-        execute_commands::execute_commands_v1, execute_next_epoch_command_v1, state::ExecutionState,
+        execute_commands::execute_commands_v1, execute_next_epoch::execute_next_epoch_v1, state::ExecutionState,
     },
     gas,
     transition::TransitionContext,
@@ -37,6 +37,7 @@ const TEST_MAX_STAKES_PER_POOL: u16 = constants::MAX_STAKES_PER_POOL;
 const MIN_BASE_FEE: u64 = 8;
 type NetworkAccount<'a, S> =
     NetworkAccountSized<'a, S, { TEST_MAX_VALIDATOR_SET_SIZE }, { TEST_MAX_STAKES_PER_POOL }>;
+type ExecutionStateV1<S> = ExecutionState<S, CommandReceiptV1>;
 
 #[derive(Clone)]
 struct SimpleStore {
@@ -1752,7 +1753,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
     // First proceed next epoch
     let mut state = create_state(Some(ret.new_state));
     state.tx.nonce = 1;
-    let ret = execute_next_epoch_command_v1(state, vec![Command::NextEpoch]);
+    let ret = execute_next_epoch_v1(state, vec![Command::NextEpoch]);
     assert_eq!(
         (
             &ret.error,
@@ -1797,7 +1798,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
         ACCOUNT_A,
         TEST_MAX_VALIDATOR_SET_SIZE as u32,
     ));
-    let ret = execute_next_epoch_command_v1(state, vec![Command::NextEpoch]);
+    let ret = execute_next_epoch_v1(state, vec![Command::NextEpoch]);
     assert_eq!(
         (
             &ret.error,
@@ -3259,7 +3260,7 @@ fn test_change_of_validators() {
     execute_next_epoch(state);
 }
 
-fn create_state(init_ws: Option<WorldState<SimpleStore>>) -> ExecutionState<SimpleStore> {
+fn create_state(init_ws: Option<WorldState<SimpleStore>>) -> ExecutionStateV1<SimpleStore> {
     let ws = match init_ws {
         Some(ws) => ws,
         None => {
@@ -3277,16 +3278,11 @@ fn create_state(init_ws: Option<WorldState<SimpleStore>>) -> ExecutionState<Simp
     let ctx = TransitionContext::new(TxnVersion::V1, ws, tx.gas_limit);
     let base_tx = BaseTx::from(&tx);
 
-    ExecutionState {
-        bd: create_bd(),
-        tx: base_tx,
-        ctx,
-        receipt: Default::default(),
-    }
+    ExecutionState::new(base_tx, create_bd(), ctx)
 }
 
 fn set_tx(
-    state: &mut ExecutionState<SimpleStore>,
+    state: &mut ExecutionStateV1<SimpleStore>,
     signer: PublicAddress,
     nonce: u64,
     commands: &Vec<Command>,
@@ -3372,7 +3368,7 @@ fn prepare_accounts_balance(ws: &mut WorldState<SimpleStore>) {
 /// Pools address range from \[X, 1, 1, 1, ... , 1\] where X \in \[1, TEST_MAX_VALIDATOR_SET_SIZE\]
 /// Pool powers = 100_000, 200_000, ... , 6_400_000
 fn create_full_pools_in_nvp(
-    ws: &mut ExecutionState<SimpleStore>,
+    ws: &mut ExecutionStateV1<SimpleStore>,
     add_operators_deposit: bool,
     operators_auto_stake_rewards: bool,
 ) {
@@ -3417,7 +3413,7 @@ fn init_setup_pool_power(i: u16) -> (PublicAddress, u64, u8) {
 
 /// Staker address range from \[X, X, X, X, ... , 2\] where X starts with u32(\[2,2,2,2\]). Number of stakers = TEST_MAX_STAKES_PER_POOL
 /// Stake powers = 200_000, 300_000, ...
-fn create_full_stakes_in_pool(ws: &mut ExecutionState<SimpleStore>, operator: PublicAddress) {
+fn create_full_stakes_in_pool(ws: &mut ExecutionStateV1<SimpleStore>, operator: PublicAddress) {
     NetworkAccount::pools(&mut ws.ctx.gas_meter, operator)
         .delegated_stakes()
         .clear();
@@ -3465,7 +3461,7 @@ fn init_setup_stake_of_owner(i: u16) -> (PublicAddress, u64) {
 /// Staker address range from \[X, X, X, X, ... , 2\] where X starts with u32(\[2,2,2,2\]). Number of stakers = TEST_MAX_STAKES_PER_POOL
 /// Deposits = 200_000, 300_000, ...
 fn create_full_deposits_in_pool(
-    ws: &mut ExecutionState<SimpleStore>,
+    ws: &mut ExecutionStateV1<SimpleStore>,
     operator: PublicAddress,
     auto_stake_rewards: bool,
 ) {
@@ -3477,7 +3473,7 @@ fn create_full_deposits_in_pool(
     }
 }
 fn create_full_nvp_pool_stakes_deposits(
-    ws: &mut ExecutionState<SimpleStore>,
+    ws: &mut ExecutionStateV1<SimpleStore>,
     auto_stake_rewards: bool,
     add_operators_deposit: bool,
     operators_auto_stake_rewards: bool,
@@ -3527,7 +3523,7 @@ fn prepare_single_pool(
 // deposits[A, A] = 10_000
 // deposits[A, B] = 90_000
 fn setup_pool(
-    state: &mut ExecutionState<SimpleStore>,
+    state: &mut ExecutionStateV1<SimpleStore>,
     operator: PublicAddress,
     operator_power: u64,
     owner: PublicAddress,
@@ -3564,8 +3560,8 @@ fn setup_pool(
         .unwrap();
 }
 
-fn execute_next_epoch(state: ExecutionState<SimpleStore>) -> ExecutionState<SimpleStore> {
-    let ret = execute_next_epoch_command_v1(state, vec![Command::NextEpoch]);
+fn execute_next_epoch(state: ExecutionStateV1<SimpleStore>) -> ExecutionStateV1<SimpleStore> {
+    let ret = execute_next_epoch_v1(state, vec![Command::NextEpoch]);
     assert_eq!(
         (
             &ret.error,

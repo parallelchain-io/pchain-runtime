@@ -4,7 +4,7 @@
 */
 
 use pchain_types::{
-    blockchain::{Command, ReceiptV1, ReceiptV2},
+    blockchain::Command,
     cryptography::PublicAddress,
     runtime::{
         CallInput, CreateDepositInput, CreatePoolInput, DeployInput, SetDepositSettingsInput,
@@ -15,82 +15,53 @@ use pchain_types::{
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
-    commands::account, execution::state::{ExecutionState, FinalizeState}, types::{DeferredCommand, TxnVersion, CommandKind}, TransitionError,
+    commands::account, execution::state::ExecutionState, types::DeferredCommand, TransitionError,
 };
 
 use super::staking;
 
-pub(crate) trait Executable {
-    fn execute<S>(
+pub(crate) trait Executable<S, E>
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static
+{
+    fn execute(
         self,
-        state: &mut ExecutionState<S>,
+        state: &mut ExecutionState<S, E>,
         command_index: usize,
-    ) -> Result<Option<Vec<DeferredCommand>>, TransitionError>
-    where
-        S: WorldStateStorage + Send + Sync + Clone + 'static;
+    ) -> Result<(), TransitionError>;
 }
 
-impl Executable for Command {
-    fn execute<S>(
+impl<S, E> Executable<S, E> for Command
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static
+{
+    fn execute(
         self,
-        state: &mut ExecutionState<S>,
+        state: &mut ExecutionState<S, E>,
         command_index: usize,
-    ) -> Result<Option<Vec<DeferredCommand>>, TransitionError>
-    where
-        S: WorldStateStorage + Send + Sync + Clone + 'static,
-    {
+    ) -> Result<(), TransitionError> {
         let actor = state.tx.signer;
-        let command_kind = CommandKind::from(&self);
-
-        let result = execute(state, command_index, actor, self);
-
-        let deferred_commands =  match state.tx.version {
-            TxnVersion::V1 => {
-                // TODO
-                <ExecutionState<S> as FinalizeState<S, ReceiptV1>>::finalize_command_receipt(state, command_kind, &result)
-            },
-            TxnVersion::V2 => {
-                // TODO
-                <ExecutionState<S> as FinalizeState<S, ReceiptV2>>::finalize_command_receipt(state, command_kind, &result)
-            }
-        };
-
-        result.map(|_| deferred_commands)
+        execute(state, command_index, actor, self)
     }
 }
 
-impl Executable for DeferredCommand {
-    fn execute<S>(
+impl<S, E> Executable<S, E> for DeferredCommand
+where
+    S: WorldStateStorage + Send + Sync + Clone + 'static
+{
+    fn execute(
         self,
-        state: &mut ExecutionState<S>,
+        state: &mut ExecutionState<S, E>,
         command_index: usize,
-    ) -> Result<Option<Vec<DeferredCommand>>, TransitionError>
-    where
-        S: WorldStateStorage + Send + Sync + Clone + 'static,
-    {
+    ) -> Result<(), TransitionError> {
         let actor = self.contract_address;
         let command = self.command;
-        let command_kind = CommandKind::from(&command);
-        
-        let result = execute(state, command_index, actor, command);
-
-        match state.tx.version {
-            TxnVersion::V1 => {
-                // TODO
-                <ExecutionState<S> as FinalizeState<S, ReceiptV1>>::finalize_deferred_command_receipt(state, command_kind, &result);
-            },
-            TxnVersion::V2 => {
-                // TODO
-                <ExecutionState<S> as FinalizeState<S, ReceiptV2>>::finalize_deferred_command_receipt(state, command_kind, &result);
-            }
-        }
-
-        result.map(|_| None)
+        execute(state, command_index, actor, command)
     }
 }
 
-fn execute<S>(
-    state: &mut ExecutionState<S>,
+fn execute<S, E>(
+    state: &mut ExecutionState<S, E>,
     command_index: usize,
     actor: PublicAddress,
     command: Command,

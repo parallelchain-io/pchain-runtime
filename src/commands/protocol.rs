@@ -28,7 +28,7 @@ use crate::{
 use crate::execution::{cache::WorldStateCache, state::ExecutionState};
 
 /// Execution of [pchain_types::blockchain::Command::NextEpoch]
-pub(crate) fn next_epoch<S>(mut state: ExecutionState<S>) -> (ExecutionState<S>, ValidatorChanges)
+pub(crate) fn next_epoch<S, E>(mut state: ExecutionState<S, E>) -> (ExecutionState<S, E>, ValidatorChanges)
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
@@ -260,8 +260,8 @@ impl<'a, S> NetworkAccountWorldState<'a, S>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    pub(crate) fn new(
-        state: &'a mut ExecutionState<S>,
+    pub(crate) fn new<E>(
+        state: &'a mut ExecutionState<S, E>,
         account_storage_state: AccountStorageState<S>,
     ) -> Self {
         Self {

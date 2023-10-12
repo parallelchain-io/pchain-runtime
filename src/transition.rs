@@ -19,16 +19,16 @@
 //! [Runtime] also provides method to execute a [view call](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
 
 use pchain_types::{
-    blockchain::{Command, CommandReceiptV1, ReceiptV1, TransactionV1, TransactionV2, ReceiptV2},
+    blockchain::{Command, CommandReceiptV1, ReceiptV1, TransactionV1, TransactionV2, ReceiptV2, CommandReceiptV2},
     cryptography::PublicAddress,
 };
 use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
 
 use crate::{
     contract::SmartContractContext,
-    execution::{cache::WorldStateCache, execute_commands, state::ExecutionState},
-    execution::{execute_next_epoch_command_v1, execute_view, gas::GasMeter, execute_next_epoch_command_v2, cache::CommandOutput},
-    types::{BaseTx, DeferredCommand, TxnVersion},
+    execution::{cache::WorldStateCache, state::ExecutionState},
+    execution::{execute_view, gas::GasMeter, execute_next_epoch::{self}, execute_commands::{self}},
+    types::{BaseTx, DeferredCommand, TxnVersion, CommandOutput},
     BlockchainParams, Cache, TransitionError,
 };
 
@@ -83,16 +83,11 @@ impl Runtime {
         ctx.sc_context = self.sc_context.clone();
 
         // initial state for transition
-        let state = ExecutionState {
-            tx: base_tx,
-            ctx,
-            bd,
-            receipt: Default::default(),
-        };
+        let state = ExecutionState::new(base_tx, bd, ctx);
 
         // initiate command execution
         if commands.iter().any(|c| matches!(c, Command::NextEpoch)) {
-            execute_next_epoch_command_v1(state, commands)
+            execute_next_epoch::execute_next_epoch_v1(state, commands)
         } else {
             execute_commands::execute_commands_v1(state, commands)
         }
@@ -118,16 +113,11 @@ impl Runtime {
         ctx.sc_context = self.sc_context.clone();
 
         // initial state for transition
-        let state = ExecutionState {
-            tx: base_tx,
-            ctx,
-            bd,
-            receipt: Default::default(),
-        };
+        let state = ExecutionState::new(base_tx, bd, ctx);
 
         // initiate command execution
         if commands.iter().any(|c| matches!(c, Command::NextEpoch)) {
-            execute_next_epoch_command_v2(state, commands)
+            execute_next_epoch::execute_next_epoch_v2(state, commands)
         } else {
             execute_commands::execute_commands_v2(state, commands)
         }
@@ -155,15 +145,38 @@ impl Runtime {
         let dummy_bd = BlockchainParams::default();
 
         // initialize state for executing view call
-        let state = ExecutionState {
-            tx: dummy_tx,
-            bd: dummy_bd,
-            ctx,
-            receipt: Default::default(),
-        };
+        let state = ExecutionState::new(dummy_tx, dummy_bd, ctx);
 
         // execute view
-        execute_view(state, target, method, arguments)
+        execute_view::execute_view_v1(state, target, method, arguments)
+    }
+
+    /// view performs view call to a target contract
+    pub fn view_v2<S: WorldStateStorage + Send + Sync + Clone + 'static>(
+        &self,
+        ws: WorldState<S>,
+        gas_limit: u64,
+        target: PublicAddress,
+        method: String,
+        arguments: Option<Vec<Vec<u8>>>,
+    ) -> (CommandReceiptV2, Option<TransitionError>) {
+        // create transition context from world state
+        let mut ctx = TransitionContext::new(TxnVersion::V1, ws, gas_limit);
+        ctx.sc_context = self.sc_context.clone();
+
+        // create a dummy transaction
+        let dummy_tx = BaseTx {
+            gas_limit,
+            ..Default::default()
+        };
+
+        let dummy_bd = BlockchainParams::default();
+
+        // initialize state for executing view call
+        let state = ExecutionState::new(dummy_tx, dummy_bd, ctx);
+
+        // execute view
+        execute_view::execute_view_v2(state, target, method, arguments)
     }
 }
 

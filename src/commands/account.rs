@@ -23,8 +23,8 @@ use crate::{
 use crate::execution::state::ExecutionState;
 
 /// Execution of [pchain_types::blockchain::Command::Transfer]
-pub(crate) fn transfer<S>(
-    state: &mut ExecutionState<S>,
+pub(crate) fn transfer<S, E>(
+    state: &mut ExecutionState<S, E>,
     recipient: PublicAddress,
     amount: u64,
 ) -> Result<(), TransitionError>
@@ -55,8 +55,8 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::Call]
-pub(crate) fn call<S>(
-    state: &mut ExecutionState<S>,
+pub(crate) fn call<S, E>(
+    state: &mut ExecutionState<S, E>,
     is_view: bool,
     target: PublicAddress,
     method: String,
@@ -104,22 +104,22 @@ where
 }
 
 /// CallInstance defines the steps of contract instantiation and contract call.
-struct CallInstance<'a, S>
+struct CallInstance<'a, S, E>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    state: &'a mut ExecutionState<S>,
+    state: &'a mut ExecutionState<S, E>,
     instance: ContractInstance<S>,
 }
 
-impl<'a, S> CallInstance<'a, S>
+impl<'a, S, E> CallInstance<'a, S, E>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     /// Instantiate an instant to be called. It returns transition error for failures in
     /// contrac tinstantiation and verification.
     fn instantiate(
-        state: &'a mut ExecutionState<S>,
+        state: &'a mut ExecutionState<S, E>,
         is_view: bool,
         target: PublicAddress,
         method: String,
@@ -191,8 +191,8 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::Deploy]
-pub(crate) fn deploy<S>(
-    state: &mut ExecutionState<S>,
+pub(crate) fn deploy<S, E>(
+    state: &mut ExecutionState<S, E>,
     cmd_index: u32,
     contract: Vec<u8>,
     cbi_version: u32,
@@ -219,24 +219,24 @@ where
 }
 
 /// DeployInstance defines the steps of contract instantiation and contract deploy.
-struct DeployInstance<'a, S>
+struct DeployInstance<'a, S, E>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    state: &'a mut ExecutionState<S>,
+    state: &'a mut ExecutionState<S, E>,
     module: ContractModule,
     contract_address: PublicAddress,
     contract: Vec<u8>,
     cbi_version: u32,
 }
 
-impl<'a, S> DeployInstance<'a, S>
+impl<'a, S, E> DeployInstance<'a, S, E>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     /// Instantiate an instance after contract validation
     fn instantiate(
-        state: &'a mut ExecutionState<S>,
+        state: &'a mut ExecutionState<S, E>,
         contract: Vec<u8>,
         cbi_version: u32,
         contract_address: PublicAddress,

@@ -5,6 +5,8 @@
 
 use pchain_types::blockchain::Log;
 
+use crate::types::CommandOutput;
+
 #[derive(Clone, Default)]
 pub(crate) struct CommandOutputCache {
 
@@ -62,18 +64,4 @@ impl<T> MaybeUnused<T> where T: Default {
     pub fn take_or_default(&mut self) -> T {
         self.0.take().map_or(T::default(), std::convert::identity)
     }
-}
-
-#[derive(Clone, Default)]
-pub(crate) struct CommandOutput {
-    /// Output value in [pchain_types::blockchain::CallReceipt].
-    pub logs: Vec<Log>,
-    /// Output value in [pchain_types::blockchain::CallReceipt].
-    pub return_values: Vec<u8>,
-    /// Output value in [pchain_types::blockchain::WithdrawDepositReceipt].
-    pub amount_withdrawn: u64,
-    /// Output value in [pchain_types::blockchain::StakeDepositReceipt].
-    pub amount_staked: u64,
-    /// Output value in [pchain_types::blockchain::UnstakeDepositReceipt].
-    pub amount_unstaked: u64,
 }

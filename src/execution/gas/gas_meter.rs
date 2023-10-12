@@ -15,7 +15,7 @@ use pchain_world_state::{
 
 use crate::{
     contract::{ContractModule, SmartContractContext},
-    gas, TransitionError, types::TxnVersion, execution::cache::CommandOutput,
+    gas, TransitionError, types::{TxnVersion, CommandOutput},
 };
 
 use super::{

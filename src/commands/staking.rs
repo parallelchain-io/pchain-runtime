@@ -24,9 +24,9 @@ use crate::{
 };
 
 /// Execution of [pchain_types::blockchain::Command::CreatePool]
-pub(crate) fn create_pool<S>(
+pub(crate) fn create_pool<S, E>(
     operator: PublicAddress,
-    state: &mut ExecutionState<S>,
+    state: &mut ExecutionState<S, E>,
     commission_rate: u8,
 ) -> Result<(), TransitionError>
 where
@@ -54,9 +54,9 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::SetPoolSettings]
-pub(crate) fn set_pool_settings<S>(
+pub(crate) fn set_pool_settings<S, E>(
     operator: PublicAddress,
-    state: &mut ExecutionState<S>,
+    state: &mut ExecutionState<S, E>,
     new_commission_rate: u8,
 ) -> Result<(), TransitionError>
 where
@@ -82,9 +82,9 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::DeletePool]
-pub(crate) fn delete_pool<S>(
+pub(crate) fn delete_pool<S, E>(
     operator: PublicAddress,
-    state: &mut ExecutionState<S>,
+    state: &mut ExecutionState<S, E>,
 ) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone,
@@ -102,9 +102,9 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::CreateDeposit]
-pub(crate) fn create_deposit<S>(
+pub(crate) fn create_deposit<S, E>(
     owner: PublicAddress,
-    state: &mut ExecutionState<S>,
+    state: &mut ExecutionState<S, E>,
     operator: PublicAddress,
     balance: u64,
     auto_stake_rewards: bool,
@@ -138,9 +138,9 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::SetDepositSettings]
-pub(crate) fn set_deposit_settings<S>(
+pub(crate) fn set_deposit_settings<S, E>(
     owner: PublicAddress,
-    state: &mut ExecutionState<S>,
+    state: &mut ExecutionState<S, E>,
     operator: PublicAddress,
     new_auto_stake_rewards: bool,
 ) -> Result<(), TransitionError>
@@ -162,9 +162,9 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::TopUpDeposit]
-pub(crate) fn topup_deposit<S>(
+pub(crate) fn topup_deposit<S, E>(
     owner: PublicAddress,
-    state: &mut ExecutionState<S>,
+    state: &mut ExecutionState<S, E>,
     operator: PublicAddress,
     amount: u64,
 ) -> Result<(), TransitionError>
@@ -193,9 +193,9 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::WithdrawDeposit]
-pub(crate) fn withdraw_deposit<S>(
+pub(crate) fn withdraw_deposit<S, E>(
     owner: PublicAddress,
-    state: &mut ExecutionState<S>,
+    state: &mut ExecutionState<S, E>,
     operator: PublicAddress,
     max_amount: u64,
 ) -> Result<(), TransitionError>
@@ -297,9 +297,9 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::StakeDeposit]
-pub(crate) fn stake_deposit<S>(
+pub(crate) fn stake_deposit<S, E>(
     owner: PublicAddress,
-    state: &mut ExecutionState<S>,
+    state: &mut ExecutionState<S, E>,
     operator: PublicAddress,
     max_amount: u64,
 ) -> Result<(), TransitionError>
@@ -366,9 +366,9 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::UnstakeDeposit]
-pub(crate) fn unstake_deposit<S>(
+pub(crate) fn unstake_deposit<S, E>(
     owner: PublicAddress,
-    state: &mut ExecutionState<S>,
+    state: &mut ExecutionState<S, E>,
     operator: PublicAddress,
     max_amount: u64,
 ) -> Result<(), TransitionError>

@@ -20,8 +20,8 @@ macro_rules! abort {
 pub(crate) use abort;
 
 /// Return Error GasExhaust if gas has already been exhausted
-pub(crate) fn abort_if_gas_exhausted<S>(
-    state: &mut ExecutionState<S>,
+pub(crate) fn abort_if_gas_exhausted<S, E>(
+    state: &mut ExecutionState<S, E>,
 ) -> Result<(), TransitionError>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
