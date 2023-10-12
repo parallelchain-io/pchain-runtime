@@ -4,7 +4,7 @@
 */
 
 use pchain_types::{
-    blockchain::{Command, ExitCodeV1, ExitCodeV2},
+    blockchain::{Command, ReceiptV1, ReceiptV2},
     cryptography::PublicAddress,
     runtime::{
         CallInput, CreateDepositInput, CreatePoolInput, DeployInput, SetDepositSettingsInput,
@@ -15,7 +15,7 @@ use pchain_types::{
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
-    commands::account, execution::state::ExecutionState, types::{DeferredCommand, TxnVersion, CommandKind}, TransitionError,
+    commands::account, execution::state::{ExecutionState, FinalizeState}, types::{DeferredCommand, TxnVersion, CommandKind}, TransitionError,
 };
 
 use super::staking;
@@ -46,20 +46,12 @@ impl Executable for Command {
 
         let deferred_commands =  match state.tx.version {
             TxnVersion::V1 => {
-                let exit_code = match &result {
-                    Ok(_) => ExitCodeV1::Success,
-                    Err(error) => ExitCodeV1::from(error)
-                };
-        
-                state.finalize_command_receipt_v1(command_kind, exit_code)
+                // TODO
+                <ExecutionState<S> as FinalizeState<S, ReceiptV1>>::finalize_command_receipt(state, command_kind, &result)
             },
             TxnVersion::V2 => {
-                let exit_code = match &result {
-                    Ok(_) => ExitCodeV2::Ok,
-                    Err(error) => ExitCodeV2::from(error)
-                };
-                
-                state.finalize_command_receipt_v2(command_kind, exit_code)
+                // TODO
+                <ExecutionState<S> as FinalizeState<S, ReceiptV2>>::finalize_command_receipt(state, command_kind, &result)
             }
         };
 
@@ -84,22 +76,14 @@ impl Executable for DeferredCommand {
 
         match state.tx.version {
             TxnVersion::V1 => {
-                let exit_status = match &result {
-                    Ok(_) => ExitCodeV1::Success,
-                    Err(error) => ExitCodeV1::from(error)
-                };
-        
-                state.finalize_deferred_command_receipt_v1(command_kind, exit_status);
+                // TODO
+                <ExecutionState<S> as FinalizeState<S, ReceiptV1>>::finalize_deferred_command_receipt(state, command_kind, &result);
             },
             TxnVersion::V2 => {
-                let exit_status = match &result {
-                    Ok(_) => ExitCodeV2::Ok,
-                    Err(error) => ExitCodeV2::from(error)
-                };
-                state.finalize_deferred_command_receipt_v2(command_kind, exit_status);
+                // TODO
+                <ExecutionState<S> as FinalizeState<S, ReceiptV2>>::finalize_deferred_command_receipt(state, command_kind, &result);
             }
         }
-        
 
         result.map(|_| None)
     }

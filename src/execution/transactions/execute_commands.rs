@@ -40,14 +40,14 @@
 //! will modify the state and update signers nonce. Its goal is to compute the resulting state of
 //! Network Account and return changes to a validator set for next epoch in [TransitionResult].
 
-use pchain_types::blockchain::Command;
+use pchain_types::blockchain::{Command, ReceiptV2, ReceiptV1};
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
     commands::executable::Executable,
     execution::{
         phases::{self},
-        state::ExecutionState,
+        state::{ExecutionState, FinalizeState},
     },
     types::DeferredCommand,
     TransitionResultV1, transition::TransitionResultV2,
@@ -65,7 +65,7 @@ where
     let pre_charge_result = phases::pre_charge(&mut state);
     if let Err(err) = pre_charge_result {
         return TransitionResultV1 {
-            new_state: state.finalize_v1().0,
+            new_state: <ExecutionState<S> as FinalizeState<S, ReceiptV1>>::finalize(state).0, // TODO
             receipt: None,
             error: Some(err),
             validator_changes: None,
@@ -101,7 +101,7 @@ where
             // in case of error, stop and return result
             Err(error) => {
                 // Phase: Charge (abort)
-                let (new_state, receipt) = phases::charge(state).finalize_v1();
+                let (new_state, receipt) = phases::charge(state).finalize();
 
                 return TransitionResultV1 {
                     new_state,
@@ -114,7 +114,7 @@ where
     }
 
     // Phase: Charge
-    let (new_state, receipt) = phases::charge(state).finalize_v1();
+    let (new_state, receipt) = phases::charge(state).finalize();
 
     TransitionResultV1 {
         new_state,
@@ -136,7 +136,7 @@ where
     let pre_charge_result = phases::pre_charge(&mut state);
     if let Err(err) = pre_charge_result {
         return TransitionResultV2 {
-            new_state: state.finalize_v2().0,
+            new_state: <ExecutionState<S> as FinalizeState<S, ReceiptV2>>::finalize(state).0, // TODO
             receipt: None,
             error: Some(err),
             validator_changes: None,
@@ -172,7 +172,7 @@ where
             // in case of error, stop and return result
             Err(error) => {
                 // Phase: Charge (abort)
-                let (new_state, receipt) = phases::charge(state).finalize_v2();
+                let (new_state, receipt) = phases::charge(state).finalize();
 
                 return TransitionResultV2 {
                     new_state,
@@ -185,7 +185,7 @@ where
     }
 
     // Phase: Charge
-    let (new_state, receipt) = phases::charge(state).finalize_v2();
+    let (new_state, receipt) = phases::charge(state).finalize();
 
     TransitionResultV2 {
         new_state,

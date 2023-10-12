@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-use pchain_types::blockchain::{CommandReceiptV1, ReceiptV1, CommandReceiptV2, ReceiptV2, ExitCodeV2, TransferReceipt, DeployReceipt, CallReceipt, CreatePoolReceipt, SetPoolSettingsReceipt, DeletePoolReceipt, CreateDepositReceipt, SetDepositSettingsReceipt, TopUpDepositReceipt, WithdrawDepositReceipt, StakeDepositReceipt, UnstakeDepositReceipt, NextEpochReceipt, ExitCodeV1};
+use pchain_types::blockchain::{CommandReceiptV1, ReceiptV1, CommandReceiptV2, ReceiptV2, ExitCodeV2, TransferReceipt, DeployReceipt, CallReceipt, CreatePoolReceipt, SetPoolSettingsReceipt, DeletePoolReceipt, CreateDepositReceipt, SetDepositSettingsReceipt, TopUpDepositReceipt, WithdrawDepositReceipt, StakeDepositReceipt, UnstakeDepositReceipt, NextEpochReceipt};
 
 use crate::types::CommandKind;
 
@@ -17,108 +17,7 @@ pub(crate) struct ReceiptCache {
     receipts_v2: Vec<CommandReceiptV2>
 }
 
-impl ReceiptCache {
-    pub fn push_command_receipt_v1(&mut self,
-        _command_kind: CommandKind,
-        exit_code: ExitCodeV1, 
-        gas_used: u64,
-        command_output: CommandOutput
-    ) {
-        self.receipts_v1.push(CommandReceiptV1 {
-            exit_code,
-            gas_used,
-            logs: command_output.logs,
-            return_values: command_output.return_values
-        });
-    }
-
-    pub fn push_command_receipt_v2(&mut self, 
-        command_kind: CommandKind,
-        exit_code: ExitCodeV2,
-        gas_used: u64,
-        command_output: CommandOutput,
-    ) {
-        let command_receipt = create_executed_receipt_v2(&command_kind, exit_code, gas_used, command_output);
-        self.receipts_v2.push(command_receipt);
-    }
-
-    /// Combine the information from next Command Receipt.
-    /// Assumption: execution of a deferred command will not spawn non-deferred command.
-    pub fn push_deferred_command_receipt_v1(&mut self,     
-        _command_kind: CommandKind,
-        exit_code: ExitCodeV1, 
-        gas_used: u64,
-        command_output: CommandOutput
-    ) {
-        if let Some(last_command_receipt) = self.receipts_v1.last_mut() {
-            last_command_receipt.gas_used = last_command_receipt
-                .gas_used
-                .saturating_add(gas_used);
-            last_command_receipt.exit_code = exit_code;
-            last_command_receipt.return_values = command_output.return_values;
-        }
-    }
-
-    /// Combine the information from next Command Receipt.
-    /// Assumption: execution of a deferred command will not spawn non-deferred command.
-    pub fn push_deferred_command_receipt_v2(
-        &mut self,
-        command_kind: CommandKind,
-        exit_code: ExitCodeV2,
-        gas_used: u64,
-        command_output: CommandOutput,
-    ) {
-        if let Some(mut last_command_receipt) = self.receipts_v2.last_mut() {
-            let last_command_receipt_gas_used = gas_used_v2(&last_command_receipt);
-            set_gas_used_and_exit_code_v2(
-                &mut last_command_receipt, 
-                // Accumulate Gas Used
-                last_command_receipt_gas_used.saturating_add(gas_used),
-                // Overide Exit Code
-                exit_code
-            );
-            // Overide return_value
-            if let CommandReceiptV2::Call(last_call_receipt) = last_command_receipt {
-                match command_kind {
-                    CommandKind::Call => {
-                        last_call_receipt.return_value = command_output.return_values;
-                    }
-                    CommandKind::WithdrawDeposit => {
-                        last_call_receipt.return_value = command_output.amount_withdrawn.to_le_bytes().to_vec();
-                    }
-                    CommandKind::StakeDeposit => {
-                        last_call_receipt.return_value = command_output.amount_staked.to_le_bytes().to_vec();
-                    }
-                    CommandKind::UnstakeDeposit => {
-                        last_call_receipt.return_value = command_output.amount_unstaked.to_le_bytes().to_vec();
-                    }
-                    _=> {}
-                }
-            }
-        }
-    }
-
-    pub fn into_receipt_v1(self) -> ReceiptV1 {
-        self.receipts_v1
-    }
-
-    pub fn into_receipt_v2(mut self, gas_used: u64, commands: &[CommandKind]) -> ReceiptV2 {
-        // TODO: It is to fill-up the NotExecuted command in the receipt. It can be moved into command execution cycle
-        let mut i = self.receipts_v2.len();
-        while i < commands.len() {
-            self.receipts_v2.push(create_not_executed_receipt_v2(&commands[i]));
-            i += 1;
-        }
-        let exit_code = exit_code_v2(self.receipts_v2.last().unwrap());
-        ReceiptV2 {
-            gas_used,
-            exit_code,
-            command_receipts: self.receipts_v2
-        }
-    }
-}
-
-fn create_executed_receipt_v2(
+pub(crate) fn create_executed_receipt_v2(
     command: &CommandKind, 
     exit_code: ExitCodeV2, 
     gas_used: u64, 
@@ -159,12 +58,12 @@ fn create_not_executed_receipt_v2(command: &CommandKind) -> CommandReceiptV2 {
     }
 }
 
-fn gas_used_v2(command_receipt_v2: &CommandReceiptV2) -> u64 {
+fn gas_used_and_exit_code_v2(command_receipt_v2: &CommandReceiptV2) -> (u64, ExitCodeV2) {
     macro_rules! exit_code_v2 {
         ($cmd_recp2:ident, $($var:path,)*) => {
             match $cmd_recp2 {
                 $(
-                    $var(receipt) => receipt.gas_used,
+                    $var(receipt) => (receipt.gas_used, receipt.exit_code.clone()),
                 )*
             }
         };
@@ -245,4 +144,90 @@ fn exit_code_v2(command_receipt_v2: &CommandReceiptV2) -> ExitCodeV2 {
         CommandReceiptV2::UnstakeDeposit,
         CommandReceiptV2::NextEpoch,
     )
+}
+
+
+pub(crate) trait ReceiptCacher<E, R> {
+    fn push_command_receipt(&mut self, command_receipt: E);
+
+    fn push_deferred_command_receipt(&mut self, command_receipt: E);
+
+    fn into_receipt(self, gas_used: u64, commands: &[CommandKind],) -> R;
+}
+
+impl ReceiptCacher<CommandReceiptV1, ReceiptV1> for ReceiptCache {
+    fn push_command_receipt(&mut self, command_receipt: CommandReceiptV1) {
+        self.receipts_v1.push(command_receipt)
+    }
+
+    /// Combine the information from next Command Receipt.
+    /// Assumption: execution of a deferred command will not spawn non-deferred command.
+    fn push_deferred_command_receipt(&mut self, command_receipt: CommandReceiptV1) {
+        if let Some(last_command_receipt) = self.receipts_v1.last_mut() {
+            last_command_receipt.gas_used = last_command_receipt
+                .gas_used
+                .saturating_add(command_receipt.gas_used);
+            last_command_receipt.exit_code = command_receipt.exit_code;
+            last_command_receipt.return_values = command_receipt.return_values;
+        }
+    }
+
+    fn into_receipt(self, _gas_used: u64, _commands: &[CommandKind],) -> ReceiptV1 {
+        self.receipts_v1
+    }
+}
+
+impl ReceiptCacher<CommandReceiptV2, ReceiptV2> for ReceiptCache {
+    fn push_command_receipt(&mut self, command_receipt: CommandReceiptV2) {
+        self.receipts_v2.push(command_receipt);
+    }
+
+    /// Combine the information from next Command Receipt.
+    /// Assumption: execution of a deferred command will not spawn non-deferred command.
+    fn push_deferred_command_receipt(&mut self, command_receipt: CommandReceiptV2) {
+        if let Some(mut last_command_receipt) = self.receipts_v2.last_mut() {
+            let (last_command_receipt_gas_used, _) = gas_used_and_exit_code_v2(&last_command_receipt);
+            let (gas_used, exit_code) = gas_used_and_exit_code_v2(&command_receipt);
+            set_gas_used_and_exit_code_v2(
+                &mut last_command_receipt, 
+                // Accumulate Gas Used
+                last_command_receipt_gas_used.saturating_add(gas_used),
+                // Overide Exit Code
+                exit_code
+            );
+            // Overide return_value
+            if let CommandReceiptV2::Call(last_call_receipt) = last_command_receipt {
+                match command_receipt {
+                    CommandReceiptV2::Call(receipt) => {
+                        last_call_receipt.return_value = receipt.return_value;
+                    }
+                    CommandReceiptV2::WithdrawDeposit(receipt) => {
+                        last_call_receipt.return_value = receipt.amount_withdrawn.to_le_bytes().to_vec();
+                    }
+                    CommandReceiptV2::StakeDeposit(receipt) => {
+                        last_call_receipt.return_value = receipt.amount_staked.to_le_bytes().to_vec();
+                    }
+                    CommandReceiptV2::UnstakeDeposit(receipt) => {
+                        last_call_receipt.return_value = receipt.amount_unstaked.to_le_bytes().to_vec();
+                    }
+                    _=> {}
+                }
+            }
+        }
+    }
+
+    fn into_receipt(mut self, gas_used: u64, commands: &[CommandKind],) -> ReceiptV2 {
+        // TODO: It is to fill-up the NotExecuted command in the receipt. It can be moved into command execution cycle
+        let mut i = self.receipts_v2.len();
+        while i < commands.len() {
+            self.receipts_v2.push(create_not_executed_receipt_v2(&commands[i]));
+            i += 1;
+        }
+        let exit_code = exit_code_v2(self.receipts_v2.last().unwrap());
+        ReceiptV2 {
+            gas_used,
+            exit_code,
+            command_receipts: self.receipts_v2
+        }
+    }
 }

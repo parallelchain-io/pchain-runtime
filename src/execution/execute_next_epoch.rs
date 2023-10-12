@@ -3,12 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-use pchain_types::blockchain::{Command, ExitCodeV1, ExitCodeV2};
+use pchain_types::blockchain::{Command, ExitCodeV1, ExitCodeV2, CommandReceiptV1};
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{commands::protocol, TransitionError, TransitionResultV1, transition::TransitionResultV2, types::CommandKind};
 
-use super::state::ExecutionState;
+use super::{state::{ExecutionState, FinalizeState}, cache::receipt_cache::{self, ReceiptCacher}};
 
 /// Execution of NextEpoch Command.
 pub(crate) fn execute_next_epoch_command_v1<S>(
@@ -50,10 +50,17 @@ where
 
     // Extract receipt from current execution result
     let (gas_used, command_output, _) = state.ctx.extract();
-    state.receipt.push_command_receipt_v1(CommandKind::NextEpoch, ExitCodeV1::Success, gas_used, command_output);
+    state.receipt.push_command_receipt(
+        CommandReceiptV1 {
+            exit_code: ExitCodeV1::Success,
+            gas_used,
+            logs: command_output.logs,
+            return_values: command_output.return_values
+        }
+    );
 
     // Commit to New world state
-    let (new_state, receipt) = state.finalize_v1();
+    let (new_state, receipt) = state.finalize();
 
     TransitionResultV1 {
         new_state,
@@ -103,10 +110,12 @@ where
 
     // Extract receipt from current execution result
     let (gas_used, command_output, _) = state.ctx.extract();
-    state.receipt.push_command_receipt_v2(CommandKind::NextEpoch, ExitCodeV2::Ok, gas_used, command_output);
+    state.receipt.push_command_receipt(
+        receipt_cache::create_executed_receipt_v2(&CommandKind::NextEpoch, ExitCodeV2::Ok, gas_used, command_output)
+    );
 
     // Commit to New world state
-    let (new_state, receipt) = state.finalize_v2();
+    let (new_state, receipt) = state.finalize();
 
     TransitionResultV2 {
         new_state,

@@ -69,7 +69,7 @@ pub(crate) struct CommandOutput {
     /// Output value in [pchain_types::blockchain::CallReceipt].
     pub logs: Vec<Log>,
     /// Output value in [pchain_types::blockchain::CallReceipt].
-    pub  return_values: Vec<u8>,
+    pub return_values: Vec<u8>,
     /// Output value in [pchain_types::blockchain::WithdrawDepositReceipt].
     pub amount_withdrawn: u64,
     /// Output value in [pchain_types::blockchain::StakeDepositReceipt].
