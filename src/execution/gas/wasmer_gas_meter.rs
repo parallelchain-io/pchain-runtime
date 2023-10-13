@@ -6,7 +6,7 @@ use wasmer::Global;
 
 use crate::{
     contract::{wasmer::memory::MemoryContext, ContractModule, SmartContractContext},
-    execution::cache::{CacheKey, CacheValue, CommandOutputCache, WorldStateCache}, types::TxnVersion,
+    execution::cache::{CommandOutputCache, WorldStateCache}, types::TxnVersion,
 };
 
 use super::{
@@ -100,43 +100,34 @@ where
     }
 
     pub fn ws_get_app_data(&self, address: PublicAddress, key: AppKey) -> Option<Vec<u8>> {
-        let result = operation::ws_get(self.version, self.ws_cache, CacheKey::App(address, key));
-        let value = self.charge(result);
-        match value {
-            Some(CacheValue::App(value)) => (!value.is_empty()).then_some(value),
-            None => None,
-            _ => panic!("Retrieved data not of App variant"),
-        }
+        let result = operation::ws_get_app_data(self.version, self.ws_cache, address, key);
+        let value = self.charge(result)?;
+        (!value.is_empty()).then_some(value)
     }
 
     /// Get the balance from read-write set. It balance is not found, gets from WS and caches it.
     pub fn ws_get_balance(&self, address: PublicAddress) -> u64 {
-        let result = operation::ws_get(self.version, self.ws_cache, CacheKey::Balance(address));
-        let value = self.charge(result);
-
-        match value {
-            Some(CacheValue::Balance(value)) => value,
-            _ => panic!(),
-        }
+        let result = operation::ws_get_balance(self.ws_cache, &address);
+        self.charge(result)
     }
 
     pub fn ws_set_app_data(&mut self, address: PublicAddress, app_key: AppKey, value: Vec<u8>) {
-        let result = operation::ws_set(
+        let result = operation::ws_set_app_data(
             self.version,
             self.ws_cache,
-            CacheKey::App(address, app_key),
-            CacheValue::App(value),
+            address, 
+            app_key,
+            value,
         );
         self.charge(result);
     }
 
     /// Sets balance in the write set. It does not write to WS immediately.
     pub fn ws_set_balance(&mut self, address: PublicAddress, value: u64) {
-        let result = operation::ws_set(
-            self.version,
+        let result = operation::ws_set_balance(
             self.ws_cache,
-            CacheKey::Balance(address),
-            CacheValue::Balance(value),
+            address,
+            value
         );
         self.charge(result);
     }
@@ -146,7 +137,7 @@ where
         address: PublicAddress,
         sc_context: &SmartContractContext,
     ) -> Option<ContractModule> {
-        let result = operation::ws_get_cached_contract(self.version, self.ws_cache, sc_context, address);
+        let result = operation::ws_get_cached_contract(self.ws_cache, sc_context, address);
         self.charge(result)
     }
 

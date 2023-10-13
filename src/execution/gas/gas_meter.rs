@@ -3,7 +3,6 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-use core::panic;
 use std::cell::RefCell;
 
 use pchain_types::cryptography::PublicAddress;
@@ -23,7 +22,7 @@ use super::{
     CostChange,
 };
 
-use crate::execution::cache::{CacheKey, CacheValue, CommandOutputCache, WorldStateCache};
+use crate::execution::cache::{CommandOutputCache, WorldStateCache};
 
 /// GasMeter is a global struct that keeps track of gas used from operations OUTSIDE of a Wasmer guest instance (compute and memory access).
 /// It implements a facade for all chargeable methods.
@@ -197,8 +196,7 @@ where
     //
     /// Check if App key has non-empty data
     pub fn ws_contains_app_data(&self, address: PublicAddress, app_key: AppKey) -> bool {
-        let result =
-            operation::ws_contains(self.version, &self.ws_cache, &CacheKey::App(address, app_key.clone()));
+        let result = operation::ws_contains_app_data(self.version, &self.ws_cache, address, app_key);
         self.charge(result)
     }
 
@@ -206,34 +204,21 @@ where
     // GET methods
     //
     /// Gets app data from the read-write set.
-    pub fn ws_get_app_data(&self, address: PublicAddress, key: AppKey) -> Option<Vec<u8>> {
-        let result = operation::ws_get(self.version, &self.ws_cache, CacheKey::App(address, key));
+    pub fn ws_get_app_data(&self, address: PublicAddress, app_key: AppKey) -> Option<Vec<u8>> {
+        let result = operation::ws_get_app_data(self.version, &self.ws_cache, address, app_key);
         let value = self.charge(result)?;
-
-        match value {
-            CacheValue::App(value) => (!value.is_empty()).then_some(value),
-            _ => panic!("Retrieved data not of App variant"),
-        }
+        (!value.is_empty()).then_some(value)
     }
 
     /// Get the balance from read-write set. It balance is not found, gets from WS and caches it.
     pub fn ws_get_balance(&self, address: PublicAddress) -> u64 {
-        let result = operation::ws_get(self.version, &self.ws_cache, CacheKey::Balance(address));
-        let value = self.charge(result).expect("Balance must be some!");
-
-        match value {
-            CacheValue::Balance(value) => value,
-            _ => panic!("Retrieved data not of Balance variant"),
-        }
+        let result = operation::ws_get_balance(&self.ws_cache, &address);
+        self.charge(result)
     }
 
     pub fn ws_get_cbi_version(&self, address: PublicAddress) -> Option<u32> {
-        let result = operation::ws_get(self.version, &self.ws_cache, CacheKey::CBIVersion(address));
-        let value = self.charge(result)?;
-        match value {
-            CacheValue::CBIVersion(value) => Some(value),
-            _ => panic!("Retrieved data not of CBIVersion variant"),
-        }
+        let result = operation::ws_get_cbi_version(&self.ws_cache, &address);
+        self.charge(result)
     }
 
     pub fn ws_get_cached_contract(
@@ -242,7 +227,6 @@ where
         sc_context: &SmartContractContext,
     ) -> Option<ContractModule> {
         self.charge(operation::ws_get_cached_contract(
-            self.version,
             &self.ws_cache,
             sc_context,
             address,
@@ -253,44 +237,42 @@ where
     // SET methods
     //
     pub fn ws_set_app_data(&mut self, address: PublicAddress, app_key: AppKey, value: Vec<u8>) {
-        let result = operation::ws_set(
+        let result = operation::ws_set_app_data(
             self.version,
             &mut self.ws_cache,
-            CacheKey::App(address, app_key),
-            CacheValue::App(value),
+            address,
+            app_key,
+            value,
         );
         self.charge(result)
     }
 
     /// Sets balance in the write set. It does not write to WS immediately.
     pub fn ws_set_balance(&mut self, address: PublicAddress, value: u64) {
-        let result = operation::ws_set(
-            self.version,
+        let result = operation::ws_set_balance(
             &mut self.ws_cache,
-            CacheKey::Balance(address),
-            CacheValue::Balance(value),
+            address,
+            value,
         );
         self.charge(result)
     }
 
     /// Sets CBI version in the write set. It does not write to WS immediately.
     pub fn ws_set_cbi_version(&mut self, address: PublicAddress, cbi_version: u32) {
-        let result = operation::ws_set(
-            self.version,
+        let result = operation::ws_set_cbi_version(
             &mut self.ws_cache,
-            CacheKey::CBIVersion(address),
-            CacheValue::CBIVersion(cbi_version),
+            address,
+            cbi_version,
         );
         self.charge(result)
     }
 
     /// Sets contract bytecode in the write set. It does not write to WS immediately.
     pub fn ws_set_code(&mut self, address: PublicAddress, code: Vec<u8>) {
-        let result = operation::ws_set(
-            self.version,
+        let result = operation::ws_set_contract_code(
             &mut self.ws_cache,
-            CacheKey::ContractCode(address),
-            CacheValue::ContractCode(code),
+            address,
+            code,
         );
         self.charge(result)
     }
