@@ -140,16 +140,16 @@ where
 {
     fn handle_precharge_error(state: ExecutionState<S, CommandReceiptV1>, error: TransitionError) -> TransitionResultV1<S> {
         let (new_state, _): (_, ReceiptV1) = state.finalize();
-        return TransitionResultV1 {
+        TransitionResultV1 {
             new_state,
             receipt: None,
             error: Some(error),
             validator_changes: None,
-        };
+        }
     }
 
     fn handle_command_execution_result(state: &mut ExecutionState<S, CommandReceiptV1>, command_kind: CommandKind, execution_result: &Result<(), TransitionError>) -> Option<Vec<DeferredCommand>> {
-        state.finalize_command_receipt(command_kind, &execution_result)
+        state.finalize_command_receipt(command_kind, execution_result)
     }
 
     fn handle_abort(state: ExecutionState<S, CommandReceiptV1>, error: TransitionError) -> TransitionResultV1<S> {
@@ -193,16 +193,16 @@ where
 {
     fn handle_precharge_error(state: ExecutionState<S, CommandReceiptV2>, error: TransitionError) -> TransitionResultV2<S> {
         let (new_state, _): (_, ReceiptV2) = state.finalize();
-        return TransitionResultV2 {
+        TransitionResultV2 {
             new_state,
             receipt: None,
             error: Some(error),
             validator_changes: None,
-        };
+        }
     }
     
     fn handle_command_execution_result(state: &mut ExecutionState<S, CommandReceiptV2>, command_kind: CommandKind, execution_result: &Result<(), TransitionError>) -> Option<Vec<DeferredCommand>> {
-        state.finalize_command_receipt(command_kind, &execution_result)
+        state.finalize_command_receipt(command_kind, execution_result)
     }
     
     fn handle_abort(state: ExecutionState<S, CommandReceiptV2>, error: TransitionError) -> TransitionResultV2<S> {

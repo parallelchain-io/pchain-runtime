@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-use pchain_types::blockchain::{CommandReceiptV1, ReceiptV1, CommandReceiptV2, ReceiptV2};
+use pchain_types::blockchain::{CommandReceiptV1, ReceiptV1, CommandReceiptV2, ReceiptV2, ExitCodeV2};
 
 use crate::types::{CommandKind, self};
 
@@ -88,14 +88,23 @@ impl ReceiptCacher<CommandReceiptV2, ReceiptV2> for CommandReceiptCache<CommandR
         }
     }
 
-    fn into_receipt(mut self, gas_used: u64, commands: &[CommandKind],) -> ReceiptV2 {
+    fn into_receipt(mut self, gas_used: u64, command_kinds: &[CommandKind],) -> ReceiptV2 {
+
+        // Get the exit code from the receipt of last command that was executed
+        let exit_code =
+        if self.receipts.is_empty() {
+            ExitCodeV2::NotExecuted
+        } else {
+            let (_, exit_code) = types::gas_used_and_exit_code_v2(self.receipts.last().unwrap());
+            exit_code
+        };
+
         // TODO: It is to fill-up the NotExecuted command in the receipt. It can be moved into command execution cycle
-        let mut i = self.receipts.len();
-        while i < commands.len() {
-            self.receipts.push(types::create_not_executed_receipt_v2(&commands[i]));
-            i += 1;
+        let num_executed = self.receipts.len();
+        for command_kind in command_kinds.iter().skip(num_executed) {
+            self.receipts.push(types::create_not_executed_receipt_v2(command_kind));
         }
-        let (_, exit_code) = types::gas_used_and_exit_code_v2(self.receipts.last().unwrap());
+
         ReceiptV2 {
             gas_used,
             exit_code,

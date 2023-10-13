@@ -52,7 +52,7 @@ where
     let nonce = ws_cache.ws.nonce(signer).saturating_add(1);
     ws_cache.ws.with_commit().set_nonce(signer, nonce);
 
-    return P::handle_post_execution(state, new_vs)
+    P::handle_post_execution(state, new_vs)
 }
 
 

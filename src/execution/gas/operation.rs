@@ -24,13 +24,9 @@ pub(crate) fn ws_set<S>(
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    let key_len = match version {
-        TxnVersion::V1 => key.len_v1(),
-        TxnVersion::V2 => key.len_v2()
-    };
-
+    let key_len = key.len(version);
     let new_val_len = value.len();
-    let (old_val_len, get_cost) = ws_get(ws_cache, key.clone());
+    let (old_val_len, get_cost) = ws_get(version, ws_cache, key.clone());
     let old_val_len = old_val_len.map_or(0, |v| v.len());
 
     // old_val_len is obtained from Get so the cost of reading the key is already charged
@@ -47,6 +43,7 @@ where
 }
 
 pub(crate) fn ws_get<S>(
+    version: TxnVersion,
     ws_cache: &WorldStateCache<S>,
     key: CacheKey,
 ) -> OperationReceipt<Option<CacheValue>>
@@ -59,27 +56,31 @@ where
         CacheKey::ContractCode(_) => {
             CostChange::deduct(gas::get_code_cost(value.as_ref().map_or(0, |v| v.len())))
         }
-        _ => CostChange::deduct(gas::get_cost(
-            key.len_v1(),
-            value.as_ref().map_or(0, |v| v.len()),
-        )),
+        _ => {
+            CostChange::deduct(gas::get_cost(
+                key.len(version),
+                value.as_ref().map_or(0, |v| v.len()),
+            ))
+        },
     };
     (value, get_cost)
 }
 
 pub(crate) fn ws_contains<S>(
+    version: TxnVersion,
     ws_cache: &WorldStateCache<S>,
     key: &CacheKey,
 ) -> OperationReceipt<bool>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    let cost_change = CostChange::deduct(gas::contains_cost(key.len_v1()));
+    let cost_change = CostChange::deduct(gas::contains_cost(key.len(version)));
     let ret = ws_cache.contains(key);
     (ret, cost_change)
 }
 
 pub(crate) fn ws_get_cached_contract<S>(
+    version: TxnVersion,
     ws_cache: &WorldStateCache<S>,
     sc_context: &SmartContractContext,
     address: PublicAddress,
@@ -95,7 +96,7 @@ where
     }
 
     // else check ws and charge
-    let (value, contract_get_cost) = ws_get(ws_cache, CacheKey::ContractCode(address));
+    let (value, contract_get_cost) = ws_get(version, ws_cache, CacheKey::ContractCode(address));
     let contract_code = match value {
         Some(CacheValue::ContractCode(value)) => value,
         None => return (None, contract_get_cost),

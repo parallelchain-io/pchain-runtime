@@ -100,7 +100,7 @@ where
     }
 
     pub fn ws_get_app_data(&self, address: PublicAddress, key: AppKey) -> Option<Vec<u8>> {
-        let result = operation::ws_get(self.ws_cache, CacheKey::App(address, key));
+        let result = operation::ws_get(self.version, self.ws_cache, CacheKey::App(address, key));
         let value = self.charge(result);
         match value {
             Some(CacheValue::App(value)) => (!value.is_empty()).then_some(value),
@@ -111,7 +111,7 @@ where
 
     /// Get the balance from read-write set. It balance is not found, gets from WS and caches it.
     pub fn ws_get_balance(&self, address: PublicAddress) -> u64 {
-        let result = operation::ws_get(self.ws_cache, CacheKey::Balance(address));
+        let result = operation::ws_get(self.version, self.ws_cache, CacheKey::Balance(address));
         let value = self.charge(result);
 
         match value {
@@ -146,7 +146,7 @@ where
         address: PublicAddress,
         sc_context: &SmartContractContext,
     ) -> Option<ContractModule> {
-        let result = operation::ws_get_cached_contract(self.ws_cache, sc_context, address);
+        let result = operation::ws_get_cached_contract(self.version, self.ws_cache, sc_context, address);
         self.charge(result)
     }
 
