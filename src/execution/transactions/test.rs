@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use pchain_types::{
-    blockchain::{Command, ExitCodeV1, TransactionV1, CommandReceiptV1},
+    blockchain::{Command, ExitCodeV1, TransactionV1, CommandReceiptV1, TransactionV2, CommandReceiptV2, ReceiptV2, ExitCodeV2},
     cryptography::PublicAddress,
     runtime::*,
 };
@@ -24,11 +24,11 @@ use pchain_world_state::{
 use crate::{
     commands::protocol,
     execution::{
-        execute_commands::execute_commands_v1, execute_next_epoch::execute_next_epoch_v1, state::ExecutionState,
+        execute_commands::{execute_commands_v1, execute_commands_v2}, execute_next_epoch::execute_next_epoch_v1, state::ExecutionState,
     },
     gas,
     transition::TransitionContext,
-    types::{BaseTx, TxnVersion},
+    types::{BaseTx, TxnVersion, self},
     BlockProposalStats, BlockchainParams, TransitionError, TransitionResultV1, ValidatorPerformance,
 };
 
@@ -37,7 +37,9 @@ const TEST_MAX_STAKES_PER_POOL: u16 = constants::MAX_STAKES_PER_POOL;
 const MIN_BASE_FEE: u64 = 8;
 type NetworkAccount<'a, S> =
     NetworkAccountSized<'a, S, { TEST_MAX_VALIDATOR_SET_SIZE }, { TEST_MAX_STAKES_PER_POOL }>;
+
 type ExecutionStateV1<S> = ExecutionState<S, CommandReceiptV1>;
+type ExecutionStateV2<S> = ExecutionState<S, CommandReceiptV2>;
 
 #[derive(Clone)]
 struct SimpleStore {
@@ -60,15 +62,37 @@ const ACCOUNT_D: [u8; 32] = [4u8; 32];
 /// Null test on empty transaction commands
 #[test]
 fn test_empty_commands() {
+    /* Version 1 */
+    
     let mut state = create_state(None);
 
     let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
 
     let tx_base_cost = set_tx(&mut state, ACCOUNT_A, 0, &vec![]);
+
     let ret = execute_commands_v1(state, vec![]);
     assert_eq!((&ret.error, &ret.receipt), (&None, &Some(vec![])));
     let gas_used = extract_gas_used(&ret);
     assert_eq!(gas_used, 0);
+
+    let state = create_state(Some(ret.new_state));
+    let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
+    assert_eq!(
+        owner_balance_before,
+        owner_balance_after + gas_used + tx_base_cost
+    );
+
+    /* Version 2 */
+
+    let mut state = create_state_v2(None);
+
+    let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
+
+    let tx_base_cost = set_tx_v2(&mut state, ACCOUNT_A, 0, &vec![]);
+
+    let ret = execute_commands_v2(state, vec![]);
+    assert!(ret.error.is_none());
+    assert!(extract_receipt_content_v2(&ret.receipt.unwrap(), tx_base_cost, 0, ExitCodeV2::Ok, 0));
 
     let state = create_state(Some(ret.new_state));
     let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
@@ -81,22 +105,20 @@ fn test_empty_commands() {
 #[test]
 // Commands Transfer
 fn test_transfer() {
+    /* Version 1 */
+
     let state = create_state(None);
 
     let amount = 999_999;
-    let ret = execute_commands_v1(
-        state,
-        vec![Command::Transfer(TransferInput {
-            recipient: ACCOUNT_B,
-            amount,
-        })],
-    );
+    let commands = vec![Command::Transfer(TransferInput {
+        recipient: ACCOUNT_B,
+        amount,
+    })];
+
+    let ret = execute_commands_v1(state, commands);
 
     assert_eq!(
-        (
-            &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
-        ),
+        (&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_code),
         (&None, &ExitCodeV1::Success)
     );
 
@@ -104,7 +126,26 @@ fn test_transfer() {
     let owner_balance_after = ret.new_state.balance(ACCOUNT_B);
 
     assert_eq!(owner_balance_after, 500_000_000 + amount);
+
+    /* Version 2 */
+
+    let mut state = create_state_v2(None);
+
+    let amount = 999_999;
+    let commands = vec![Command::Transfer(TransferInput {
+        recipient: ACCOUNT_B,
+        amount,
+    })];
+
+    let tx_base_cost = set_tx_v2(&mut state, ACCOUNT_A, 0, &commands);
+    let ret = execute_commands_v2(state,commands,);
+    assert!(ret.error.is_none());
+    assert!(extract_receipt_content_v2(&ret.receipt.unwrap(), tx_base_cost + 32820, 32820, ExitCodeV2::Ok, 0));
+
+    let owner_balance_after = ret.new_state.balance(ACCOUNT_B);
+    assert_eq!(owner_balance_after, 500_000_000 + amount);
 }
+
 // Commands: Create Pool
 // Exception:
 // - Create Pool again
@@ -3307,6 +3348,53 @@ fn create_tx(signer: PublicAddress) -> TransactionV1 {
     }
 }
 
+fn create_state_v2(init_ws: Option<WorldState<SimpleStore>>) -> ExecutionStateV2<SimpleStore> {
+    let ws = match init_ws {
+        Some(ws) => ws,
+        None => {
+            let mut ws = WorldState::initialize(SimpleStore {
+                inner: HashMap::new(),
+            });
+            ws.with_commit().set_balance(ACCOUNT_A, 500_000_000);
+            ws.with_commit().set_balance(ACCOUNT_B, 500_000_000);
+            ws.with_commit().set_balance(ACCOUNT_C, 500_000_000);
+            ws.with_commit().set_balance(ACCOUNT_D, 500_000_000);
+            ws
+        }
+    };
+    let tx = create_tx_v2(ACCOUNT_A);
+    let ctx = TransitionContext::new(TxnVersion::V2, ws, tx.gas_limit);
+    let base_tx = BaseTx::from(&tx);
+
+    ExecutionState::new(base_tx, create_bd(), ctx)
+}
+
+fn set_tx_v2(
+    state: &mut ExecutionStateV2<SimpleStore>,
+    signer: PublicAddress,
+    nonce: u64,
+    commands: &Vec<Command>,
+) -> u64 {
+    let mut tx = create_tx(signer);
+    tx.nonce = nonce;
+    tx.commands = commands.clone();
+    state.tx = BaseTx::from(&tx);
+    gas::tx_inclusion_cost_v2(state.tx.size, state.tx.commands_len)
+}
+
+fn create_tx_v2(signer: PublicAddress) -> TransactionV2 {
+    TransactionV2 {
+        signer,
+        gas_limit: 10_000_000,
+        priority_fee_per_gas: 0,
+        max_base_fee_per_gas: MIN_BASE_FEE,
+        nonce: 0,
+        hash: [0u8; 32],
+        signature: [0u8; 64],
+        commands: Vec::new(),
+    }
+}
+
 fn create_bd() -> BlockchainParams {
     let mut validator_performance = ValidatorPerformance::default();
     validator_performance.blocks_per_epoch = TEST_MAX_VALIDATOR_SET_SIZE as u32;
@@ -3597,4 +3685,36 @@ fn extract_gas_used(ret: &TransitionResultV1<SimpleStore>) -> u64 {
         .iter()
         .map(|g| g.gas_used)
         .sum::<u64>()
+}
+
+fn extract_receipt_content_v2(
+    receipt: &ReceiptV2,
+    total_gas_used: u64,
+    commands_gas_used: u64,
+    exit_code: ExitCodeV2,
+    count_tailing_not_executed: usize
+) -> bool {
+    let gas_used_in_header = receipt.gas_used;
+
+    let gas_used_in_commands = receipt
+        .command_receipts
+        .iter()
+        .map(|g| {
+            types::gas_used_and_exit_code_v2(g).0
+        })
+        .sum::<u64>();
+
+    let count = receipt.command_receipts
+        .iter()
+        .rev()
+        .map(types::gas_used_and_exit_code_v2)
+        .take_while(|(_, e)| {
+            e == &ExitCodeV2::NotExecuted
+        })
+        .count();
+
+    gas_used_in_header == total_gas_used
+    && gas_used_in_commands == commands_gas_used
+    && receipt.exit_code == exit_code 
+    && count == count_tailing_not_executed
 }

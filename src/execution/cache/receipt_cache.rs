@@ -93,7 +93,11 @@ impl ReceiptCacher<CommandReceiptV2, ReceiptV2> for CommandReceiptCache<CommandR
         // Get the exit code from the receipt of last command that was executed
         let exit_code =
         if self.receipts.is_empty() {
-            ExitCodeV2::NotExecuted
+            if command_kinds.is_empty() { 
+                ExitCodeV2::Ok // Nothing to execute.
+            } else {
+                ExitCodeV2::NotExecuted // Some commands need to be executed but none is executed.
+            }
         } else {
             let (_, exit_code) = types::gas_used_and_exit_code_v2(self.receipts.last().unwrap());
             exit_code
