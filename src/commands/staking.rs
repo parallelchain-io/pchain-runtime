@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of executing [Staking Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#staking-commands).
+//! Execution implementation of [Staking Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#staking-commands).
 
 use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{
@@ -20,7 +20,8 @@ use crate::{
         abort::{abort, abort_if_gas_exhausted},
         state::ExecutionState,
     },
-    TransitionError, types::TxnVersion,
+    types::TxnVersion,
+    TransitionError,
 };
 
 /// Execution of [pchain_types::blockchain::Command::CreatePool]
@@ -283,7 +284,7 @@ where
             state
                 .ctx
                 .gas_meter
-                .command_output_set_return_values(return_value);
+                .command_output_set_return_value(return_value);
         }
         TxnVersion::V2 => {
             state
@@ -292,7 +293,7 @@ where
                 .command_output_set_amount_withdrawn(withdrawal_amount);
         }
     }
-    
+
     abort_if_gas_exhausted(state)
 }
 
@@ -342,7 +343,7 @@ where
         true,
     ) {
         Ok(_) => {}
-        Err(_) => abort!(state, TransitionError::InvalidStakeAmount)
+        Err(_) => abort!(state, TransitionError::InvalidStakeAmount),
     };
 
     // Set the staked amount to return_value
@@ -352,7 +353,7 @@ where
             state
                 .ctx
                 .gas_meter
-                .command_output_set_return_values(return_value);
+                .command_output_set_return_value(return_value);
         }
         TxnVersion::V2 => {
             state
@@ -409,7 +410,7 @@ where
             state
                 .ctx
                 .gas_meter
-                .command_output_set_return_values(return_value);
+                .command_output_set_return_value(return_value);
         }
         TxnVersion::V2 => {
             state

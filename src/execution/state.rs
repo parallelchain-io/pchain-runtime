@@ -8,17 +8,19 @@
 //! This state is not as same as the concept of state in World State. Execution encapsulates the changing information
 //! during execution life-cycle. It is the state of execution model, but not referring to blockchain storage.
 
-use pchain_types::blockchain::{ExitCodeV1, ReceiptV1, ExitCodeV2, ReceiptV2, CommandReceiptV1, CommandReceiptV2};
+use pchain_types::blockchain::{
+    CommandReceiptV1, CommandReceiptV2, ExitCodeV1, ExitCodeV2, ReceiptV1, ReceiptV2,
+};
 use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
 use receipt_cache::ReceiptCacher;
 
 use crate::{
     transition::TransitionContext,
-    types::{BaseTx, DeferredCommand, CommandKind, self},
+    types::{self, BaseTx, CommandKind, DeferredCommand},
     BlockchainParams, TransitionError,
 };
 
-use super::cache::{CommandReceiptCache, receipt_cache};
+use super::cache::{receipt_cache, CommandReceiptCache};
 
 /// ExecutionState is a collection of all useful information required to transit an state through Phases.
 /// Methods defined in ExecutionState do not directly update data to world state, but associate with the
@@ -43,12 +45,17 @@ where
     pub receipt: CommandReceiptCache<E>,
 }
 
-impl<S, E> ExecutionState<S, E> 
+impl<S, E> ExecutionState<S, E>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     pub fn new(tx: BaseTx, bd: BlockchainParams, ctx: TransitionContext<S>) -> Self {
-        Self { tx, bd, ctx, receipt: CommandReceiptCache::<E>::new() }
+        Self {
+            tx,
+            bd,
+            ctx,
+            receipt: CommandReceiptCache::<E>::new(),
+        }
     }
 }
 
@@ -60,52 +67,49 @@ where
         let gas_used = self.ctx.gas_meter.total_gas_used_for_executed_commands();
         (
             self.ctx.into_ws_cache().commit_to_world_state(),
-            self.receipt.into_receipt(gas_used, &self.tx.command_kinds)
+            self.receipt.into_receipt(gas_used, &self.tx.command_kinds),
         )
     }
-    fn finalize_command_receipt<Q>(
+    fn finalize_cmd_receipt_collect_deferred<Q>(
         &mut self,
         _command_kind: CommandKind,
-        execution_result: &Result<Q, TransitionError>
+        execution_result: &Result<Q, TransitionError>,
     ) -> Option<Vec<DeferredCommand>> {
         let exit_code = match &execution_result {
             Ok(_) => ExitCodeV1::Success,
-            Err(error) => ExitCodeV1::from(error)
+            Err(error) => ExitCodeV1::from(error),
         };
 
         // extract receipt from current execution result
         let (gas_used, command_output, deferred_commands_from_call) = self.ctx.extract();
-        self.receipt.push_command_receipt(
-            CommandReceiptV1 {
-                exit_code,
-                gas_used,
-                logs: command_output.logs,
-                return_values: command_output.return_values
-            }
-        );
+        self.receipt.push_command_receipt(CommandReceiptV1 {
+            exit_code,
+            gas_used,
+            logs: command_output.logs,
+            return_values: command_output.return_value,
+        });
 
         deferred_commands_from_call
     }
-    fn finalize_deferred_command_receipt<Q>(
+    fn finalize_deferred_cmd_receipt<Q>(
         &mut self,
         _command_kind: CommandKind,
-        execution_result: &Result<Q, TransitionError>
+        execution_result: &Result<Q, TransitionError>,
     ) {
         let exit_code = match &execution_result {
             Ok(_) => ExitCodeV1::Success,
-            Err(error) => ExitCodeV1::from(error)
+            Err(error) => ExitCodeV1::from(error),
         };
 
         // extract receipt from current execution result
         let (gas_used, command_output, _) = self.ctx.extract();
-        self.receipt.push_deferred_command_receipt(
-            CommandReceiptV1 {
+        self.receipt
+            .push_deferred_command_receipt(CommandReceiptV1 {
                 exit_code,
                 gas_used,
-                return_values: command_output.return_values,
-                logs: command_output.logs
-            }
-        );
+                return_values: command_output.return_value,
+                logs: command_output.logs,
+            });
     }
 }
 impl<S> FinalizeState<S, CommandReceiptV2, ReceiptV2> for ExecutionState<S, CommandReceiptV2>
@@ -116,42 +120,50 @@ where
         let gas_used = self.ctx.gas_meter.total_gas_used_for_executed_commands();
         (
             self.ctx.into_ws_cache().commit_to_world_state(),
-            self.receipt.into_receipt(gas_used, &self.tx.command_kinds)
+            self.receipt.into_receipt(gas_used, &self.tx.command_kinds),
         )
     }
-    fn finalize_command_receipt<Q>(
+    fn finalize_cmd_receipt_collect_deferred<Q>(
         &mut self,
         command_kind: CommandKind,
-        execution_result: &Result<Q, TransitionError>
+        execution_result: &Result<Q, TransitionError>,
     ) -> Option<Vec<DeferredCommand>> {
         let exit_code = match &execution_result {
             Ok(_) => ExitCodeV2::Ok,
-            Err(error) => ExitCodeV2::from(error)
+            Err(error) => ExitCodeV2::from(error),
         };
 
         // extract receipt from current execution result
         let (gas_used, command_output, deferred_commands_from_call) = self.ctx.extract();
-        self.receipt.push_command_receipt(
-            types::create_executed_receipt_v2(&command_kind, exit_code, gas_used, command_output)
-        );
+        self.receipt
+            .push_command_receipt(types::create_executed_receipt_v2(
+                &command_kind,
+                exit_code,
+                gas_used,
+                command_output,
+            ));
 
         deferred_commands_from_call
     }
-    fn finalize_deferred_command_receipt<Q>(
+    fn finalize_deferred_cmd_receipt<Q>(
         &mut self,
         command_kind: CommandKind,
-        execution_result: &Result<Q, TransitionError>
+        execution_result: &Result<Q, TransitionError>,
     ) {
         let exit_code = match &execution_result {
             Ok(_) => ExitCodeV2::Ok,
-            Err(error) => ExitCodeV2::from(error)
+            Err(error) => ExitCodeV2::from(error),
         };
 
         // extract receipt from current execution result
         let (gas_used, command_output, _) = self.ctx.extract();
-        self.receipt.push_deferred_command_receipt(
-            types::create_executed_receipt_v2(&command_kind, exit_code, gas_used, command_output)
-        );
+        self.receipt
+            .push_deferred_command_receipt(types::create_executed_receipt_v2(
+                &command_kind,
+                exit_code,
+                gas_used,
+                command_output,
+            ));
     }
 }
 
@@ -159,16 +171,16 @@ pub(crate) trait FinalizeState<S, E, R>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    fn finalize_deferred_command_receipt<Q>(
+    fn finalize_deferred_cmd_receipt<Q>(
         &mut self,
         command_kind: CommandKind,
-        execution_result: &Result<Q, TransitionError>
+        execution_result: &Result<Q, TransitionError>,
     );
 
-    fn finalize_command_receipt<Q>(
+    fn finalize_cmd_receipt_collect_deferred<Q>(
         &mut self,
         command_kind: CommandKind,
-        execution_result: &Result<Q, TransitionError>
+        execution_result: &Result<Q, TransitionError>,
     ) -> Option<Vec<DeferredCommand>>;
 
     fn finalize(self) -> (WorldState<S>, R);

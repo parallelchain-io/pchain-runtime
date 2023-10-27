@@ -3,6 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+//! The Executable Trait specifies the execution behaviour of Commands and DeferredCommands.
+
 use pchain_types::{
     blockchain::Command,
     cryptography::PublicAddress,
@@ -22,7 +24,7 @@ use super::staking;
 
 pub(crate) trait Executable<S, E>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     fn execute(
         self,
@@ -33,7 +35,7 @@ where
 
 impl<S, E> Executable<S, E> for Command
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     fn execute(
         self,
@@ -47,7 +49,7 @@ where
 
 impl<S, E> Executable<S, E> for DeferredCommand
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static
+    S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
     fn execute(
         self,

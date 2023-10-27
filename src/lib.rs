@@ -4,7 +4,7 @@
 */
 
 //! ParallelChain Mainnet Runtime is a **State Transition Function** to transit from an input state of the blockchain to next state.
-//! It is also the sole system component to handle Smart Contract that is primarily built from Rust code by using
+//! It is also the sole system component to execute smart contracts written in Rust by using
 //! ParallelChain Smart Contract Development Kit (SDK).
 //!
 //! ```text
@@ -24,11 +24,11 @@
 //! let result = pchain_runtime::Runtime::new().transition(ws, tx, bd);
 //! ```
 //!
-//! In summary, a state [transition] function intakes Transaction, Blockchain and World State to [execute](execution),
-//! and output transition result which could be a success result or an [error]. The transition follows
+//! In summary, a state [transition] function takes in Transaction, Blockchain and World State to [execute](execution),
+//! and outputs a transition result which could be success or [error]. The transition follows
 //! the data [types] definitions of ParallelChain Mainnet and the [formulas] in this library.
-//! When transiting the state by executing smart [contract], it uses [wasmer] as underlying WebAssembly runtime,
-//! which is gas-metered, and the [gas] [cost] incurred will be set to transaction receipt.
+//! The underlying WebAssembly runtime for transiting state through smart [contract] execution is [wasmer],
+//! which is gas-metered, and the [gas] cost incurred will be record in a receipt.
 
 pub mod commands;
 

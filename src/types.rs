@@ -3,12 +3,17 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines common data structures to be used inside this library, or from outside application.
+//! Defines common data structures used inside this library, or from external crates
 
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
-use pchain_types::blockchain::{Log, CommandReceiptV2, ExitCodeV2, TransferReceipt, DeployReceipt, CallReceipt, CreatePoolReceipt, SetPoolSettingsReceipt, DeletePoolReceipt, CreateDepositReceipt, SetDepositSettingsReceipt, WithdrawDepositReceipt, StakeDepositReceipt, UnstakeDepositReceipt, NextEpochReceipt, TopUpDepositReceipt};
+use pchain_types::blockchain::{
+    CallReceipt, CommandReceiptV2, CreateDepositReceipt, CreatePoolReceipt, DeletePoolReceipt,
+    DeployReceipt, ExitCodeV2, Log, NextEpochReceipt, SetDepositSettingsReceipt,
+    SetPoolSettingsReceipt, StakeDepositReceipt, TopUpDepositReceipt, TransferReceipt,
+    UnstakeDepositReceipt, WithdrawDepositReceipt,
+};
 use pchain_types::{
     blockchain::{Command, TransactionV1, TransactionV2},
     cryptography::{PublicAddress, Sha256Hash},
@@ -113,10 +118,11 @@ impl From<&TransactionV2> for BaseTx {
     }
 }
 
+/// Marker for transaction version
 #[derive(Clone, Copy)]
 pub(crate) enum TxnVersion {
     V1,
-    V2
+    V2,
 }
 
 impl Default for TxnVersion {
@@ -125,11 +131,12 @@ impl Default for TxnVersion {
     }
 }
 
+/// Used to distinguish command types for V2 (ReceiptV2 and CommandReceiptV2)
 #[derive(Clone, Copy)]
 pub(crate) enum CommandKind {
     Transfer,
     Deploy,
-    Call, 
+    Call,
     CreatePool,
     SetPoolSettings,
     DeletePool,
@@ -139,7 +146,7 @@ pub(crate) enum CommandKind {
     WithdrawDeposit,
     StakeDeposit,
     UnstakeDeposit,
-    NextEpoch
+    NextEpoch,
 }
 
 impl From<&Command> for CommandKind {
@@ -192,13 +199,12 @@ pub(crate) struct DeferredCommand {
     pub command: Command,
 }
 
-
 #[derive(Clone, Default)]
 pub(crate) struct CommandOutput {
     /// Output value in [pchain_types::blockchain::CallReceipt].
     pub logs: Vec<Log>,
     /// Output value in [pchain_types::blockchain::CallReceipt].
-    pub return_values: Vec<u8>,
+    pub return_value: Vec<u8>,
     /// Output value in [pchain_types::blockchain::WithdrawDepositReceipt].
     pub amount_withdrawn: u64,
     /// Output value in [pchain_types::blockchain::StakeDepositReceipt].
@@ -207,49 +213,142 @@ pub(crate) struct CommandOutput {
     pub amount_unstaked: u64,
 }
 
-
 pub(crate) fn create_executed_receipt_v2(
-    command: &CommandKind, 
-    exit_code: ExitCodeV2, 
-    gas_used: u64, 
+    command: &CommandKind,
+    exit_code: ExitCodeV2,
+    gas_used: u64,
     command_output: CommandOutput,
 ) -> CommandReceiptV2 {
     match command {
-        CommandKind::Transfer => CommandReceiptV2::Transfer(TransferReceipt { exit_code, gas_used }),
-        CommandKind::Deploy => CommandReceiptV2::Deploy(DeployReceipt { exit_code, gas_used }),
-        CommandKind::Call => CommandReceiptV2::Call(CallReceipt { exit_code, gas_used, logs: command_output.logs, return_value: command_output.return_values }),
-        CommandKind::CreatePool => CommandReceiptV2::CreatePool(CreatePoolReceipt { exit_code, gas_used }),
-        CommandKind::SetPoolSettings => CommandReceiptV2::SetPoolSettings(SetPoolSettingsReceipt { exit_code, gas_used }),
-        CommandKind::DeletePool => CommandReceiptV2::DeletePool(DeletePoolReceipt { exit_code, gas_used }),
-        CommandKind::CreateDeposit => CommandReceiptV2::CreateDeposit(CreateDepositReceipt { exit_code, gas_used }),
-        CommandKind::SetDepositSettings => CommandReceiptV2::SetDepositSettings(SetDepositSettingsReceipt { exit_code, gas_used }),
-        CommandKind::TopUpDeposit => CommandReceiptV2::TopUpDeposit(TopUpDepositReceipt { exit_code, gas_used }),
-        CommandKind::WithdrawDeposit => CommandReceiptV2::WithdrawDeposit(WithdrawDepositReceipt { exit_code, gas_used, amount_withdrawn: command_output.amount_withdrawn }),
-        CommandKind::StakeDeposit => CommandReceiptV2::StakeDeposit(StakeDepositReceipt { exit_code, gas_used, amount_staked: command_output.amount_staked }),
-        CommandKind::UnstakeDeposit => CommandReceiptV2::UnstakeDeposit(UnstakeDepositReceipt { exit_code, gas_used, amount_unstaked: command_output.amount_unstaked }),
-        CommandKind::NextEpoch => CommandReceiptV2::NextEpoch(NextEpochReceipt { exit_code, gas_used }),
+        CommandKind::Transfer => CommandReceiptV2::Transfer(TransferReceipt {
+            exit_code,
+            gas_used,
+        }),
+        CommandKind::Deploy => CommandReceiptV2::Deploy(DeployReceipt {
+            exit_code,
+            gas_used,
+        }),
+        CommandKind::Call => CommandReceiptV2::Call(CallReceipt {
+            exit_code,
+            gas_used,
+            logs: command_output.logs,
+            return_value: command_output.return_value,
+        }),
+        CommandKind::CreatePool => CommandReceiptV2::CreatePool(CreatePoolReceipt {
+            exit_code,
+            gas_used,
+        }),
+        CommandKind::SetPoolSettings => CommandReceiptV2::SetPoolSettings(SetPoolSettingsReceipt {
+            exit_code,
+            gas_used,
+        }),
+        CommandKind::DeletePool => CommandReceiptV2::DeletePool(DeletePoolReceipt {
+            exit_code,
+            gas_used,
+        }),
+        CommandKind::CreateDeposit => CommandReceiptV2::CreateDeposit(CreateDepositReceipt {
+            exit_code,
+            gas_used,
+        }),
+        CommandKind::SetDepositSettings => {
+            CommandReceiptV2::SetDepositSettings(SetDepositSettingsReceipt {
+                exit_code,
+                gas_used,
+            })
+        }
+        CommandKind::TopUpDeposit => CommandReceiptV2::TopUpDeposit(TopUpDepositReceipt {
+            exit_code,
+            gas_used,
+        }),
+        CommandKind::WithdrawDeposit => CommandReceiptV2::WithdrawDeposit(WithdrawDepositReceipt {
+            exit_code,
+            gas_used,
+            amount_withdrawn: command_output.amount_withdrawn,
+        }),
+        CommandKind::StakeDeposit => CommandReceiptV2::StakeDeposit(StakeDepositReceipt {
+            exit_code,
+            gas_used,
+            amount_staked: command_output.amount_staked,
+        }),
+        CommandKind::UnstakeDeposit => CommandReceiptV2::UnstakeDeposit(UnstakeDepositReceipt {
+            exit_code,
+            gas_used,
+            amount_unstaked: command_output.amount_unstaked,
+        }),
+        CommandKind::NextEpoch => CommandReceiptV2::NextEpoch(NextEpochReceipt {
+            exit_code,
+            gas_used,
+        }),
     }
 }
 
 pub(crate) fn create_not_executed_receipt_v2(command: &CommandKind) -> CommandReceiptV2 {
     match command {
-        CommandKind::Transfer => CommandReceiptV2::Transfer(TransferReceipt { gas_used: 0, exit_code: ExitCodeV2::NotExecuted}),
-        CommandKind::Deploy => CommandReceiptV2::Deploy(DeployReceipt { gas_used: 0, exit_code: ExitCodeV2::NotExecuted}),
-        CommandKind::Call => CommandReceiptV2::Call(CallReceipt { gas_used: 0, exit_code: ExitCodeV2::NotExecuted, logs: Vec::new(), return_value: Vec::new() }),
-        CommandKind::CreatePool => CommandReceiptV2::CreatePool(CreatePoolReceipt { gas_used: 0, exit_code: ExitCodeV2::NotExecuted}),
-        CommandKind::SetPoolSettings => CommandReceiptV2::SetPoolSettings(SetPoolSettingsReceipt { gas_used: 0, exit_code: ExitCodeV2::NotExecuted}),
-        CommandKind::DeletePool => CommandReceiptV2::DeletePool(DeletePoolReceipt { gas_used: 0, exit_code: ExitCodeV2::NotExecuted}),
-        CommandKind::CreateDeposit => CommandReceiptV2::CreateDeposit(CreateDepositReceipt { gas_used: 0, exit_code: ExitCodeV2::NotExecuted}),
-        CommandKind::SetDepositSettings => CommandReceiptV2::SetDepositSettings(SetDepositSettingsReceipt { gas_used: 0, exit_code: ExitCodeV2::NotExecuted}),
-        CommandKind::TopUpDeposit => CommandReceiptV2::TopUpDeposit(TopUpDepositReceipt { gas_used: 0, exit_code: ExitCodeV2::NotExecuted}),
-        CommandKind::WithdrawDeposit => CommandReceiptV2::WithdrawDeposit(WithdrawDepositReceipt { gas_used: 0, exit_code: ExitCodeV2::NotExecuted, amount_withdrawn: 0 }),
-        CommandKind::StakeDeposit => CommandReceiptV2::StakeDeposit(StakeDepositReceipt { gas_used: 0, exit_code: ExitCodeV2::NotExecuted, amount_staked: 0 }),
-        CommandKind::UnstakeDeposit => CommandReceiptV2::UnstakeDeposit(UnstakeDepositReceipt { gas_used: 0, exit_code: ExitCodeV2::NotExecuted, amount_unstaked: 0}),
-        CommandKind::NextEpoch => CommandReceiptV2::NextEpoch(NextEpochReceipt { gas_used: 0, exit_code: ExitCodeV2::NotExecuted })
+        CommandKind::Transfer => CommandReceiptV2::Transfer(TransferReceipt {
+            gas_used: 0,
+            exit_code: ExitCodeV2::NotExecuted,
+        }),
+        CommandKind::Deploy => CommandReceiptV2::Deploy(DeployReceipt {
+            gas_used: 0,
+            exit_code: ExitCodeV2::NotExecuted,
+        }),
+        CommandKind::Call => CommandReceiptV2::Call(CallReceipt {
+            gas_used: 0,
+            exit_code: ExitCodeV2::NotExecuted,
+            logs: Vec::new(),
+            return_value: Vec::new(),
+        }),
+        CommandKind::CreatePool => CommandReceiptV2::CreatePool(CreatePoolReceipt {
+            gas_used: 0,
+            exit_code: ExitCodeV2::NotExecuted,
+        }),
+        CommandKind::SetPoolSettings => CommandReceiptV2::SetPoolSettings(SetPoolSettingsReceipt {
+            gas_used: 0,
+            exit_code: ExitCodeV2::NotExecuted,
+        }),
+        CommandKind::DeletePool => CommandReceiptV2::DeletePool(DeletePoolReceipt {
+            gas_used: 0,
+            exit_code: ExitCodeV2::NotExecuted,
+        }),
+        CommandKind::CreateDeposit => CommandReceiptV2::CreateDeposit(CreateDepositReceipt {
+            gas_used: 0,
+            exit_code: ExitCodeV2::NotExecuted,
+        }),
+        CommandKind::SetDepositSettings => {
+            CommandReceiptV2::SetDepositSettings(SetDepositSettingsReceipt {
+                gas_used: 0,
+                exit_code: ExitCodeV2::NotExecuted,
+            })
+        }
+        CommandKind::TopUpDeposit => CommandReceiptV2::TopUpDeposit(TopUpDepositReceipt {
+            gas_used: 0,
+            exit_code: ExitCodeV2::NotExecuted,
+        }),
+        CommandKind::WithdrawDeposit => CommandReceiptV2::WithdrawDeposit(WithdrawDepositReceipt {
+            gas_used: 0,
+            exit_code: ExitCodeV2::NotExecuted,
+            amount_withdrawn: 0,
+        }),
+        CommandKind::StakeDeposit => CommandReceiptV2::StakeDeposit(StakeDepositReceipt {
+            gas_used: 0,
+            exit_code: ExitCodeV2::NotExecuted,
+            amount_staked: 0,
+        }),
+        CommandKind::UnstakeDeposit => CommandReceiptV2::UnstakeDeposit(UnstakeDepositReceipt {
+            gas_used: 0,
+            exit_code: ExitCodeV2::NotExecuted,
+            amount_unstaked: 0,
+        }),
+        CommandKind::NextEpoch => CommandReceiptV2::NextEpoch(NextEpochReceipt {
+            gas_used: 0,
+            exit_code: ExitCodeV2::NotExecuted,
+        }),
     }
 }
 
-pub(crate) fn gas_used_and_exit_code_v2(command_receipt_v2: &CommandReceiptV2) -> (u64, ExitCodeV2) {
+pub(crate) fn gas_used_and_exit_code_v2(
+    command_receipt_v2: &CommandReceiptV2,
+) -> (u64, ExitCodeV2) {
     macro_rules! exit_code_v2 {
         ($cmd_recp2:ident, $($var:path,)*) => {
             match $cmd_recp2 {
@@ -278,7 +377,11 @@ pub(crate) fn gas_used_and_exit_code_v2(command_receipt_v2: &CommandReceiptV2) -
     )
 }
 
-pub(crate) fn set_gas_used_and_exit_code_v2(command_receipt_v2: &mut CommandReceiptV2, gas_used: u64, exit_code: ExitCodeV2) {
+pub(crate) fn set_gas_used_and_exit_code_v2(
+    command_receipt_v2: &mut CommandReceiptV2,
+    gas_used: u64,
+    exit_code: ExitCodeV2,
+) {
     macro_rules! exit_code_v2 {
         ($cmd_recp2:ident, $($var:path,)*) => {
             match $cmd_recp2 {

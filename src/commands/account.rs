@@ -3,17 +3,17 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of executing [Account Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#account-commands).
+//! Execution implementation of [Account Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#account-commands).
 
-use pchain_types::cryptography::{PublicAddress, contract_address_v1, contract_address_v2};
+use pchain_types::cryptography::{contract_address_v1, contract_address_v2, PublicAddress};
 use pchain_world_state::storage::WorldStateStorage;
 use std::sync::{Arc, Mutex};
 
 use crate::{
     contract::{
-        self,
+        self, is_cbi_compatible,
         wasmer::{instance::ContractValidateError, module::ModuleBuildError},
-        ContractInstance, ContractModule, is_cbi_compatible,
+        ContractInstance, ContractModule,
     },
     execution::abort::{abort, abort_if_gas_exhausted},
     types::{BaseTx, CallTx, TxnVersion},
@@ -116,8 +116,8 @@ impl<'a, S, E> CallInstance<'a, S, E>
 where
     S: WorldStateStorage + Send + Sync + Clone + 'static,
 {
-    /// Instantiate an instant to be called. It returns transition error for failures in
-    /// contrac tinstantiation and verification.
+    /// Instantiate an instance to be called. It returns transition error for failures in
+    /// contract instantiation and verification.
     fn instantiate(
         state: &'a mut ExecutionState<S, E>,
         is_view: bool,
@@ -138,15 +138,14 @@ where
             .ok_or(TransitionError::InvalidCBI)?;
 
         // ONLY load contract after checking CBI version. (To ensure the loaded contract is deployed SUCCESSFULLY,
-        // otherwise, it is possible to load the cached contract in previous transaction)
+        // otherwise, it is possible to load a previous version of contract code)
         let contract_module = state
             .ctx
             .gas_meter
             .ws_get_cached_contract(target, &state.ctx.sc_context)
             .ok_or(TransitionError::NoContractcode)?;
 
-        // Check pay for storage gas cost at this point. Consider it as runtime cost because the world state write is an execution gas
-        // Gas limit for init method call should be subtract the blockchain and worldstate storage cost
+        // Check that storage related operations for execution setup have not exceeded gas limit at this point
         let gas_limit_for_execution = state
             .tx
             .gas_limit
@@ -165,14 +164,15 @@ where
             target,
         };
 
-        let instance = contract_module.instantiate(
-            Arc::new(Mutex::new(state.ctx.clone())), // TODO avoid clone
-            0,
-            is_view,
-            call_tx,
-            state.bd.clone(),
-        )
-        .map_err(|_| TransitionError::CannotCompile)?;
+        let instance = contract_module
+            .instantiate(
+                Arc::new(Mutex::new(state.ctx.clone())), // TODO avoid clone
+                0,
+                is_view,
+                call_tx,
+                state.bd.clone(),
+            )
+            .map_err(|_| TransitionError::CannotCompile)?;
 
         Ok(Self { state, instance })
     }
@@ -202,11 +202,12 @@ where
 {
     let contract_address = match state.tx.version {
         TxnVersion::V1 => contract_address_v1(&state.tx.signer, state.tx.nonce),
-        TxnVersion::V2 => contract_address_v2(&state.tx.signer, state.tx.nonce, cmd_index)
+        TxnVersion::V2 => contract_address_v2(&state.tx.signer, state.tx.nonce, cmd_index),
     };
 
     // Instantiate instant to preform contract deployment.
-    let instance = match DeployInstance::instantiate(state, contract, cbi_version, contract_address) {
+    let instance = match DeployInstance::instantiate(state, contract, cbi_version, contract_address)
+    {
         Ok(instance) => instance,
         Err(err) => abort!(state, err),
     };
@@ -250,22 +251,19 @@ where
             return Err(TransitionError::ContractAlreadyExists);
         }
 
-        let module = ContractModule::from_contract_code(
-            &contract,
-            state.ctx.sc_context.memory_limit,
-        ).map_err(|build_err|
-            match build_err {
-                ModuleBuildError::DisallowedOpcodePresent => TransitionError::DisallowedOpcode,
-                ModuleBuildError::Else => TransitionError::CannotCompile,
-            }
-        )?;
+        let module =
+            ContractModule::from_contract_code(&contract, state.ctx.sc_context.memory_limit)
+                .map_err(|build_err| match build_err {
+                    ModuleBuildError::DisallowedOpcodePresent => TransitionError::DisallowedOpcode,
+                    ModuleBuildError::Else => TransitionError::CannotCompile,
+                })?;
 
-        module.validate().map_err(|validate_err|
-            match validate_err {
+        module
+            .validate()
+            .map_err(|validate_err| match validate_err {
                 ContractValidateError::MethodNotFound => TransitionError::NoExportedContractMethod,
-                ContractValidateError::InstantiateError => TransitionError::CannotCompile
-            }
-        )?;
+                ContractValidateError::InstantiateError => TransitionError::CannotCompile,
+            })?;
 
         Ok(Self {
             state,

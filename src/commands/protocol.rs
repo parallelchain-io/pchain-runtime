@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of executing [Protocol Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#protocol-commands).
+//! Execution implementation of [Protocol Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#protocol-commands).
 
 use std::collections::HashMap;
 
@@ -28,7 +28,9 @@ use crate::{
 use crate::execution::{cache::WorldStateCache, state::ExecutionState};
 
 /// Execution of [pchain_types::blockchain::Command::NextEpoch]
-pub(crate) fn next_epoch<S, E>(mut state: ExecutionState<S, E>) -> (ExecutionState<S, E>, ValidatorChanges)
+pub(crate) fn next_epoch<S, E>(
+    mut state: ExecutionState<S, E>,
+) -> (ExecutionState<S, E>, ValidatorChanges)
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {

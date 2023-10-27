@@ -14,7 +14,9 @@ use pchain_world_state::{
 
 use crate::{
     contract::{ContractModule, SmartContractContext},
-    gas, TransitionError, types::{TxnVersion, CommandOutput},
+    gas,
+    types::{CommandOutput, TxnVersion},
+    TransitionError,
 };
 
 use super::{
@@ -152,17 +154,19 @@ where
         Ok(())
     }
 
-    pub fn command_output_set_return_values(&mut self, return_values: Vec<u8>) {
-        let result = operation::command_output_set_return_values(
-            self.output_cache_of_current_command.return_values.as_mut(),
-            return_values,
+    pub fn command_output_set_return_value(&mut self, return_value: Vec<u8>) {
+        let result = operation::command_output_set_return_value(
+            self.output_cache_of_current_command.return_value.as_mut(),
+            return_value,
         );
         self.charge(result)
     }
 
     pub fn command_output_set_amount_withdrawn(&mut self, amount_withdrawn: u64) {
         let result = operation::command_output_set_amount_withdrawn(
-            self.output_cache_of_current_command.amount_withdrawn.as_mut(),
+            self.output_cache_of_current_command
+                .amount_withdrawn
+                .as_mut(),
             amount_withdrawn,
         );
         self.charge(result)
@@ -178,7 +182,9 @@ where
 
     pub fn command_output_set_amount_unstaked(&mut self, amount_unstaked: u64) {
         let result = operation::command_output_set_amount_unstaked(
-            self.output_cache_of_current_command.amount_unstaked.as_mut(),
+            self.output_cache_of_current_command
+                .amount_unstaked
+                .as_mut(),
             amount_unstaked,
         );
         self.charge(result)
@@ -196,7 +202,8 @@ where
     //
     /// Check if App key has non-empty data
     pub fn ws_contains_app_data(&self, address: PublicAddress, app_key: AppKey) -> bool {
-        let result = operation::ws_contains_app_data(self.version, &self.ws_cache, address, app_key);
+        let result =
+            operation::ws_contains_app_data(self.version, &self.ws_cache, address, app_key);
         self.charge(result)
     }
 
@@ -237,43 +244,26 @@ where
     // SET methods
     //
     pub fn ws_set_app_data(&mut self, address: PublicAddress, app_key: AppKey, value: Vec<u8>) {
-        let result = operation::ws_set_app_data(
-            self.version,
-            &mut self.ws_cache,
-            address,
-            app_key,
-            value,
-        );
+        let result =
+            operation::ws_set_app_data(self.version, &mut self.ws_cache, address, app_key, value);
         self.charge(result)
     }
 
     /// Sets balance in the write set. It does not write to WS immediately.
     pub fn ws_set_balance(&mut self, address: PublicAddress, value: u64) {
-        let result = operation::ws_set_balance(
-            &mut self.ws_cache,
-            address,
-            value,
-        );
+        let result = operation::ws_set_balance(&mut self.ws_cache, address, value);
         self.charge(result)
     }
 
     /// Sets CBI version in the write set. It does not write to WS immediately.
     pub fn ws_set_cbi_version(&mut self, address: PublicAddress, cbi_version: u32) {
-        let result = operation::ws_set_cbi_version(
-            &mut self.ws_cache,
-            address,
-            cbi_version,
-        );
+        let result = operation::ws_set_cbi_version(&mut self.ws_cache, address, cbi_version);
         self.charge(result)
     }
 
     /// Sets contract bytecode in the write set. It does not write to WS immediately.
     pub fn ws_set_code(&mut self, address: PublicAddress, code: Vec<u8>) {
-        let result = operation::ws_set_contract_code(
-            &mut self.ws_cache,
-            address,
-            code,
-        );
+        let result = operation::ws_set_contract_code(&mut self.ws_cache, address, code);
         self.charge(result)
     }
 }

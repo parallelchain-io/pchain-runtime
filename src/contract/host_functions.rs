@@ -16,17 +16,17 @@ use pchain_world_state::{
 };
 
 use crate::{
-    contract::{ContractBinaryInterface, FuncError},
+    contract::{CBIHostFunctions, FuncError},
     execution::gas::WasmerGasMeter,
     types::{BaseTx, CallTx, DeferredCommand},
 };
 
 use super::wasmer::env::Env;
 
-/// `ContractBinaryFunctions` implements trait [ContractBinaryInterface] that defines all host functions that are used for instantiating contract for calling contract method.
+/// [HostFunctions] implements trait [CBIHostFunctions].
 /// ### CBI version: 0
-pub(crate) struct ContractBinaryFunctions {}
-impl<S> ContractBinaryInterface<Env<S>> for ContractBinaryFunctions
+pub(crate) struct HostFunctions {}
+impl<S> CBIHostFunctions<Env<S>> for HostFunctions
 where
     S: WorldStateStorage + Sync + Send + Clone,
 {
@@ -175,7 +175,7 @@ where
         let mut gas_meter = ctx.gas_meter();
 
         let value = gas_meter.read_bytes(value_ptr, value_len)?;
-        gas_meter.command_output_set_return_values(value);
+        gas_meter.command_output_set_return_value(value);
         Ok(())
     }
 
@@ -254,12 +254,12 @@ where
         let mut ctx = env.lock();
         let mut gas_meter = ctx.gas_meter();
 
-        gas_meter.reduce_gas(gas_consumed); // subtract gas consumed from parent contract's environment?
+        gas_meter.reduce_gas(gas_consumed); // subtract gas consumed from parent contract's environment
 
         match call_error {
             None => {
                 // Take the child result in parent's execution context.
-                if let Some(res) = gas_meter.command_output_cache().take_return_values() {
+                if let Some(res) = gas_meter.command_output_cache().take_return_value() {
                     return gas_meter
                         .write_bytes(res, return_ptr_ptr)
                         .map_err(FuncError::Runtime);
@@ -517,10 +517,11 @@ where
         let signature = gas_meter.read_bytes(signature_ptr, 64)?;
         let address = gas_meter.read_bytes(address_ptr, 32)?;
 
-        gas_meter.verify_ed25519_signature(
+        gas_meter
+            .verify_ed25519_signature(
                 message,
                 signature.try_into().unwrap(),
-                address.try_into().unwrap()
+                address.try_into().unwrap(),
             )
             .map_err(|_| FuncError::Internal)
     }

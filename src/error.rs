@@ -3,10 +3,10 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines [TransitionError] which is set of error definitions in state transitions.
+//! Defines [TransitionError] which is a set of error definitions in state transitions.
 //!
-//! Transition Error is not failure code specified in [ExitStatus], which is not included
-//! in the block for transaction failure. The error types are for the purpose of diagnosis.
+//! Transition Errors are mainly for diagnosis, and are different from the ExitCodes
+//! that are included in the block transaction receipts.
 
 use pchain_types::blockchain::{ExitCodeV1, ExitCodeV2};
 
@@ -132,7 +132,7 @@ impl<'a> From<&'a TransitionError> for ExitCodeV2 {
         match value {
             TransitionError::ExecutionProperGasExhausted
             | TransitionError::InternalExecutionProperGasExhaustion => ExitCodeV2::GasExhausted,
-            _ => ExitCodeV2::Error
+            _ => ExitCodeV2::Error,
         }
     }
 }

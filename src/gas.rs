@@ -4,7 +4,7 @@
 */
 
 //! Defines formulas in calculation of gas which is a measurement unit for transaction
-//! execution. The constants and functions in module follow the content in gas section of the
+//! execution. The constants and functions in module are documented in gas section of the
 //! [Parallelchain Mainnet Protocol](https://github.com/parallelchain-io/parallelchain-protocol).
 //!
 //! The mapping of equations or variables in the protocol to this module is as following:
@@ -15,7 +15,7 @@
 //! |G_wwrite   | [wasm_memory_write_cost]  |
 //! |G_txdata   | [BLOCKCHAIN_WRITE_PER_BYTE_COST]  |
 //! |G_mincmdrcpsize| [minimum_receipt_size]        |
-//! |G_acckeylen    | [ACCOUNT_STATE_KEY_LENGTH]    |
+//! |G_acckeylen    | [ACCOUNT_TRIE_KEY_LENGTH]    |
 //! |G_sget         | [get_cost], [get_code_cost]   |
 //! |G_sset         | [set_cost_read_key], [set_cost_delete_old_value], [set_cost_write_new_value], [set_cost_rehash] |
 //! |G_scontains    | [contains_cost]       |
@@ -237,10 +237,10 @@ pub fn tx_inclusion_cost_v1(tx_size: usize, commands_len: usize) -> u64 {
     // (3) Cost for 5 read-write operations
     let rw_key_cost = (
         // Read cost
-        get_cost(ACCOUNT_STATE_KEY_LENGTH, 8)
+        get_cost(ACCOUNT_TRIE_KEY_LENGTH, 8)
             // Write cost
             .saturating_add(set_cost_write_new_value(8))
-            .saturating_add(set_cost_rehash(ACCOUNT_STATE_KEY_LENGTH))
+            .saturating_add(set_cost_rehash(ACCOUNT_TRIE_KEY_LENGTH))
     )
     .saturating_mul(5);
 
@@ -263,10 +263,10 @@ pub fn tx_inclusion_cost_v2(tx_size: usize, commands_len: usize) -> u64 {
     // (3) Cost for 5 read-write operations
     let rw_key_cost = (
         // Read cost
-        get_cost(ACCOUNT_STATE_KEY_LENGTH, 8)
+        get_cost(ACCOUNT_TRIE_KEY_LENGTH, 8)
             // Write cost
             .saturating_add(set_cost_write_new_value(8))
-            .saturating_add(set_cost_rehash(ACCOUNT_STATE_KEY_LENGTH))
+            .saturating_add(set_cost_rehash(ACCOUNT_TRIE_KEY_LENGTH))
     )
     .saturating_mul(5);
 
@@ -283,7 +283,7 @@ pub const fn minimum_receipt_size(commands_len: usize) -> u64 {
 }
 
 /// blockchain_return_values_cost calculates the cost of writing return data into the receipt.
-pub const fn blockchain_return_values_cost(data_len: usize) -> u64 {
+pub const fn blockchain_return_value_cost(data_len: usize) -> u64 {
     // data_len * C_txdata
     (data_len as u64).saturating_mul(BLOCKCHAIN_WRITE_PER_BYTE_COST)
 }
@@ -305,7 +305,7 @@ pub const fn blockchain_log_cost(topic_len: usize, val_len: usize) -> u64 {
 /* ↓↓↓ World state storage and access ↓↓↓ */
 
 /// The length of keys in the root world state MPT.
-pub const ACCOUNT_STATE_KEY_LENGTH: usize = 33;
+pub const ACCOUNT_TRIE_KEY_LENGTH: usize = 33;
 /// Cost of writing a single byte into the world state.
 pub const MPT_WRITE_PER_BYTE_COST: u64 = 2500;
 /// Cost of reading a single byte from the world state.
@@ -330,7 +330,7 @@ pub const fn get_cost(key_len: usize, value_len: usize) -> u64 {
 /// get_code_cost calculates the cost of reading contract code from the World State.
 pub const fn get_code_cost(code_len: usize) -> u64 {
     // Get Cost
-    get_cost(ACCOUNT_STATE_KEY_LENGTH, code_len)
+    get_cost(ACCOUNT_TRIE_KEY_LENGTH, code_len)
         // Code Discount
         .saturating_mul(MPT_GET_CODE_DISCOUNT_PROPORTION)
         .saturating_div(100)

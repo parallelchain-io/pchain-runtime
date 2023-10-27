@@ -11,17 +11,20 @@ use wasmer::{imports, Function, ImportObject, Store};
 
 use super::wasmer::instance::MethodCallError;
 
-/// Definition of host functions with [wasmer::WasmerEnv]. Implement this trait for creation of importable
-/// that can be used in instantiation of contract module.
+/// CBIHostFunctions defines the interface of host functions used in [wasmer::WasmerEnv].
+/// The Importable resource that is provided to the Wasm module during instantiation needs to expose these functions.
 ///
-/// Host function arguments with suffix `_ptr_ptr` are namely pointer-to-pointer variable that
-/// is considered as mutable reference to memory as an output value. Method `wasmer_memory::MemoryContext::set_return_values_to_memory`
-/// can be used to set output value into this variable.
+/// Function arguments suffixed with `_ptr_ptr` are pointer-to-pointer variables that
+/// reference a memory location for storing output values.
+/// The `wasmer_memory::MemoryContext::set_return_values_to_memory` method
+/// can be used to store the output value to the memory location.
 ///
-/// Host functions arguments with suffix `_ptr` are namely pointer-to variable that
-/// is considers as immutable reference to memory as an input value. Method `wasmer_memory::MemoryContext::read_bytes`
-/// can be used to read the value from this variable.
-pub trait ContractBinaryInterface<T>
+/// Host functions arguments with suffix `_ptr` are pointer-to variables that
+/// store the memory location holding input values.
+/// The `wasmer_memory::MemoryContext::read_bytes`, method
+/// can be used to read the values from the specified location.
+///
+pub trait CBIHostFunctions<T>
 where
     T: wasmer::WasmerEnv + 'static,
 {
@@ -189,7 +192,7 @@ where
 pub(crate) fn create_importable<'a, T, K>(store: &'a Store, env: &T) -> Importable<'a>
 where
     T: wasmer::WasmerEnv + 'static,
-    K: ContractBinaryInterface<T> + 'static,
+    K: CBIHostFunctions<T> + 'static,
 {
     Importable(
         imports! {
@@ -237,7 +240,7 @@ where
 pub(crate) fn create_importable_view<'a, T, K>(store: &'a Store, env: &T) -> Importable<'a>
 where
     T: wasmer::WasmerEnv + 'static,
-    K: ContractBinaryInterface<T> + 'static,
+    K: CBIHostFunctions<T> + 'static,
 {
     Importable(
         imports! {

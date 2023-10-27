@@ -5,10 +5,10 @@
 
 //! Implementation of state transition function.
 //!
-//! The struct [Runtime] is an entry point to trigger state transition. It provides method to
-//! intake a [Transaction] with [blockchain parameters](BlockchainParams) and then executes over
-//! the [World State](WorldState). As a result, it commits a deterministic change of state to the
-//! World State which can be inputted to the next state transition.
+//! The struct [Runtime] is an entry point to trigger state transition. It provides methods to
+//! take in a [Transaction] with [blockchain parameters](BlockchainParams). It then outputs a [TransitionResult]
+//! committing a set of deterministic state changes to the [World State](WorldState),
+//! which we be included in subsequent state changes
 //!
 //! The result of state transition includes
 //! - State changes to [world state](pchain_world_state)
@@ -16,19 +16,29 @@
 //! - [Transition Error](TransitionError)
 //! - [ValidatorChanges] (for [NextEpoch](pchain_types::blockchain::Command::NextEpoch) command)
 //!
-//! [Runtime] also provides method to execute a [view call](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
+//! [Runtime] also exposes a method to execute a [view call]
+//! (https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
 
 use pchain_types::{
-    blockchain::{Command, CommandReceiptV1, ReceiptV1, TransactionV1, TransactionV2, ReceiptV2, CommandReceiptV2},
+    blockchain::{
+        Command, CommandReceiptV1, CommandReceiptV2, ReceiptV1, ReceiptV2, TransactionV1,
+        TransactionV2,
+    },
     cryptography::PublicAddress,
 };
 use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
 
 use crate::{
     contract::SmartContractContext,
-    execution::{cache::WorldStateCache, state::ExecutionState},
-    execution::{execute_view, gas::GasMeter, execute_next_epoch::{self}, execute_commands::{self}},
-    types::{BaseTx, DeferredCommand, TxnVersion, CommandOutput},
+    execution::{
+        cache::WorldStateCache,
+        execute_commands::{execute_commands_v1, execute_commands_v2},
+        execute_next_epoch::{execute_next_epoch_v1, execute_next_epoch_v2},
+        execute_view::{execute_view_v1, execute_view_v2},
+        gas::GasMeter,
+        state::ExecutionState,
+    },
+    types::{BaseTx, CommandOutput, DeferredCommand, TxnVersion},
     BlockchainParams, Cache, TransitionError,
 };
 
@@ -75,11 +85,7 @@ impl Runtime {
         let commands = tx.commands;
 
         // create transition context from world state
-        let mut ctx = TransitionContext::new(
-            base_tx.version,
-            ws,
-            tx.gas_limit
-        );
+        let mut ctx = TransitionContext::new(base_tx.version, ws, tx.gas_limit);
         ctx.sc_context = self.sc_context.clone();
 
         // initial state for transition
@@ -87,9 +93,9 @@ impl Runtime {
 
         // initiate command execution
         if commands.iter().any(|c| matches!(c, Command::NextEpoch)) {
-            execute_next_epoch::execute_next_epoch_v1(state, commands)
+            execute_next_epoch_v1(state, commands)
         } else {
-            execute_commands::execute_commands_v1(state, commands)
+            execute_commands_v1(state, commands)
         }
     }
 
@@ -105,11 +111,7 @@ impl Runtime {
         let commands = tx.commands;
 
         // create transition context from world state
-        let mut ctx = TransitionContext::new(
-            base_tx.version,
-            ws,
-            tx.gas_limit
-        );
+        let mut ctx = TransitionContext::new(base_tx.version, ws, tx.gas_limit);
         ctx.sc_context = self.sc_context.clone();
 
         // initial state for transition
@@ -117,9 +119,9 @@ impl Runtime {
 
         // initiate command execution
         if commands.iter().any(|c| matches!(c, Command::NextEpoch)) {
-            execute_next_epoch::execute_next_epoch_v2(state, commands)
+            execute_next_epoch_v2(state, commands)
         } else {
-            execute_commands::execute_commands_v2(state, commands)
+            execute_commands_v2(state, commands)
         }
     }
 
@@ -148,7 +150,7 @@ impl Runtime {
         let state = ExecutionState::new(dummy_tx, dummy_bd, ctx);
 
         // execute view
-        execute_view::execute_view_v1(state, target, method, arguments)
+        execute_view_v1(state, target, method, arguments)
     }
 
     /// view performs view call to a target contract
@@ -176,7 +178,7 @@ impl Runtime {
         let state = ExecutionState::new(dummy_tx, dummy_bd, ctx);
 
         // execute view
-        execute_view::execute_view_v2(state, target, method, arguments)
+        execute_view_v2(state, target, method, arguments)
     }
 }
 
@@ -198,9 +200,8 @@ where
 }
 
 /// Result of state transition. It is the return type of `pchain_runtime::Runtime::transition`.
-/// 
-/// [V1](TransitionResultV1) -> V2:
-/// - TODO
+///
+/// [V1](TransitionResultV1) -> V2: contains ReceiptV2 instead of ReceiptV1
 #[derive(Clone)]
 pub struct TransitionResultV2<S>
 where
@@ -284,9 +285,7 @@ where
     // as all the tallying and state changes happen here.
     //
     /// Output the CommandReceipt and clear the intermediate context for next command execution.
-    pub fn extract(
-        &mut self
-    ) -> (u64, CommandOutput, Option<Vec<DeferredCommand>>) {
+    pub fn extract(&mut self) -> (u64, CommandOutput, Option<Vec<DeferredCommand>>) {
         // 1. Take the fields from output cache and update to gas meter at this checkpoint
         let (gas_used, command_output) = self.gas_meter.take_current_command_result();
 
@@ -294,10 +293,6 @@ where
         let deferred_commands = (!self.deferred_commands.is_empty())
             .then_some(std::mem::take(&mut self.deferred_commands));
 
-        (
-            gas_used,
-            command_output,
-            deferred_commands,
-        )
+        (gas_used, command_output, deferred_commands)
     }
 }

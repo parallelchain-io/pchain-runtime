@@ -10,8 +10,8 @@
 //! function prepares execution [context] and builds an [instance] from a contract with well-defined [functions].
 //! The contract should match the current [version] of Contract Binary Interface ([cbi]).
 
-pub mod cbi;
-pub(crate) use cbi::*;
+pub mod cbi_host_functions;
+pub(crate) use cbi_host_functions::*;
 
 pub mod context;
 pub(crate) use context::*;

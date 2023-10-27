@@ -3,44 +3,29 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of execution process on a sequence of Commands. The process starts from Pre-Charge phase,
-//! and then goes into Commands Phases, and finally Charge Phase.
+//! ### Executing Transaction [Commands](pchain_types::blockchain::Command)
+//! Transaction commands are sent by users in a signed transaction, and are either Account or Staking commands.
 //!
-//! Processes include execution of:
-//! - [Commands](pchain_types::blockchain::Command) from a transaction (Account Command and Staking Command).
-//! - [View call](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
-//! - [Next Epoch](pchain_types::blockchain::Command::NextEpoch) Command.
+//! Firstly, the transaction undergoes validation during the Pre-Charge phase.
+//! The execution is cancelled if these checks fail.
+//! If the checks pass, the Signer's balance will be deducted upfront according to the specified gas limit.
 //!
-//! ### Executing Commands from a Transaction
+//! Next, Commands are encapsulated into `Command Tasks`. Each command task is an item in
+//! a stack. Execution order starts from the top item. When a [Call](pchain_types::blockchain::Command::Call)
+//! Command is executed successfully and outputs `Deferred Commands`, these Deferred Commands will be
+//! encapsulated into Command Tasks and pushed onto stack. This stack model allows the Deferred Command
+//! to be executed sequentially after its parent Call Command.
 //!
-//! It is the normal flow of a transaction. Firstly, basic checking is performed and
-//! cancel the execution if it fails, and Balance of signer is deducted beforehand (Pre-Charge).
+//! Each Command Task completes with a Command Receipt. If execution fails,
+//! the process aborts and then proceeds immediately to the Charge Phase.
+//! Alternatively, the subsequent Command Task will
+//! be executed until all Tasks are completed.
 //!
-//! Then Commands are encapsulated into `Command Tasks`. Each command task is an item in
-//! a stack. Execution order starts from the top item. When [Call](pchain_types::blockchain::Command::Call)
-//! Command is executed successfully with `Deferred Command`, the Deferred Commands are then
-//! encapsulated into Command Task and put to the stack. This stack model allows the Deferred Command
-//! to be executed right after its parent Call Command in the same way other commands do.
+//! Finally in the Charge Phase, the Signer's balance will be refunded according to the actual gas used.
+//! Some fees are also transferred to Proposer and Treasury.
 //!
-//! Each command task completes with a [Command Receipt](pchain_types::blockchain::CommandReceipt). If
-//! it fails, the process aborts and then goes to Charge Phase immediately.
-//!
-//! Finally in the Charge Phase, the signer balance is adjusted according to the gas used. Some fees are also
-//! transferred to Proposer and Treasury.
-//!
-//! ### Executing a View Call
-//!
-//! View Call means execution of a contract by calling its view-only methods. There is not Pre-Charge Phase nor
-//! Charge Phase. The gas used in the resulting command receipt is only catered for the gas consumption of this
-//! contract call.
-//!
-//! ### Executing Next Epoch Command
-//!
-//! Next Epoch Command is a special command that does not go through Pre-Charge Phase or Charge Phase, but
-//! will modify the state and update signers nonce. Its goal is to compute the resulting state of
-//! Network Account and return changes to a validator set for next epoch in [TransitionResult].
 
-use pchain_types::blockchain::{Command, ReceiptV2, ReceiptV1, CommandReceiptV2, CommandReceiptV1};
+use pchain_types::blockchain::{Command, CommandReceiptV1, CommandReceiptV2, ReceiptV1, ReceiptV2};
 use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
@@ -49,71 +34,56 @@ use crate::{
         phases::{self},
         state::{ExecutionState, FinalizeState},
     },
-    types::{DeferredCommand, CommandKind},
-    TransitionResultV1, transition::TransitionResultV2, TransitionError,
+    transition::TransitionResultV2,
+    types::{CommandKind, DeferredCommand},
+    TransitionError, TransitionResultV1,
 };
-
-trait ExecutionBehavior<S, E, R>
+fn execute_commands<S, E, R, P>(mut state: ExecutionState<S, E>, commands: Vec<Command>) -> R
 where
     S: WorldStateStorage + Send + Sync + Clone,
-{
-    fn handle_precharge_error(state: ExecutionState<S, E>, error: TransitionError) -> R;
-    fn handle_command_execution_result(state: &mut ExecutionState<S, E>, command_kind: CommandKind, execution_result: &Result<(), TransitionError>) -> Option<Vec<DeferredCommand>>;
-    fn handle_abort(state: ExecutionState<S, E>, error: TransitionError) -> R;
-    fn handle_charge(state: ExecutionState<S, E>) -> R;
-}
-
-fn execute_commands<S, E, R, P>(
-    mut state: ExecutionState<S, E>,
-    commands: Vec<Command>,
-) -> R
-where
-    S: WorldStateStorage + Send + Sync + Clone,
-    P: ExecutionBehavior<S, E, R>
+    P: UserCommandHandler<S, E, R>,
 {
     // Phase: Pre-Charge
     let pre_charge_result = phases::pre_charge(&mut state);
     if let Err(err) = pre_charge_result {
-        return P::handle_precharge_error(state, err)
+        return P::handle_precharge_error(state, err);
     }
 
     // Phase: Command(s)
     let mut executable_commands = ExecutableCommands::new(commands);
     let mut command_index = 0;
 
-    while let Some(executable_command) = executable_commands.next_command() {
+    while let Some(executable_cmd) = executable_commands.next_command() {
+        // Increment index per user sent command
+        let is_txn_sent_cmd = executable_cmd.is_txn_sent();
+        if is_txn_sent_cmd {
+            command_index += 1;
+        }
+
         // Execute command
-        let (command_kind, execution_result) = match executable_command {
-            ExecutableCommand::TransactionCommmand(command) => {
-                let command_kind = CommandKind::from(&command);
-                let execute_result = command.execute(&mut state, command_index);
+        let cmd_kind = executable_cmd.command_kind();
+        let execution_result = executable_cmd.consume_and_execute(&mut state, command_index);
 
-                command_index += 1;
-                (command_kind, execute_result)
-            },
-            ExecutableCommand::DeferredCommand(deferred_command) => {
-                (
-                    CommandKind::from(&deferred_command.command),
-                    deferred_command.execute(&mut state, command_index)
-                )
-            }
-        };
+        let deferred_cmds_from_execution = P::handle_command_execution_result(
+            &mut state,
+            cmd_kind,
+            &execution_result,
+            is_txn_sent_cmd,
+        );
 
-        let deferred_commands_from_call = P::handle_command_execution_result(&mut state, command_kind, &execution_result);
-
-        // Proceed execution result
+        // Handle potential execution errors
         match execution_result {
             // command execution is not completed, continue with resulting state
             Ok(()) => {
                 // append command triggered from Call
-                if let Some(commands_from_call) = deferred_commands_from_call {
-                    executable_commands.push_deferred_commands(commands_from_call);
+                if let Some(cmd) = deferred_cmds_from_execution {
+                    executable_commands.push_deferred_commands(cmd);
                 }
             }
             // in case of error, stop and return result
             Err(error) => {
                 // Phase: Charge (abort)
-                return P::handle_abort(state, error)
+                return P::handle_abort(state, error);
             }
         }
     }
@@ -122,23 +92,40 @@ where
     P::handle_charge(state)
 }
 
-pub(crate) fn execute_commands_v1<S>(
-    state: ExecutionState<S, CommandReceiptV1>,
-    commands: Vec<Command>
-) -> TransitionResultV1<S> 
+/// Defines the behavior of command execution
+/// Allowing generic versions of of CommandReceipts and TransitionResults
+trait UserCommandHandler<S, CommandReceipt, TransitionResult>
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    execute_commands::<_, _, _, ExecuteCommandsV1>(state, commands)
+    fn handle_precharge_error(
+        state: ExecutionState<S, CommandReceipt>,
+        error: TransitionError,
+    ) -> TransitionResult;
+    fn handle_command_execution_result(
+        state: &mut ExecutionState<S, CommandReceipt>,
+        command_kind: CommandKind,
+        execution_result: &Result<(), TransitionError>,
+        is_deferred: bool,
+    ) -> Option<Vec<DeferredCommand>>;
+    fn handle_abort(
+        state: ExecutionState<S, CommandReceipt>,
+        error: TransitionError,
+    ) -> TransitionResult;
+    fn handle_charge(state: ExecutionState<S, CommandReceipt>) -> TransitionResult;
 }
 
+/// Strategy struct for V1 specific execution output
 struct ExecuteCommandsV1;
 
-impl<S> ExecutionBehavior<S, CommandReceiptV1, TransitionResultV1<S>> for ExecuteCommandsV1
+impl<S> UserCommandHandler<S, CommandReceiptV1, TransitionResultV1<S>> for ExecuteCommandsV1
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    fn handle_precharge_error(state: ExecutionState<S, CommandReceiptV1>, error: TransitionError) -> TransitionResultV1<S> {
+    fn handle_precharge_error(
+        state: ExecutionState<S, CommandReceiptV1>,
+        error: TransitionError,
+    ) -> TransitionResultV1<S> {
         let (new_state, _): (_, ReceiptV1) = state.finalize();
         TransitionResultV1 {
             new_state,
@@ -148,13 +135,24 @@ where
         }
     }
 
-    fn handle_command_execution_result(state: &mut ExecutionState<S, CommandReceiptV1>, command_kind: CommandKind, execution_result: &Result<(), TransitionError>) -> Option<Vec<DeferredCommand>> {
-        state.finalize_command_receipt(command_kind, execution_result)
+    fn handle_command_execution_result(
+        state: &mut ExecutionState<S, CommandReceiptV1>,
+        command_kind: CommandKind,
+        execution_result: &Result<(), TransitionError>,
+        is_user_sent: bool,
+    ) -> Option<Vec<DeferredCommand>> {
+        if is_user_sent {
+            return state.finalize_cmd_receipt_collect_deferred(command_kind, execution_result);
+        }
+        state.finalize_deferred_cmd_receipt(command_kind, execution_result);
+        None
     }
 
-    fn handle_abort(state: ExecutionState<S, CommandReceiptV1>, error: TransitionError) -> TransitionResultV1<S> {
+    fn handle_abort(
+        state: ExecutionState<S, CommandReceiptV1>,
+        error: TransitionError,
+    ) -> TransitionResultV1<S> {
         let (new_state, receipt) = phases::charge(state).finalize();
-        
         TransitionResultV1 {
             new_state,
             error: Some(error),
@@ -175,23 +173,17 @@ where
     }
 }
 
-pub(crate) fn execute_commands_v2<S>(
-    state: ExecutionState<S, CommandReceiptV2>,
-    commands: Vec<Command>
-) -> TransitionResultV2<S> 
-where
-    S: WorldStateStorage + Send + Sync + Clone,
-{
-    execute_commands::<_, _, _, ExecuteCommandsV2>(state, commands)
-}
-
+/// Strategy struct for V2 specific execution output
 struct ExecuteCommandsV2;
 
-impl<S> ExecutionBehavior<S, CommandReceiptV2, TransitionResultV2<S>> for ExecuteCommandsV2
+impl<S> UserCommandHandler<S, CommandReceiptV2, TransitionResultV2<S>> for ExecuteCommandsV2
 where
     S: WorldStateStorage + Send + Sync + Clone,
 {
-    fn handle_precharge_error(state: ExecutionState<S, CommandReceiptV2>, error: TransitionError) -> TransitionResultV2<S> {
+    fn handle_precharge_error(
+        state: ExecutionState<S, CommandReceiptV2>,
+        error: TransitionError,
+    ) -> TransitionResultV2<S> {
         let (new_state, _): (_, ReceiptV2) = state.finalize();
         TransitionResultV2 {
             new_state,
@@ -200,12 +192,24 @@ where
             validator_changes: None,
         }
     }
-    
-    fn handle_command_execution_result(state: &mut ExecutionState<S, CommandReceiptV2>, command_kind: CommandKind, execution_result: &Result<(), TransitionError>) -> Option<Vec<DeferredCommand>> {
-        state.finalize_command_receipt(command_kind, execution_result)
+
+    fn handle_command_execution_result(
+        state: &mut ExecutionState<S, CommandReceiptV2>,
+        command_kind: CommandKind,
+        execution_result: &Result<(), TransitionError>,
+        is_user_sent: bool,
+    ) -> Option<Vec<DeferredCommand>> {
+        if is_user_sent {
+            return state.finalize_cmd_receipt_collect_deferred(command_kind, execution_result);
+        }
+        state.finalize_deferred_cmd_receipt(command_kind, execution_result);
+        None
     }
-    
-    fn handle_abort(state: ExecutionState<S, CommandReceiptV2>, error: TransitionError) -> TransitionResultV2<S> {
+
+    fn handle_abort(
+        state: ExecutionState<S, CommandReceiptV2>,
+        error: TransitionError,
+    ) -> TransitionResultV2<S> {
         let (new_state, receipt) = phases::charge(state).finalize();
         TransitionResultV2 {
             new_state,
@@ -225,8 +229,7 @@ where
         }
     }
 }
-
-/// ExecutableCommands is a sequence of ExecutableCommand.
+/// ExecutableCommands is a (LIFO) stack of ExecutableCommand
 #[derive(Debug)]
 pub(crate) struct ExecutableCommands(Vec<ExecutableCommand>);
 
@@ -238,15 +241,15 @@ impl ExecutableCommands {
                 .into_iter()
                 .map(ExecutableCommand::TransactionCommmand)
                 .rev()
-                .collect()
+                .collect(),
         )
     }
 
     /// append a sequence of Commands and store as CommandTask with assigned task ID.
     fn push_deferred_commands(&mut self, commands: Vec<DeferredCommand>) {
         self.0.append(&mut Vec::<ExecutableCommand>::from_iter(
-            commands.
-                into_iter()
+            commands
+                .into_iter()
                 .map(ExecutableCommand::DeferredCommand)
                 .rev(),
         ));
@@ -258,11 +261,69 @@ impl ExecutableCommands {
     }
 }
 
-/// Defines types of command to be executed in the Command Execution Phase.
+/// Enum to distinguish between Transaction and Deferred Commands
 #[derive(Debug)]
 pub(crate) enum ExecutableCommand {
-    /// The Command that is submitted from Transaction input
+    /// The Command that is submitted from a user's Transaction input
     TransactionCommmand(Command),
     /// The Command that is submitted (deferred) from a Contract Call
     DeferredCommand(DeferredCommand),
+}
+
+impl ExecutableCommand {
+    /// Returns true if the command originated from Transaction input, not deferred from contract call
+    pub fn is_txn_sent(&self) -> bool {
+        matches!(self, ExecutableCommand::TransactionCommmand(_))
+    }
+
+    /// Returns the CommandKind of the command
+    pub fn command_kind(&self) -> CommandKind {
+        match self {
+            ExecutableCommand::TransactionCommmand(command) => CommandKind::from(command),
+            ExecutableCommand::DeferredCommand(deferred_command) => {
+                CommandKind::from(&deferred_command.command)
+            }
+        }
+    }
+
+    /// Consumes the Executable Command and returns the result
+    pub fn consume_and_execute<S, E>(
+        self,
+        state: &mut ExecutionState<S, E>,
+        command_index: usize,
+    ) -> Result<(), TransitionError>
+    where
+        S: WorldStateStorage + Send + Sync + Clone,
+    {
+        match self {
+            ExecutableCommand::TransactionCommmand(command) => {
+                command.execute(state, command_index)
+            }
+            ExecutableCommand::DeferredCommand(deferred_command) => {
+                deferred_command.execute(state, command_index)
+            }
+        }
+    }
+}
+
+/// Execution entry point for commands in TransactionV1
+pub(crate) fn execute_commands_v1<S>(
+    state: ExecutionState<S, CommandReceiptV1>,
+    commands: Vec<Command>,
+) -> TransitionResultV1<S>
+where
+    S: WorldStateStorage + Send + Sync + Clone,
+{
+    execute_commands::<_, _, _, ExecuteCommandsV1>(state, commands)
+}
+
+/// Execution entry point for commands in TransactionV2
+pub(crate) fn execute_commands_v2<S>(
+    state: ExecutionState<S, CommandReceiptV2>,
+    commands: Vec<Command>,
+) -> TransitionResultV2<S>
+where
+    S: WorldStateStorage + Send + Sync + Clone,
+{
+    execute_commands::<_, _, _, ExecuteCommandsV2>(state, commands)
 }

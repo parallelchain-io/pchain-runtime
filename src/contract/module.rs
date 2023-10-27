@@ -17,7 +17,7 @@ use crate::{
         wasmer::module::ModuleBuildError,
         wasmer::{cache::Cache, env, store},
         wasmer::{instance::ContractValidateError, module::Module},
-        ContractBinaryFunctions,
+        HostFunctions,
     },
     transition::TransitionContext,
     types::CallTx,
@@ -98,15 +98,12 @@ impl ContractModule {
         let environment = env::Env::new(ctx, call_counter, is_view, tx, bd);
 
         let importable = if is_view {
-            contract::create_importable_view::<env::Env<S>, ContractBinaryFunctions>(
+            contract::create_importable_view::<env::Env<S>, HostFunctions>(
                 &self.store,
                 &environment,
             )
         } else {
-            contract::create_importable::<env::Env<S>, ContractBinaryFunctions>(
-                &self.store,
-                &environment,
-            )
+            contract::create_importable::<env::Env<S>, HostFunctions>(&self.store, &environment)
         };
 
         let instance = self

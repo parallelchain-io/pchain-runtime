@@ -6,7 +6,8 @@ use wasmer::Global;
 
 use crate::{
     contract::{wasmer::memory::MemoryContext, ContractModule, SmartContractContext},
-    execution::cache::{CommandOutputCache, WorldStateCache}, types::TxnVersion,
+    execution::cache::{CommandOutputCache, WorldStateCache},
+    types::TxnVersion,
 };
 
 use super::{
@@ -42,8 +43,8 @@ impl WasmerRemainingGas {
         unsafe { self.wasmer_gas.assume_init_ref().get().try_into().unwrap() }
     }
 
-    /// substract amount from wasmer_gas
-    pub fn substract(&self, amount: u64) -> u64 {
+    /// subtract amount from wasmer_gas
+    pub fn subtract(&self, amount: u64) -> u64 {
         unsafe {
             let current_remaining_points: u64 = self.gas();
             let new_remaining_points = current_remaining_points.saturating_sub(amount);
@@ -92,7 +93,7 @@ where
     }
 
     pub fn reduce_gas(&self, amount: u64) -> u64 {
-        self.wasmer_remaining_gas.substract(amount)
+        self.wasmer_remaining_gas.subtract(amount)
     }
 
     pub fn command_output_cache(&mut self) -> &mut CommandOutputCache {
@@ -101,8 +102,7 @@ where
 
     pub fn ws_get_app_data(&self, address: PublicAddress, key: AppKey) -> Option<Vec<u8>> {
         let result = operation::ws_get_app_data(self.version, self.ws_cache, address, key);
-        let value = self.charge(result)?;
-        (!value.is_empty()).then_some(value)
+        self.charge(result).filter(|v| !v.is_empty())
     }
 
     /// Get the balance from read-write set. It balance is not found, gets from WS and caches it.
@@ -112,23 +112,15 @@ where
     }
 
     pub fn ws_set_app_data(&mut self, address: PublicAddress, app_key: AppKey, value: Vec<u8>) {
-        let result = operation::ws_set_app_data(
-            self.version,
-            self.ws_cache,
-            address, 
-            app_key,
-            value,
-        );
+        let result =
+            operation::ws_set_app_data(self.version, self.ws_cache, address, app_key, value);
         self.charge(result);
     }
 
+    // TODO 98 remove all these comments about "not write to WS immediately"
     /// Sets balance in the write set. It does not write to WS immediately.
     pub fn ws_set_balance(&mut self, address: PublicAddress, value: u64) {
-        let result = operation::ws_set_balance(
-            self.ws_cache,
-            address,
-            value
-        );
+        let result = operation::ws_set_balance(self.ws_cache, address, value);
         self.charge(result);
     }
 
@@ -154,15 +146,15 @@ where
     }
 
     pub fn command_output_append_log(&mut self, log: Log) {
-        
-        let result = operation::command_output_append_log(self.command_output_cache.logs.as_mut(), log);
+        let result =
+            operation::command_output_append_log(self.command_output_cache.logs.as_mut(), log);
         self.charge(result)
     }
 
-    pub fn command_output_set_return_values(&mut self, return_values: Vec<u8>) {
-        let result = operation::command_output_set_return_values(
-            self.command_output_cache.return_values.as_mut(),
-            return_values,
+    pub fn command_output_set_return_value(&mut self, return_value: Vec<u8>) {
+        let result = operation::command_output_set_return_value(
+            self.command_output_cache.return_value.as_mut(),
+            return_value,
         );
         self.charge(result)
     }
@@ -199,7 +191,7 @@ where
     }
 
     fn charge<T>(&self, op_receipt: OperationReceipt<T>) -> T {
-        self.wasmer_remaining_gas.substract(op_receipt.1.values().0);
+        self.wasmer_remaining_gas.subtract(op_receipt.1.values().0);
         op_receipt.0
     }
 }
