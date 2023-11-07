@@ -26,7 +26,8 @@ use pchain_types::{
     },
     cryptography::PublicAddress,
 };
-use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
+use pchain_world_state::{VersionProvider, WorldState, DB};
+// use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
 
 use crate::{
     contract::SmartContractContext,
@@ -74,12 +75,16 @@ impl Runtime {
     }
 
     /// state transition of world state (WS) from transaction (tx) and blockchain data (bd) as inputs.
-    pub fn transition_v1<S: WorldStateStorage + Send + Sync + Clone + 'static>(
+    pub fn transition_v1<'a, S, V>(
         &self,
-        ws: WorldState<S>,
+        ws: WorldState<'a, S, V>,
         tx: TransactionV1,
         bd: BlockchainParams,
-    ) -> TransitionResultV1<S> {
+    ) -> TransitionResultV1<'a, S, V>
+    where
+        S: DB + Send + Sync + Clone + 'static,
+        V: VersionProvider + Send + Sync + Clone + 'static,
+    {
         // transaction inputs
         let base_tx = BaseTx::from(&tx);
         let commands = tx.commands;
@@ -89,6 +94,7 @@ impl Runtime {
         ctx.sc_context = self.sc_context.clone();
 
         // initial state for transition
+        // TODO do we need need to include generics
         let state = ExecutionState::new(base_tx, bd, ctx);
 
         // initiate command execution
@@ -100,12 +106,16 @@ impl Runtime {
     }
 
     /// state transition of world state (WS) from transaction (tx) and blockchain data (bd) as inputs.
-    pub fn transition_v2<S: WorldStateStorage + Send + Sync + Clone + 'static>(
+    pub fn transition_v2<'a, S, V>(
         &self,
-        ws: WorldState<S>,
+        ws: WorldState<'a, S, V>,
         tx: TransactionV2,
         bd: BlockchainParams,
-    ) -> TransitionResultV2<S> {
+    ) -> TransitionResultV2<'a, S, V>
+    where
+        S: DB + Send + Sync + Clone + 'static,
+        V: VersionProvider + Send + Sync + Clone + 'static,
+    {
         // transaction inputs
         let base_tx = BaseTx::from(&tx);
         let commands = tx.commands;
@@ -126,14 +136,18 @@ impl Runtime {
     }
 
     /// view performs view call to a target contract
-    pub fn view_v1<S: WorldStateStorage + Send + Sync + Clone + 'static>(
+    pub fn view_v1<'a, S, V>(
         &self,
-        ws: WorldState<S>,
+        ws: WorldState<'a, S, V>,
         gas_limit: u64,
         target: PublicAddress,
         method: String,
         arguments: Option<Vec<Vec<u8>>>,
-    ) -> (CommandReceiptV1, Option<TransitionError>) {
+    ) -> (CommandReceiptV1, Option<TransitionError>)
+    where
+        S: DB + Send + Sync + Clone + 'static,
+        V: VersionProvider + Send + Sync + Clone + 'static,
+    {
         // create transition context from world state
         let mut ctx = TransitionContext::new(TxnVersion::V1, ws, gas_limit);
         ctx.sc_context = self.sc_context.clone();
@@ -154,14 +168,18 @@ impl Runtime {
     }
 
     /// view performs view call to a target contract
-    pub fn view_v2<S: WorldStateStorage + Send + Sync + Clone + 'static>(
+    pub fn view_v2<'a, S, V>(
         &self,
-        ws: WorldState<S>,
+        ws: WorldState<'a, S, V>,
         gas_limit: u64,
         target: PublicAddress,
         method: String,
         arguments: Option<Vec<Vec<u8>>>,
-    ) -> (CommandReceiptV2, Option<TransitionError>) {
+    ) -> (CommandReceiptV2, Option<TransitionError>)
+    where
+        S: DB + Send + Sync + Clone + 'static,
+        V: VersionProvider + Send + Sync + Clone + 'static,
+    {
         // create transition context from world state
         let mut ctx = TransitionContext::new(TxnVersion::V1, ws, gas_limit);
         ctx.sc_context = self.sc_context.clone();
@@ -184,12 +202,13 @@ impl Runtime {
 
 /// Result of state transition. It is the return type of `pchain_runtime::Runtime::transition`.
 #[derive(Clone)]
-pub struct TransitionResultV1<S>
+pub struct TransitionResultV1<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     /// New world state (ws') after state transition
-    pub new_state: WorldState<S>,
+    pub new_state: WorldState<'a, S, V>,
     /// Transaction receipt. None if the transition receipt is not includable in the block
     pub receipt: Option<ReceiptV1>,
     /// Transition error. None if no error.
@@ -203,12 +222,13 @@ where
 ///
 /// [V1](TransitionResultV1) -> V2: contains ReceiptV2 instead of ReceiptV1
 #[derive(Clone)]
-pub struct TransitionResultV2<S>
+pub struct TransitionResultV2<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     /// New world state (ws') after state transition
-    pub new_state: WorldState<S>,
+    pub new_state: WorldState<'a, S, V>,
     /// Transaction receipt. None if the transition receipt is not includable in the block
     pub receipt: Option<ReceiptV2>,
     /// Transition error. None if no error.
@@ -230,9 +250,10 @@ pub struct ValidatorChanges {
 
 /// TransitionContext defines transiting data required for state transition.
 #[derive(Clone)]
-pub(crate) struct TransitionContext<S>
+pub(crate) struct TransitionContext<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     /// Smart contract context for execution
     pub sc_context: SmartContractContext,
@@ -241,14 +262,15 @@ where
     pub deferred_commands: Vec<DeferredCommand>,
 
     /// GasMeter holding state for entire txn
-    pub gas_meter: GasMeter<S>,
+    pub gas_meter: GasMeter<'a, S, V>,
 }
 
-impl<S> TransitionContext<S>
+impl<'a, S, V> TransitionContext<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    pub fn new(version: TxnVersion, ws: WorldState<S>, gas_limit: u64) -> Self {
+    pub fn new(version: TxnVersion, ws: WorldState<'a, S, V>, gas_limit: u64) -> Self {
         let host_gm = GasMeter::new(version, WorldStateCache::new(ws), gas_limit);
 
         Self {
@@ -259,18 +281,18 @@ where
     }
 
     /// Get the World State Cache which allows read-write without gas metering.
-    pub fn inner_ws_cache(&self) -> &WorldStateCache<S> {
+    pub fn inner_ws_cache(&self) -> &WorldStateCache<'a, S, V> {
         &self.gas_meter.ws_cache
     }
 
     /// Get the mutable World State Cache which allows read-write without gas metering.
-    pub fn inner_ws_cache_mut(&mut self) -> &mut WorldStateCache<S> {
+    pub fn inner_ws_cache_mut(&mut self) -> &mut WorldStateCache<'a, S, V> {
         &mut self.gas_meter.ws_cache
     }
 
     /// Consume itself to get the World State Cache. It can be used when the transition context is
     /// no longer needed (e.g. at the end of transition).
-    pub fn into_ws_cache(self) -> WorldStateCache<S> {
+    pub fn into_ws_cache(self) -> WorldStateCache<'a, S, V> {
         self.gas_meter.ws_cache
     }
 

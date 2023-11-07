@@ -17,7 +17,8 @@ ed25519-dalek = "2.0.0"
 keccak-hasher = "0.15.3"
 loupe = "0.1"
 pchain-types = { git = "https://github.com/parallelchain-io/pchain-types-rust", branch = "protocol_v0.5" }
-pchain-world-state = { git = "https://github.com/parallelchain-io/pchain-world-state" }
+# pchain-world-state = { git = "https://backend-gitlab.digital-transaction.net:3000/parallelchain/source/pchain-world-state" }
+pchain-world-state = { git = "ssh://git@backend-gitlab.digital-transaction.net/parallelchain/source/pchain-world-state.git" }
 ripemd = "0.1.1"
 sha2 = "0.10.0"
 tiny-keccak = "2.0.2"

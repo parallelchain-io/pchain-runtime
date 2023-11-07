@@ -3,11 +3,11 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct that caches wasmer module of smart contract.
+//! Defines a struct that caches the Wasm module compiled from smart contract bytecode.
 //!
 //! The cache uses [FileSystemCache] from wasmer to cache compiled smart contract module.
-//! It also store the metadata about the smart contract module, such as the CBI version and
-//! the size of the wasm bytecode which is used on module compilation, into a seperate file system.
+//! It also stores metadata about the smart contract module, such as the CBI version and
+//! the size of the Wasm bytecode which is used on module compilation, into a seperate file system.
 
 use anyhow::Result;
 use pchain_types::cryptography::PublicAddress;

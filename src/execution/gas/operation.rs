@@ -1,6 +1,6 @@
 use ed25519_dalek::Verifier;
 use pchain_types::{blockchain::Log, cryptography::PublicAddress};
-use pchain_world_state::{keys::AppKey, storage::WorldStateStorage};
+use pchain_world_state::{VersionProvider, DB};
 use ripemd::Ripemd160;
 use sha2::{Digest as sha256_digest, Sha256};
 use tiny_keccak::{Hasher as _, Keccak};
@@ -16,19 +16,20 @@ use super::CostChange;
 
 pub(crate) type OperationReceipt<T> = (T, CostChange);
 
-pub(crate) fn ws_set_app_data<S>(
+pub(crate) fn ws_set_storage_data<S, V>(
     version: TxnVersion,
-    ws_cache: &mut WorldStateCache<S>,
+    ws_cache: &mut WorldStateCache<S, V>,
     address: PublicAddress,
-    app_key: AppKey,
+    key: &[u8],
     value: Vec<u8>,
 ) -> OperationReceipt<()>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    let key_len = chargeable_storage_trie_key_len(version, &address, &app_key);
+    let key_len = chargeable_storage_trie_key_len(version, &address, key);
     let new_val_len = CacheValue::len(&value);
-    let (old_val_len, get_cost) = ws_get_app_data(version, ws_cache, address, app_key.clone());
+    let (old_val_len, get_cost) = ws_get_storage_data(version, ws_cache, address, key);
     let old_val_len = old_val_len.as_ref().map_or(0, CacheValue::len);
 
     // old_val_len is obtained from Get so the cost of reading the key is already charged
@@ -39,18 +40,19 @@ where
     )) + CostChange::deduct(gas::set_cost_write_new_value(new_val_len))
         + CostChange::deduct(gas::set_cost_rehash(key_len));
 
-    ws_cache.set_app_data(address, app_key, value);
+    ws_cache.set_storage_data(address, key, value);
 
     ((), get_cost + set_cost)
 }
 
-pub(crate) fn ws_set_balance<S>(
-    ws_cache: &mut WorldStateCache<S>,
+pub(crate) fn ws_set_balance<S, V>(
+    ws_cache: &mut WorldStateCache<S, V>,
     address: PublicAddress,
     balance: u64,
 ) -> OperationReceipt<()>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     let key_len = gas::ACCOUNT_TRIE_KEY_LENGTH;
     let new_val_len = balance.len();
@@ -70,13 +72,14 @@ where
     ((), get_cost + set_cost)
 }
 
-pub(crate) fn ws_set_cbi_version<S>(
-    ws_cache: &mut WorldStateCache<S>,
+pub(crate) fn ws_set_cbi_version<S, V>(
+    ws_cache: &mut WorldStateCache<S, V>,
     address: PublicAddress,
     version: u32,
 ) -> OperationReceipt<()>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     let key_len = gas::ACCOUNT_TRIE_KEY_LENGTH;
     let new_val_len = version.len();
@@ -96,13 +99,14 @@ where
     ((), get_cost + set_cost)
 }
 
-pub(crate) fn ws_set_contract_code<S>(
-    ws_cache: &mut WorldStateCache<S>,
+pub(crate) fn ws_set_contract_code<S, V>(
+    ws_cache: &mut WorldStateCache<S, V>,
     address: PublicAddress,
     code: Vec<u8>,
 ) -> OperationReceipt<()>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     let key_len = gas::ACCOUNT_TRIE_KEY_LENGTH;
     let new_val_len = CacheValue::len(&code);
@@ -122,19 +126,18 @@ where
     ((), get_cost + set_cost)
 }
 
-pub(crate) fn ws_get_app_data<S>(
+pub(crate) fn ws_get_storage_data<S, V>(
     version: TxnVersion,
-    ws_cache: &WorldStateCache<S>,
+    ws_cache: &mut WorldStateCache<S, V>,
     address: PublicAddress,
-    app_key: AppKey,
+    key: &[u8],
 ) -> OperationReceipt<Option<Vec<u8>>>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    let key_len = chargeable_storage_trie_key_len(version, &address, &app_key);
-
-    let value = ws_cache.get_app_data(address, app_key);
-
+    let key_len = chargeable_storage_trie_key_len(version, &address, key);
+    let value = ws_cache.get_storage_data(address, key);
     let get_cost = CostChange::deduct(gas::get_cost(
         key_len,
         value.as_ref().map_or(0, CacheValue::len),
@@ -143,24 +146,26 @@ where
     (value, get_cost)
 }
 
-pub(crate) fn ws_get_balance<S>(
-    ws_cache: &WorldStateCache<S>,
+pub(crate) fn ws_get_balance<S, V>(
+    ws_cache: &WorldStateCache<S, V>,
     address: &PublicAddress,
 ) -> OperationReceipt<u64>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     let value = ws_cache.get_balance(address);
     let get_cost = CostChange::deduct(gas::get_cost(gas::ACCOUNT_TRIE_KEY_LENGTH, value.len()));
     (value, get_cost)
 }
 
-pub(crate) fn ws_get_cbi_version<S>(
-    ws_cache: &WorldStateCache<S>,
+pub(crate) fn ws_get_cbi_version<S, V>(
+    ws_cache: &WorldStateCache<S, V>,
     address: &PublicAddress,
 ) -> OperationReceipt<Option<u32>>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     let value = ws_cache.get_cbi_version(address);
     let get_cost = CostChange::deduct(gas::get_cost(
@@ -170,12 +175,13 @@ where
     (value, get_cost)
 }
 
-pub(crate) fn ws_get_contract_code<S>(
-    ws_cache: &WorldStateCache<S>,
+pub(crate) fn ws_get_contract_code<S, V>(
+    ws_cache: &WorldStateCache<S, V>,
     address: &PublicAddress,
 ) -> OperationReceipt<Option<Vec<u8>>>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     let value = ws_cache.get_contract_code(address);
     let get_cost = CostChange::deduct(gas::get_code_cost(
@@ -184,28 +190,31 @@ where
     (value, get_cost)
 }
 
-pub(crate) fn ws_contains_app_data<S>(
+pub(crate) fn ws_contains_storage_data<S, V>(
     version: TxnVersion,
-    ws_cache: &WorldStateCache<S>,
+    ws_cache: &mut WorldStateCache<S, V>,
     address: PublicAddress,
-    app_key: AppKey,
+    key: &[u8],
 ) -> OperationReceipt<bool>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    let key_len = chargeable_storage_trie_key_len(version, &address, &app_key);
+    let key_len = chargeable_storage_trie_key_len(version, &address, key);
     let cost_change = CostChange::deduct(gas::contains_cost(key_len));
-    let ret = ws_cache.contains_app_data(address, app_key);
+    // TODO 92 - check out any last instances of app_
+    let ret = ws_cache.contains_app_data(address, key);
     (ret, cost_change)
 }
 
-pub(crate) fn ws_get_cached_contract<S>(
-    ws_cache: &WorldStateCache<S>,
+pub(crate) fn ws_get_cached_contract<S, V>(
+    ws_cache: &WorldStateCache<S, V>,
     sc_context: &SmartContractContext,
     address: PublicAddress,
 ) -> OperationReceipt<Option<ContractModule>>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     // check smart contract cache
     if let Some(contract_module) = ContractModule::from_cache(address, sc_context) {
@@ -337,12 +346,12 @@ pub(crate) fn verify_ed25519_signature(
 fn chargeable_storage_trie_key_len(
     version: TxnVersion,
     address: &PublicAddress,
-    app_key: &AppKey,
+    key: &[u8],
 ) -> usize {
     // protocol v0.4.0 (using TransactionV1) included extra address length on top of Account Trie key length
     // which is removed in later versions
     match version {
-        TxnVersion::V1 => gas::ACCOUNT_TRIE_KEY_LENGTH + address.len() + app_key.len(),
-        TxnVersion::V2 => gas::ACCOUNT_TRIE_KEY_LENGTH + app_key.len(),
+        TxnVersion::V1 => gas::ACCOUNT_TRIE_KEY_LENGTH + address.len() + key.len(),
+        TxnVersion::V2 => gas::ACCOUNT_TRIE_KEY_LENGTH + key.len(),
     }
 }

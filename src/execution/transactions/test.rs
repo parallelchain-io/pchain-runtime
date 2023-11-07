@@ -6,30 +6,55 @@
 use std::collections::HashMap;
 
 use pchain_types::{
-    blockchain::{Command, ExitCodeV1, TransactionV1, CommandReceiptV1, TransactionV2, CommandReceiptV2, ReceiptV2, ExitCodeV2},
+    blockchain::{
+        Command, CommandReceiptV1, CommandReceiptV2, ExitCodeV1, ExitCodeV2, ReceiptV2,
+        TransactionV1, TransactionV2,
+    },
     cryptography::PublicAddress,
     runtime::*,
 };
 use pchain_world_state::{
-    network::{
-        constants,
-        network_account::NetworkAccountSized,
-        pool::{Pool, PoolKey},
-        stake::{Stake, StakeValue},
-    },
-    states::WorldState,
-    storage::{Key, Value, WorldStateStorage},
+    constants,
+    // tests::{Key, Value, WorldStateStorage},
+    NetworkAccountSized,
+    Pool,
+    PoolKey,
+    Stake,
+    StakeValue,
+    VersionProvider,
+    WorldState,
+    DB,
+    V1,
+    V2,
 };
+
+// TODO check WSV1 vs WSV2
+// look our purpose is not to test WS, but we can test return types V2
+
+// TODO delete
+// use pchain_world_state::{
+//     network::{
+//         constants,
+//         network_account::NetworkAccountSized,
+//         pool::{Pool, PoolKey},
+//         stake::{Stake, StakeValue},
+//     },
+//     states::WorldState,
+//     storage::{Key, Value, WorldStateStorage},
+// };
 
 use crate::{
     commands::protocol,
     execution::{
-        execute_commands::{execute_commands_v1, execute_commands_v2}, execute_next_epoch::execute_next_epoch_v1, state::ExecutionState,
+        execute_commands::{execute_commands_v1, execute_commands_v2},
+        execute_next_epoch::execute_next_epoch_v1,
+        state::ExecutionState,
     },
     gas,
     transition::TransitionContext,
-    types::{BaseTx, TxnVersion, self},
-    BlockProposalStats, BlockchainParams, TransitionError, TransitionResultV1, ValidatorPerformance,
+    types::{self, BaseTx, TxnVersion},
+    BlockProposalStats, BlockchainParams, TransitionError, TransitionResultV1,
+    ValidatorPerformance,
 };
 
 const TEST_MAX_VALIDATOR_SET_SIZE: u16 = constants::MAX_VALIDATOR_SET_SIZE;
@@ -38,15 +63,18 @@ const MIN_BASE_FEE: u64 = 8;
 type NetworkAccount<'a, S> =
     NetworkAccountSized<'a, S, { TEST_MAX_VALIDATOR_SET_SIZE }, { TEST_MAX_STAKES_PER_POOL }>;
 
-type ExecutionStateV1<S> = ExecutionState<S, CommandReceiptV1>;
-type ExecutionStateV2<S> = ExecutionState<S, CommandReceiptV2>;
+type ExecutionStateV1<'a, S> = ExecutionState<'a, S, CommandReceiptV1, V1>;
+type ExecutionStateV2<'a, S> = ExecutionState<'a, S, CommandReceiptV2, V2>;
 
-#[derive(Clone)]
+type Key = Vec<u8>;
+type Value = Vec<u8>;
+
+#[derive(Clone, Default)]
 struct SimpleStore {
     inner: HashMap<Key, Value>,
 }
-impl WorldStateStorage for SimpleStore {
-    fn get(&self, key: &Key) -> Option<Value> {
+impl DB for SimpleStore {
+    fn get(&self, key: &[u8]) -> Option<Value> {
         match self.inner.get(key) {
             Some(v) => Some(v.clone()),
             None => None,
@@ -58,15 +86,45 @@ const ACCOUNT_A: [u8; 32] = [1u8; 32];
 const ACCOUNT_B: [u8; 32] = [2u8; 32];
 const ACCOUNT_C: [u8; 32] = [3u8; 32];
 const ACCOUNT_D: [u8; 32] = [4u8; 32];
+const DEFAULT_AMOUNT: u64 = 500_000_000;
 
-/// Null test on empty transaction commands
+#[derive(Default)]
+struct TestFixture {
+    store: SimpleStore,
+}
+
+impl TestFixture {
+    fn new() -> Self {
+        Self::default()
+    }
+    fn ws<V>(&self) -> WorldState<'_, SimpleStore, V>
+    where
+        V: VersionProvider + Send + Sync + Clone + 'static,
+    {
+        let mut ws = WorldState::<SimpleStore, V>::new(&self.store);
+        for account in [ACCOUNT_A, ACCOUNT_B, ACCOUNT_C, ACCOUNT_D].iter() {
+            ws.account_trie_mut()
+                .set_balance(account, DEFAULT_AMOUNT)
+                .unwrap();
+        }
+        ws
+    }
+}
+
+/// Null test on empty transaction commandsk
 #[test]
 fn test_empty_commands() {
     /* Version 1 */
-    
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
 
-    let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
+    let owner_balance_before = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_A)
+        .unwrap();
 
     let tx_base_cost = set_tx(&mut state, ACCOUNT_A, 0, &vec![]);
 
@@ -76,26 +134,51 @@ fn test_empty_commands() {
     assert_eq!(gas_used, 0);
 
     let state = create_state(Some(ret.new_state));
-    let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
+    let owner_balance_after = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_A)
+        .unwrap();
+
     assert_eq!(
         owner_balance_before,
         owner_balance_after + gas_used + tx_base_cost
     );
 
     /* Version 2 */
+    let fixture = TestFixture::new();
+    let mut state = create_state_v2(Some(fixture.ws()));
 
-    let mut state = create_state_v2(None);
-
-    let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
+    let owner_balance_before = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_A)
+        .unwrap();
 
     let tx_base_cost = set_tx_v2(&mut state, ACCOUNT_A, 0, &vec![]);
 
     let ret = execute_commands_v2(state, vec![]);
     assert!(ret.error.is_none());
-    assert!(extract_receipt_content_v2(&ret.receipt.unwrap(), tx_base_cost, 0, ExitCodeV2::Ok, 0));
+    assert!(extract_receipt_content_v2(
+        &ret.receipt.unwrap(),
+        tx_base_cost,
+        0,
+        ExitCodeV2::Ok,
+        0
+    ));
 
-    let state = create_state(Some(ret.new_state));
-    let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
+    let state = create_state_v2(Some(ret.new_state));
+    let owner_balance_after = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_A)
+        .unwrap();
     assert_eq!(
         owner_balance_before,
         owner_balance_after + gas_used + tx_base_cost
@@ -106,8 +189,8 @@ fn test_empty_commands() {
 // Commands Transfer
 fn test_transfer() {
     /* Version 1 */
-
-    let state = create_state(None);
+    let fixture = TestFixture::new();
+    let state = create_state(Some(fixture.ws()));
 
     let amount = 999_999;
     let commands = vec![Command::Transfer(TransferInput {
@@ -118,18 +201,21 @@ fn test_transfer() {
     let ret = execute_commands_v1(state, commands);
 
     assert_eq!(
-        (&ret.error, &ret.receipt.as_ref().unwrap().last().unwrap().exit_code),
+        (
+            &ret.error,
+            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
+        ),
         (&None, &ExitCodeV1::Success)
     );
 
     assert_eq!(extract_gas_used(&ret), 32820);
-    let owner_balance_after = ret.new_state.balance(ACCOUNT_B);
+    let owner_balance_after = ret.new_state.account_trie().balance(&ACCOUNT_B).unwrap();
 
     assert_eq!(owner_balance_after, 500_000_000 + amount);
 
     /* Version 2 */
-
-    let mut state = create_state_v2(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state_v2(Some(fixture.ws()));
 
     let amount = 999_999;
     let commands = vec![Command::Transfer(TransferInput {
@@ -138,11 +224,17 @@ fn test_transfer() {
     })];
 
     let tx_base_cost = set_tx_v2(&mut state, ACCOUNT_A, 0, &commands);
-    let ret = execute_commands_v2(state,commands,);
+    let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    assert!(extract_receipt_content_v2(&ret.receipt.unwrap(), tx_base_cost + 32820, 32820, ExitCodeV2::Ok, 0));
+    assert!(extract_receipt_content_v2(
+        &ret.receipt.unwrap(),
+        tx_base_cost + 32820,
+        32820,
+        ExitCodeV2::Ok,
+        0
+    ));
 
-    let owner_balance_after = ret.new_state.balance(ACCOUNT_B);
+    let owner_balance_after = ret.new_state.account_trie().balance(&ACCOUNT_B).unwrap();
     assert_eq!(owner_balance_after, 500_000_000 + amount);
 }
 
@@ -152,7 +244,8 @@ fn test_transfer() {
 // - Pool commission rate > 100
 #[test]
 fn test_create_pool() {
-    let state = create_state(None);
+    let fixture = TestFixture::new();
+    let state = create_state(Some(fixture.ws()));
     let ret = execute_commands_v1(
         state,
         vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })],
@@ -210,7 +303,8 @@ fn test_create_pool() {
 // - Same commission rate
 #[test]
 fn test_create_pool_set_policy() {
-    let state = create_state(None);
+    let fixture = TestFixture::new();
+    let state = create_state(Some(fixture.ws()));
     let ret = execute_commands_v1(
         state,
         vec![
@@ -281,7 +375,8 @@ fn test_create_pool_set_policy() {
 // - Pool Not exist
 #[test]
 fn test_create_delete_pool() {
-    let state = create_state(None);
+    let fixture = TestFixture::new();
+    let state = create_state(Some(fixture.ws()));
     let ret = execute_commands_v1(
         state,
         vec![
@@ -334,7 +429,8 @@ fn test_create_delete_pool() {
 // - Not enough balance
 #[test]
 fn test_create_pool_create_deposit() {
-    let state = create_state(None);
+    let fixture = TestFixture::new();
+    let state = create_state(Some(fixture.ws()));
     let ret = execute_commands_v1(
         state,
         vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })],
@@ -426,7 +522,8 @@ fn test_create_pool_create_deposit() {
 // - same deposit policy
 #[test]
 fn test_create_deposit_set_policy() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     pool.set_operator(ACCOUNT_A);
     pool.set_power(100_000);
@@ -503,7 +600,8 @@ fn test_create_deposit_set_policy() {
 // - Not enough balance
 #[test]
 fn test_create_deposit_topupdeposit() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     pool.set_operator(ACCOUNT_A);
     pool.set_power(100_000);
@@ -584,7 +682,8 @@ fn test_create_deposit_topupdeposit() {
 // - Pool not exist
 #[test]
 fn test_stake_deposit_delegated_stakes() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     pool.set_operator(ACCOUNT_A);
     pool.set_power(100_000);
@@ -672,7 +771,8 @@ fn test_stake_deposit_delegated_stakes() {
 // // Commands (account b): Stake Deposit (to increase the power of pool (account a))
 #[test]
 fn test_stake_deposit_delegated_stakes_nvp_change_key() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_pools_in_nvp(&mut state, false, false);
     let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     assert_eq!(pool.power().unwrap(), 100_000);
@@ -732,7 +832,8 @@ fn test_stake_deposit_delegated_stakes_nvp_change_key() {
 // // Commands (account c): Stake Deposit (to increase the power of pool (account b) to be included in nvp)
 #[test]
 fn test_stake_deposit_delegated_stakes_nvp_insert() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_pools_in_nvp(&mut state, false, false);
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_B);
     pool.set_operator(ACCOUNT_B);
@@ -802,7 +903,8 @@ fn test_stake_deposit_delegated_stakes_nvp_insert() {
 // // - stake is too small to insert
 #[test]
 fn test_stake_deposit_delegated_stakes_insert() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_stakes_in_pool(&mut state, ACCOUNT_A);
     let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_C);
     deposit.set_balance(250_000);
@@ -876,7 +978,8 @@ fn test_stake_deposit_delegated_stakes_insert() {
 // Commands (account b): Stake Deposit (to be included in delegated stakes, but not the minimum one)
 #[test]
 fn test_stake_deposit_delegated_stakes_change_key() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_stakes_in_pool(&mut state, ACCOUNT_C);
     let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_C, ACCOUNT_B);
     deposit.set_balance(310_000);
@@ -926,7 +1029,8 @@ fn test_stake_deposit_delegated_stakes_change_key() {
 // Commands (account b): Stake Deposit (to increase the stake in the delegated stakes)
 #[test]
 fn test_stake_deposit_delegated_stakes_existing() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     pool.set_operator(ACCOUNT_A);
     pool.set_power(100_000);
@@ -976,7 +1080,8 @@ fn test_stake_deposit_delegated_stakes_existing() {
 // Commands (account a): Stake Deposit
 #[test]
 fn test_stake_deposit_same_owner() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     pool.set_operator(ACCOUNT_A);
     pool.set_power(100_000);
@@ -1022,7 +1127,8 @@ fn test_stake_deposit_same_owner() {
 // Commands (account a): Stake Deposit (to increase the power of pool (account a))
 #[test]
 fn test_stake_deposit_same_owner_nvp_change_key() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_pools_in_nvp(&mut state, false, false);
     let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     assert_eq!(pool.power().unwrap(), 100_000);
@@ -1083,7 +1189,8 @@ fn test_stake_deposit_same_owner_nvp_change_key() {
 // Commands (account c): Stake Deposit (to increase the power of pool (account c) to be included in nvp)
 #[test]
 fn test_stake_deposit_same_owner_nvp_insert() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_pools_in_nvp(&mut state, false, false);
     assert!(NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_C)
         .operator()
@@ -1147,7 +1254,8 @@ fn test_stake_deposit_same_owner_nvp_insert() {
 // Commands (account a): Stake Deposit
 #[test]
 fn test_stake_deposit_same_owner_existing() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     pool.set_operator(ACCOUNT_A);
     pool.set_power(100_000);
@@ -1200,7 +1308,8 @@ fn test_stake_deposit_same_owner_existing() {
 // - Pool not exists
 #[test]
 fn test_unstake_deposit_delegated_stakes() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     pool.set_operator(ACCOUNT_A);
     pool.set_power(100_000);
@@ -1321,7 +1430,8 @@ fn test_unstake_deposit_delegated_stakes() {
 // Commands (account X): Unstake Deposit
 #[test]
 fn test_unstake_deposit_delegated_stakes_remove() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_deposits_in_pool(&mut state, ACCOUNT_A, false);
     create_full_stakes_in_pool(&mut state, ACCOUNT_A);
     let biggest = [
@@ -1382,7 +1492,8 @@ fn test_unstake_deposit_delegated_stakes_nvp_change_key() {
         2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1,
     ];
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_pools_in_nvp(&mut state, false, false);
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
     assert_eq!(pool.power().unwrap(), 200_000);
@@ -1451,7 +1562,8 @@ fn test_unstake_deposit_delegated_stakes_nvp_remove() {
         2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1,
     ];
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_pools_in_nvp(&mut state, false, false);
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
     assert_eq!(pool.power().unwrap(), 200_000);
@@ -1510,7 +1622,8 @@ fn test_unstake_deposit_delegated_stakes_nvp_remove() {
 // - Pool has no operator stake
 #[test]
 fn test_unstake_deposit_same_owner() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     pool.set_operator(ACCOUNT_A);
     pool.set_power(100_000);
@@ -1574,7 +1687,8 @@ fn test_unstake_deposit_same_owner_nvp_change_key() {
         2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1,
     ];
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_pools_in_nvp(&mut state, false, false);
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
     assert_eq!(pool.power().unwrap(), 200_000);
@@ -1590,8 +1704,9 @@ fn test_unstake_deposit_same_owner_nvp_change_key() {
         .ctx
         .inner_ws_cache_mut()
         .ws
-        .cached()
-        .set_balance(ACCOUNT_T, 500_000_000);
+        .account_trie_mut()
+        .set_balance(&ACCOUNT_T, 500_000_000)
+        .unwrap();
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
     let mut state = create_state(Some(ws));
@@ -1646,7 +1761,8 @@ fn test_unstake_deposit_same_owner_nvp_remove() {
         2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1,
     ];
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_pools_in_nvp(&mut state, false, false);
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
     assert_eq!(pool.power().unwrap(), 200_000);
@@ -1662,8 +1778,9 @@ fn test_unstake_deposit_same_owner_nvp_remove() {
         .ctx
         .inner_ws_cache_mut()
         .ws
-        .cached()
-        .set_balance(ACCOUNT_T, 500_000_000);
+        .account_trie_mut()
+        .set_balance(&ACCOUNT_T, 500_000_000)
+        .unwrap();
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
     let mut state = create_state(Some(ws));
@@ -1713,7 +1830,8 @@ fn test_unstake_deposit_same_owner_nvp_remove() {
 // - deposit amount = locked stake amount (pvp)
 #[test]
 fn test_withdrawal_deposit_delegated_stakes() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     pool.set_operator(ACCOUNT_A);
     pool.set_power(100_000);
@@ -1733,7 +1851,13 @@ fn test_withdrawal_deposit_delegated_stakes() {
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
     let mut state = create_state(Some(ws));
-    let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
+    let owner_balance_before = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_B)
+        .unwrap();
     let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
         operator: ACCOUNT_A,
         max_amount: 40_000,
@@ -1772,7 +1896,14 @@ fn test_withdrawal_deposit_delegated_stakes() {
             .unwrap(),
         60_000
     );
-    let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
+    let owner_balance_after = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_B)
+        .unwrap();
+
     assert_eq!(
         owner_balance_before,
         owner_balance_after + gas_used + tx_base_cost - 40_000
@@ -1887,7 +2018,8 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_change_key() {
         2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1,
     ];
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_pools_in_nvp(&mut state, false, false);
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
     assert_eq!(pool.power().unwrap(), 200_000);
@@ -1906,7 +2038,14 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_change_key() {
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
     let mut state = create_state(Some(ws));
-    let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
+    let owner_balance_before = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_B)
+        .unwrap();
+
     let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
         operator: ACCOUNT_T,
         max_amount: 200_000,
@@ -1949,7 +2088,13 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_change_key() {
             .unwrap(),
         50_000
     );
-    let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
+    let owner_balance_after = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_B)
+        .unwrap();
     assert_eq!(
         owner_balance_before,
         owner_balance_after + gas_used + tx_base_cost - 200_000
@@ -1983,7 +2128,8 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_remove() {
         2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1,
     ];
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_pools_in_nvp(&mut state, false, false);
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
     assert_eq!(pool.power().unwrap(), 200_000);
@@ -2002,7 +2148,13 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_remove() {
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
     let mut state = create_state(Some(ws));
-    let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
+    let owner_balance_before = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_A)
+        .unwrap();
     let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
         operator: ACCOUNT_T,
         max_amount: 300_000,
@@ -2045,7 +2197,13 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_remove() {
             .unwrap(),
         0
     );
-    let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
+    let owner_balance_after = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_B)
+        .unwrap();
     assert_eq!(
         owner_balance_before,
         owner_balance_after + gas_used + tx_base_cost - 300_000
@@ -2075,7 +2233,8 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_remove() {
 // Commands (account a): Withdraw Deposit (to reduce the operator stake of pool (account a))
 #[test]
 fn test_withdrawal_deposit_same_owner() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     pool.set_operator(ACCOUNT_A);
     pool.set_power(100_000);
@@ -2091,7 +2250,13 @@ fn test_withdrawal_deposit_same_owner() {
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
     let mut state = create_state(Some(ws));
-    let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
+    let owner_balance_before = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_A)
+        .unwrap();
     let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
         operator: ACCOUNT_A,
         max_amount: 45_000,
@@ -2131,7 +2296,13 @@ fn test_withdrawal_deposit_same_owner() {
             .unwrap(),
         55_000
     );
-    let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
+    let owner_balance_after = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_A)
+        .unwrap();
     assert_eq!(
         owner_balance_before,
         owner_balance_after + gas_used + tx_base_cost - 45_000
@@ -2148,7 +2319,8 @@ fn test_withdrawal_deposit_same_owner_nvp_change_key() {
         2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1,
     ];
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_pools_in_nvp(&mut state, false, false);
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
     assert_eq!(pool.power().unwrap(), 200_000);
@@ -2164,12 +2336,19 @@ fn test_withdrawal_deposit_same_owner_nvp_change_key() {
         .ctx
         .inner_ws_cache_mut()
         .ws
-        .cached()
-        .set_balance(ACCOUNT_T, 500_000_000);
+        .account_trie_mut()
+        .set_balance(&ACCOUNT_T, 500_000_000)
+        .unwrap();
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
     let mut state = create_state(Some(ws));
-    let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_T);
+    let owner_balance_before = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_T)
+        .unwrap();
     let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
         operator: ACCOUNT_T,
         max_amount: 200_000,
@@ -2206,7 +2385,13 @@ fn test_withdrawal_deposit_same_owner_nvp_change_key() {
             .unwrap(),
         50_000
     );
-    let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_T);
+    let owner_balance_after = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_T)
+        .unwrap();
     assert_eq!(
         owner_balance_before,
         owner_balance_after + gas_used + tx_base_cost - 200_000
@@ -2240,7 +2425,8 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
         2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1,
     ];
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_pools_in_nvp(&mut state, false, false);
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
     assert_eq!(pool.power().unwrap(), 200_000);
@@ -2256,12 +2442,19 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
         .ctx
         .inner_ws_cache_mut()
         .ws
-        .cached()
-        .set_balance(ACCOUNT_T, 500_000_000);
+        .account_trie_mut()
+        .set_balance(&ACCOUNT_T, 500_000_000)
+        .unwrap();
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
 
     let mut state = create_state(Some(ws));
-    let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_A);
+    let owner_balance_before = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_A)
+        .unwrap();
     let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
         operator: ACCOUNT_T,
         max_amount: 300_000,
@@ -2292,7 +2485,13 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
         .operator_stake()
         .unwrap()
         .is_none());
-    let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_T);
+    let owner_balance_after = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_T)
+        .unwrap();
 
     assert_eq!(
         owner_balance_before,
@@ -2324,7 +2523,8 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
 // Commands (account b): Withdraw Deposit (to reduce the delegated stakes in pool (account a))
 #[test]
 fn test_withdrawal_deposit_bounded_by_vp() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     pool.set_operator(ACCOUNT_A);
     pool.set_power(100_000);
@@ -2371,7 +2571,13 @@ fn test_withdrawal_deposit_bounded_by_vp() {
 
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
     let mut state = create_state(Some(ws));
-    let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
+    let owner_balance_before = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_B)
+        .unwrap();
     let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
         operator: ACCOUNT_A,
         max_amount: 40_000,
@@ -2412,7 +2618,13 @@ fn test_withdrawal_deposit_bounded_by_vp() {
         80_000
     );
 
-    let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
+    let owner_balance_after = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_B)
+        .unwrap();
     assert_eq!(
         owner_balance_before,
         owner_balance_after + gas_used + tx_base_cost - 20_000
@@ -2425,7 +2637,8 @@ fn test_withdrawal_deposit_bounded_by_vp() {
 // Commands (account b): Withdraw Deposit (to reduce the delegated stakes in pool (account a))
 #[test]
 fn test_withdrawal_deposit_bounded_by_pvp() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     pool.set_operator(ACCOUNT_A);
     pool.set_power(100_000);
@@ -2472,7 +2685,13 @@ fn test_withdrawal_deposit_bounded_by_pvp() {
 
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
     let mut state = create_state(Some(ws));
-    let owner_balance_before = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
+    let owner_balance_before = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_B)
+        .unwrap();
 
     let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
         operator: ACCOUNT_A,
@@ -2513,7 +2732,13 @@ fn test_withdrawal_deposit_bounded_by_pvp() {
             .unwrap(),
         90_000
     );
-    let owner_balance_after = state.ctx.inner_ws_cache().ws.balance(ACCOUNT_B);
+    let owner_balance_after = state
+        .ctx
+        .inner_ws_cache()
+        .ws
+        .account_trie()
+        .balance(&ACCOUNT_B)
+        .unwrap();
     assert_eq!(
         owner_balance_before,
         owner_balance_after + gas_used + tx_base_cost - 10_000
@@ -2525,7 +2750,8 @@ fn test_withdrawal_deposit_bounded_by_pvp() {
 // Commands (account a): Next Epoch
 #[test]
 fn test_next_epoch_no_pool() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     NetworkAccount::new(&mut state.ctx.gas_meter).set_current_epoch(0);
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
     let state = create_state(Some(ws));
@@ -2543,7 +2769,14 @@ fn test_next_epoch_no_pool() {
 // Commands (account a): Next Epoch
 #[test]
 fn test_next_epoch_single_pool() {
-    let ws = prepare_single_pool(false, false);
+    let fixture = TestFixture::new();
+    let ws = {
+        let mut state = create_state(Some(fixture.ws()));
+        setup_pool(
+            &mut state, ACCOUNT_A, 10_000, ACCOUNT_B, 90_000, false, false,
+        );
+        state.ctx.into_ws_cache().commit_to_world_state()
+    };
     let state = create_state(Some(ws));
     let mut state = execute_next_epoch(state);
 
@@ -2642,7 +2875,14 @@ fn test_next_epoch_single_pool() {
 // Commands (account a): Next Epoch, Next Epoch
 #[test]
 fn test_next_epoch_single_pool_with_vp() {
-    let ws = prepare_single_pool(false, false);
+    let fixture = TestFixture::new();
+    let ws = {
+        let mut state = create_state(Some(fixture.ws()));
+        setup_pool(
+            &mut state, ACCOUNT_A, 10_000, ACCOUNT_B, 90_000, false, false,
+        );
+        state.ctx.into_ws_cache().commit_to_world_state()
+    };
     let mut state = create_state(Some(ws));
     state.bd.validator_performance = Some(single_node_performance(ACCOUNT_A, 1));
     // prepare data by executing first epoch, assume test result is correct from test_next_epoch_single_pool
@@ -2758,7 +2998,12 @@ fn test_next_epoch_single_pool_with_vp() {
 // Commands (account a): Next Epoch, Next Epoch
 #[test]
 fn test_next_epoch_single_pool_auto_stake() {
-    let ws = prepare_single_pool(true, true);
+    let fixture = TestFixture::new();
+    let ws = {
+        let mut state = create_state(Some(fixture.ws()));
+        setup_pool(&mut state, ACCOUNT_A, 10_000, ACCOUNT_B, 90_000, true, true);
+        state.ctx.into_ws_cache().commit_to_world_state()
+    };
     let mut state = create_state(Some(ws));
     state.bd.validator_performance = Some(single_node_performance(ACCOUNT_A, 1));
     // prepare data by executing first epoch, assume test result is correct from test_next_epoch_single_pool
@@ -2883,7 +3128,8 @@ fn test_next_epoch_single_pool_auto_stake() {
 // Commands (account a): Next Epoch, Next Epoch
 #[test]
 fn test_next_epoch_multiple_pools_and_stakes() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
 
     prepare_accounts_balance(&mut state.ctx.inner_ws_cache_mut().ws);
 
@@ -2909,14 +3155,15 @@ fn test_next_epoch_multiple_pools_and_stakes() {
     );
 
     {
+        // TODO rm
         // open account storage state for speed up read operations
-        let acc_state = state
-            .ctx
-            .inner_ws_cache()
-            .ws
-            .account_storage_state(constants::NETWORK_ADDRESS)
-            .unwrap();
-        let mut state = protocol::NetworkAccountWorldState::new(&mut state, acc_state);
+        // let acc_state = state
+        //     .ctx
+        //     .inner_ws_cache()
+        //     .ws
+        //     .account_storage_state(constants::NETWORK_ADDRESS)
+        //     .unwrap();
+        let mut state = protocol::NetworkAccountWorldState::new(&mut state);
 
         // Pool power of vp and nvp are equal
         let l = NetworkAccount::vp(&mut state).length();
@@ -2992,14 +3239,15 @@ fn test_next_epoch_multiple_pools_and_stakes() {
     );
 
     {
+        // TODO rm
         // open account storage state for speed up read operations
-        let acc_state = state
-            .ctx
-            .inner_ws_cache()
-            .ws
-            .account_storage_state(constants::NETWORK_ADDRESS)
-            .unwrap();
-        let mut state = protocol::NetworkAccountWorldState::new(&mut state, acc_state);
+        // let acc_state = state
+        //     .ctx
+        //     .inner_ws_cache()
+        //     .ws
+        //     .account_storage_state(constants::NETWORK_ADDRESS)
+        //     .unwrap();
+        let mut state = protocol::NetworkAccountWorldState::new(&mut state);
 
         // Pool power of pvp, vp and nvp are equal
         let l = NetworkAccount::vp(&mut state).length();
@@ -3069,7 +3317,8 @@ fn test_next_epoch_multiple_pools_and_stakes() {
 // Commands (account a): Next Epoch, Next Epoch
 #[test]
 fn test_next_epoch_multiple_pools_and_stakes_auto_stake() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
 
     prepare_accounts_balance(&mut state.ctx.inner_ws_cache_mut().ws);
 
@@ -3094,14 +3343,15 @@ fn test_next_epoch_multiple_pools_and_stakes_auto_stake() {
     );
 
     {
+        // TODO rm
         // open account storage state for speed up read operations
-        let acc_state = state
-            .ctx
-            .inner_ws_cache()
-            .ws
-            .account_storage_state(constants::NETWORK_ADDRESS)
-            .unwrap();
-        let mut state = protocol::NetworkAccountWorldState::new(&mut state, acc_state);
+        // let acc_state = state
+        //     .ctx
+        //     .inner_ws_cache()
+        //     .ws
+        //     .account_storage_state(constants::NETWORK_ADDRESS)
+        //     .unwrap();
+        let mut state = protocol::NetworkAccountWorldState::new(&mut state);
 
         // Pool power of vp and nvp are equal
         let l = NetworkAccount::vp(&mut state).length();
@@ -3178,14 +3428,15 @@ fn test_next_epoch_multiple_pools_and_stakes_auto_stake() {
     );
 
     {
+        // TODO rm
         // open account storage state for speed up read operations
-        let acc_state = state
-            .ctx
-            .inner_ws_cache()
-            .ws
-            .account_storage_state(constants::NETWORK_ADDRESS)
-            .unwrap();
-        let mut state = protocol::NetworkAccountWorldState::new(&mut state, acc_state);
+        // let acc_state = state
+        //     .ctx
+        //     .inner_ws_cache()
+        //     .ws
+        //     .account_storage_state(constants::NETWORK_ADDRESS)
+        //     .unwrap();
+        let mut state = protocol::NetworkAccountWorldState::new(&mut state);
 
         // Pool power of vp and nvp are equal and greater than pool power of pvp
         let l = NetworkAccount::vp(&mut state).length();
@@ -3258,7 +3509,8 @@ fn test_next_epoch_multiple_pools_and_stakes_auto_stake() {
 // Commands: Next Epoch, Delete Pool (account a), Next Epoch, Create Pool (account b), Next Epoch
 #[test]
 fn test_change_of_validators() {
-    let mut state = create_state(None);
+    let fixture = TestFixture::new();
+    let mut state = create_state(Some(fixture.ws()));
     create_full_pools_in_nvp(&mut state, false, false);
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
     let state = create_state(Some(ws));
@@ -3301,22 +3553,17 @@ fn test_change_of_validators() {
     execute_next_epoch(state);
 }
 
-fn create_state(init_ws: Option<WorldState<SimpleStore>>) -> ExecutionStateV1<SimpleStore> {
-    let ws = match init_ws {
-        Some(ws) => ws,
-        None => {
-            let mut ws = WorldState::initialize(SimpleStore {
-                inner: HashMap::new(),
-            });
-            ws.with_commit().set_balance(ACCOUNT_A, 500_000_000);
-            ws.with_commit().set_balance(ACCOUNT_B, 500_000_000);
-            ws.with_commit().set_balance(ACCOUNT_C, 500_000_000);
-            ws.with_commit().set_balance(ACCOUNT_D, 500_000_000);
-            ws
-        }
-    };
+fn create_state(init_ws: Option<WorldState<SimpleStore, V1>>) -> ExecutionStateV1<SimpleStore> {
     let tx = create_tx(ACCOUNT_A);
-    let ctx = TransitionContext::new(TxnVersion::V1, ws, tx.gas_limit);
+    let ctx = TransitionContext::new(TxnVersion::V1, init_ws.unwrap(), tx.gas_limit);
+    let base_tx = BaseTx::from(&tx);
+
+    ExecutionState::new(base_tx, create_bd(), ctx)
+}
+
+fn create_state_v2(init_ws: Option<WorldState<SimpleStore, V2>>) -> ExecutionStateV2<SimpleStore> {
+    let tx = create_tx(ACCOUNT_A);
+    let ctx = TransitionContext::new(TxnVersion::V2, init_ws.unwrap(), tx.gas_limit);
     let base_tx = BaseTx::from(&tx);
 
     ExecutionState::new(base_tx, create_bd(), ctx)
@@ -3346,27 +3593,6 @@ fn create_tx(signer: PublicAddress) -> TransactionV1 {
         signature: [0u8; 64],
         commands: Vec::new(),
     }
-}
-
-fn create_state_v2(init_ws: Option<WorldState<SimpleStore>>) -> ExecutionStateV2<SimpleStore> {
-    let ws = match init_ws {
-        Some(ws) => ws,
-        None => {
-            let mut ws = WorldState::initialize(SimpleStore {
-                inner: HashMap::new(),
-            });
-            ws.with_commit().set_balance(ACCOUNT_A, 500_000_000);
-            ws.with_commit().set_balance(ACCOUNT_B, 500_000_000);
-            ws.with_commit().set_balance(ACCOUNT_C, 500_000_000);
-            ws.with_commit().set_balance(ACCOUNT_D, 500_000_000);
-            ws
-        }
-    };
-    let tx = create_tx_v2(ACCOUNT_A);
-    let ctx = TransitionContext::new(TxnVersion::V2, ws, tx.gas_limit);
-    let base_tx = BaseTx::from(&tx);
-
-    ExecutionState::new(base_tx, create_bd(), ctx)
 }
 
 fn set_tx_v2(
@@ -3443,14 +3669,13 @@ fn all_nodes_performance() -> ValidatorPerformance {
 
 /// Account address range from \[X, X, X, X, ... , 2\] where X starts with u32(\[2,2,2,2\]). Number of Accounts = MAX_STAKES_PER_POOL
 /// all balance = 500_000_000
-fn prepare_accounts_balance(ws: &mut WorldState<SimpleStore>) {
+fn prepare_accounts_balance(ws: &mut WorldState<SimpleStore, V1>) {
     let start = u32::from_le_bytes([2u8, 2, 2, 2]);
     for i in 0..TEST_MAX_STAKES_PER_POOL {
         let mut address = [2u8; 32];
         address[0..4].copy_from_slice(&(start + i as u32).to_le_bytes().to_vec());
-        ws.cached().set_balance(address, 500_000_000);
+        ws.account_trie_mut().set_balance(&address, 500_000_000);
     }
-    ws.commit();
 }
 
 /// Pools address range from \[X, 1, 1, 1, ... , 1\] where X \in \[1, TEST_MAX_VALIDATOR_SET_SIZE\]
@@ -3588,22 +3813,6 @@ fn create_full_nvp_pool_stakes_deposits(
 // pool[A].delegated_stakes[B] = 90_000
 // deposits[A, A] = 10_000
 // deposits[A, B] = 90_000
-fn prepare_single_pool(
-    auto_stake_rewards_a: bool,
-    auto_stake_rewards_b: bool,
-) -> WorldState<SimpleStore> {
-    let mut state = create_state(None);
-    setup_pool(
-        &mut state,
-        ACCOUNT_A,
-        10_000,
-        ACCOUNT_B,
-        90_000,
-        auto_stake_rewards_a,
-        auto_stake_rewards_b,
-    );
-    state.ctx.into_ws_cache().commit_to_world_state()
-}
 
 // pool[A].power = 100_000
 // pool[A].operator_stake = 10_000
@@ -3678,7 +3887,7 @@ fn execute_next_epoch(state: ExecutionStateV1<SimpleStore>) -> ExecutionStateV1<
     create_state(Some(ret.new_state))
 }
 
-fn extract_gas_used(ret: &TransitionResultV1<SimpleStore>) -> u64 {
+fn extract_gas_used(ret: &TransitionResultV1<SimpleStore, V1>) -> u64 {
     ret.receipt
         .as_ref()
         .unwrap()
@@ -3692,29 +3901,26 @@ fn extract_receipt_content_v2(
     total_gas_used: u64,
     commands_gas_used: u64,
     exit_code: ExitCodeV2,
-    count_tailing_not_executed: usize
+    count_tailing_not_executed: usize,
 ) -> bool {
     let gas_used_in_header = receipt.gas_used;
 
     let gas_used_in_commands = receipt
         .command_receipts
         .iter()
-        .map(|g| {
-            types::gas_used_and_exit_code_v2(g).0
-        })
+        .map(|g| types::gas_used_and_exit_code_v2(g).0)
         .sum::<u64>();
 
-    let count = receipt.command_receipts
+    let count = receipt
+        .command_receipts
         .iter()
         .rev()
         .map(types::gas_used_and_exit_code_v2)
-        .take_while(|(_, e)| {
-            e == &ExitCodeV2::NotExecuted
-        })
+        .take_while(|(_, e)| e == &ExitCodeV2::NotExecuted)
         .count();
 
     gas_used_in_header == total_gas_used
-    && gas_used_in_commands == commands_gas_used
-    && receipt.exit_code == exit_code 
-    && count == count_tailing_not_executed
+        && gas_used_in_commands == commands_gas_used
+        && receipt.exit_code == exit_code
+        && count == count_tailing_not_executed
 }

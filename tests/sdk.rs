@@ -4,16 +4,17 @@ use borsh::BorshDeserialize;
 use pchain_runtime::Cache;
 use pchain_types::{
     blockchain::{Command, ExitCodeV1, TransactionV1},
+    cryptography::contract_address_v1,
     runtime::{
         CreateDepositInput, SetDepositSettingsInput, StakeDepositInput, TopUpDepositInput,
         UnstakeDepositInput, WithdrawDepositInput,
-    }, cryptography::contract_address_v1,
+    },
 };
 use pchain_world_state::network::constants::NETWORK_ADDRESS;
 
 use crate::common::{
-    gas::extract_gas_used, ArgsBuilder, CallResult, SimulateWorldState,
-    TestData, CONTRACT_CACHE_FOLDER,
+    gas::extract_gas_used, ArgsBuilder, CallResult, SimulateWorldState, TestData,
+    CONTRACT_CACHE_FOLDER,
 };
 
 mod common;
@@ -473,8 +474,8 @@ fn test_success_etoc_network_state() {
     let contract_code = TestData::get_test_contract_code("all_features");
     let origin_address = [1u8; 32];
     let contract_address = contract_address_v1(&origin_address, 0);
-    let network_state_app_key = vec![5u8];
-    let network_state_app_value = 13579_u64.to_le_bytes().to_vec();
+    let network_state_storage_key = vec![5u8];
+    let network_state_storage_value = 13579_u64.to_le_bytes().to_vec();
 
     let bd = TestData::block_params();
 
@@ -482,8 +483,8 @@ fn test_success_etoc_network_state() {
     let init_from_balance = 500_000_000_000;
     sws.set_storage_data(
         NETWORK_ADDRESS,
-        network_state_app_key.clone(),
-        network_state_app_value.clone(),
+        network_state_storage_key.clone(),
+        network_state_storage_value.clone(),
     );
     // prepare a pool in network account (Operator, Power, Commission Rate, Operator's Own stake)
     sws.set_storage_data(
@@ -531,7 +532,7 @@ fn test_success_etoc_network_state() {
         TransactionV1 {
             signer: origin_address,
             commands: vec![
-                ArgsBuilder::new().add(network_state_app_key).make_call(
+                ArgsBuilder::new().add(network_state_storage_key).make_call(
                     Some(10_000_000_000),
                     contract_address,
                     "get_network_state",
@@ -551,7 +552,7 @@ fn test_success_etoc_network_state() {
     // Check result of "get_network_state";
     let return_value: Vec<u8> =
         CallResult::parse(receipt.last().unwrap().return_values.clone()).unwrap();
-    assert_eq!(return_value, network_state_app_value);
+    assert_eq!(return_value, network_state_storage_value);
 
     // 2. Issue network commands to stake
     let network_command_1 = Command::CreateDeposit(CreateDepositInput {

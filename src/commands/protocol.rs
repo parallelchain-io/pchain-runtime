@@ -9,15 +9,7 @@ use std::collections::HashMap;
 
 use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{
-    keys::AppKey,
-    network::{
-        constants::NETWORK_ADDRESS,
-        network_account::{NetworkAccount, NetworkAccountStorage},
-        pool::Pool,
-        stake::StakeValue,
-    },
-    states::AccountStorageState,
-    storage::WorldStateStorage,
+    NetworkAccount, NetworkAccountStorage, Pool, StakeValue, VersionProvider, DB, NETWORK_ADDRESS,
 };
 
 use crate::{
@@ -28,23 +20,25 @@ use crate::{
 use crate::execution::{cache::WorldStateCache, state::ExecutionState};
 
 /// Execution of [pchain_types::blockchain::Command::NextEpoch]
-pub(crate) fn next_epoch<S, E>(
-    mut state: ExecutionState<S, E>,
-) -> (ExecutionState<S, E>, ValidatorChanges)
+pub(crate) fn next_epoch<'a, S, E, V>(
+    mut state: ExecutionState<'a, S, E, V>,
+) -> (ExecutionState<'a, S, E, V>, ValidatorChanges)
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone + 'static,
 {
     let block_performance = state.bd.validator_performance.clone().unwrap();
 
     let new_validator_set = {
-        let acc_state = state
-            .ctx
-            .inner_ws_cache()
-            .ws
-            .account_storage_state(NETWORK_ADDRESS)
-            .unwrap();
+        // TODO remove
+        // let acc_state = state
+        //     .ctx
+        //     .inner_ws_cache()
+        //     .ws
+        //     .account_storage_state(NETWORK_ADDRESS)
+        // .unwrap();
 
-        let mut state = NetworkAccountWorldState::new(&mut state, acc_state);
+        let mut state = NetworkAccountWorldState::new(&mut state);
 
         let mut pools_in_vp = Vec::new();
         let mut stakes_of_vp = HashMap::<PublicAddress, Vec<StakeValue>>::new();
@@ -250,56 +244,55 @@ where
 /// Write opertions would store to read write set.
 /// Different with [state::ExecutionState] which also implements Trait [NetworkAccountStorage],
 /// it does not charge gas for opertaions.
-pub(crate) struct NetworkAccountWorldState<'a, S>
+pub(crate) struct NetworkAccountWorldState<'a, 'b, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    account_storage_state: AccountStorageState<S>,
-    ws_cache: &'a mut WorldStateCache<S>,
+    // account_storage_state: AccountStorageState<S>,
+    ws_cache: &'b mut WorldStateCache<'a, S, V>,
 }
 
-impl<'a, S> NetworkAccountWorldState<'a, S>
+impl<'a, 'b, S, V> NetworkAccountWorldState<'a, 'b, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone + 'static,
 {
     pub(crate) fn new<E>(
-        state: &'a mut ExecutionState<S, E>,
-        account_storage_state: AccountStorageState<S>,
+        state: &'b mut ExecutionState<'a, S, E, V>,
+        // account_storage_state: AccountStorageState<S>,
     ) -> Self {
         Self {
-            account_storage_state,
+            // account_storage_state,
+            // TODO check this cache_mut thing
             ws_cache: state.ctx.inner_ws_cache_mut(),
         }
     }
 }
 
-impl<'a, S> NetworkAccountStorage for NetworkAccountWorldState<'a, S>
+// TODO do we need this?
+impl<'a, 'b, S, V> NetworkAccountStorage for NetworkAccountWorldState<'a, 'b, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
+    // TODO 92 make consistent alls ignatures
     fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.ws_cache.app_data_from_account_storage_state(
-            &self.account_storage_state,
-            AppKey::new(key.to_vec()),
-        )
+        panic!("TODO");
+        // self.ws_cache.storage_data(&NETWORK_ADDRESS, key)
     }
 
     fn contains(&self, key: &[u8]) -> bool {
-        self.ws_cache.contains_app_data_from_account_storage_state(
-            &self.account_storage_state,
-            AppKey::new(key.to_vec()),
-        )
+        panic!("TODO");
+        // self.ws_cache.contains_storage_data(&NETWORK_ADDRESS, key)
     }
 
     fn set(&mut self, key: &[u8], value: Vec<u8>) {
-        let address = self.account_storage_state.address();
-        self.ws_cache
-            .set_app_data(address, AppKey::new(key.to_vec()), value);
+        self.ws_cache.set_storage_data(NETWORK_ADDRESS, key, value);
     }
 
     fn delete(&mut self, key: &[u8]) {
-        let address = self.account_storage_state.address();
         self.ws_cache
-            .set_app_data(address, AppKey::new(key.to_vec()), Vec::new());
+            .set_storage_data(NETWORK_ADDRESS, key, Vec::new());
     }
 }

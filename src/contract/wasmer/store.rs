@@ -24,13 +24,13 @@ pub fn instantiate_store(gas_limit: u64, memory_limit: Option<usize>) -> Store {
     // define the metering middleware
     let metering = Arc::new(Metering::new(gas_limit, wasm_opcode_gas_schedule));
 
-    // use the LLVM compiler
+    // use the Singlepass compiler which is optimised for fast compilation
     let mut compiler_config = Singlepass::new();
     compiler_config.push_middleware(nd_filter);
     compiler_config.push_middleware(metering);
     let engine = Universal::new(compiler_config).engine();
 
-    // creates a wasmer store with an optional guest memory limit
+    // creates a Wasmer store with an optional guest memory limit
     // If no memory limit is set, the method falls back to creating the store without custom memory adjustment
     match memory_limit {
         Some(limit) => {
@@ -50,9 +50,9 @@ pub fn instantiate_store(gas_limit: u64, memory_limit: Option<usize>) -> Store {
 fn limit_pages(limit: usize) -> Pages {
     const MAX_PAGES_AVAILABLE: u32 = 65536;
 
-    let capped_size = match u32::try_from(limit / WASM_PAGE_SIZE) {
-        Ok(x) => std::cmp::min(x, MAX_PAGES_AVAILABLE),
-        Err(_too_large) => MAX_PAGES_AVAILABLE,
-    };
+    let capped_size = u32::try_from(limit / WASM_PAGE_SIZE)
+        .unwrap_or(MAX_PAGES_AVAILABLE)
+        .min(MAX_PAGES_AVAILABLE);
+
     Pages(capped_size)
 }

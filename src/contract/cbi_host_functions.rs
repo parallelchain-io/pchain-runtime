@@ -26,7 +26,8 @@ use super::wasmer::instance::MethodCallError;
 ///
 pub trait CBIHostFunctions<T>
 where
-    T: wasmer::WasmerEnv + 'static,
+    // TODO I don't think this needs to be static
+    T: wasmer::WasmerEnv,
 {
     /// Sets a key to a value in the current Contract Account’s Storage.
     fn set(
@@ -50,37 +51,35 @@ where
         value_ptr_ptr: u32,
     ) -> Result<i64, FuncError>;
 
-    /// Get the balance of current account
+    /// Get the balance of the contract account
     fn balance(env: &T) -> Result<u64, FuncError>;
 
-    /// Gets the Height of the Block which the Transaction at the start of the current Call Chain is included in.
+    /// Gets the Height of the Block which includes the Transaction containing the current Call.
     fn block_height(env: &T) -> Result<u64, FuncError>;
 
-    /// Gets the Timestamp of the Block which the Transaction at the start of the current Call Chain is included in.
+    /// Gets the Timestamp of the Block  which includes the Transaction containing the current Call.
     fn block_timestamp(env: &T) -> Result<u32, FuncError>;
 
     /// Get the Hash field of the previous Block.
-    /// - `hash_ptr_ptr` points to memory of 32 bytes address.
+    /// - `hash_ptr_ptr` references the memory location to store the 32-byte hash.
     fn prev_block_hash(env: &T, hash_ptr_ptr: u32) -> Result<(), FuncError>;
 
     /// Gets the Address of the Account that triggered the current Call. This could either be an External
     /// Account (if the Call is directly triggered by a Call Transaction), or a Contract Account (if the Call is an Internal Call).
-    /// - `address_ptr_ptr` points to memory of 32 bytes address.
-    /// - returns the length of the value.
+    /// - `address_ptr_ptr` references the memory location to store the 32-bytes address.
     fn calling_account(env: &T, address_ptr_ptr: u32) -> Result<(), FuncError>;
 
-    /// Gets the Address of the current Account.
-    /// - `address_ptr_ptr` points to memory of 32 bytes address.
-    /// - returns the length of the value.
+    /// Gets the Address of the contract Account.
+    /// - `address_ptr_ptr` references the memory location to store the 32-bytes address.
     fn current_account(env: &T, address_ptr_ptr: u32) -> Result<(), FuncError>;
 
     /// Gets the Method of the current Call.
-    /// - `method_ptr_ptr` points to memory of bytes.
+    /// - `method_ptr_ptr` references the memory location to store the method bytes
     /// - returns the length of the value.
     fn method(env: &T, method_ptr_ptr: u32) -> Result<u32, FuncError>;
 
     /// Gets the Arguments of the current Call.
-    /// - `arguments_ptr_ptr` points to memory of bytes.
+    /// - `arguments_ptr_ptr`references the memory location to store the argument bytes
     /// - returns the length of the value.
     fn arguments(env: &T, arguments_ptr_ptr: u32) -> Result<u32, FuncError>;
 
@@ -92,12 +91,12 @@ where
     fn is_internal_call(env: &T) -> Result<i32, FuncError>;
 
     /// get transaction hash of this transaction.
-    /// -`hash_ptr_ptr` points to memory of 32 bytes data.
+    /// -`hash_ptr_ptr` references the memory location to store the transaction hash bytes
     fn transaction_hash(env: &T, hash_ptr_ptr: u32) -> Result<(), FuncError>;
 
     /// call methods of another contract.
-    /// - `call_ptr` points to memory of [pchain_types::blockchain::Command::Call]
-    /// - `return_ptr_ptr` points to memory of bytes.
+    /// - `call_ptr` references the memory location which stores input args to [pchain_types::blockchain::Command::Call]
+    /// - `return_ptr_ptr` references the memory location to store the return value
     /// - returns the length of Return Value.
     fn call(
         env: &T,
@@ -106,56 +105,56 @@ where
         rval_ptr_ptr: u32,
     ) -> Result<u32, FuncError>;
 
-    /// Set return value of contract execution, which is also a field in resulting receipt.
-    /// - `value_ptr` points to memory of bytes of arbitary input.
+    /// Sets return value of contract execution, which will be stored in the resulting receipt.
+    /// - `value_ptr` references the memory location which stores the return value
     fn return_value(env: &T, value_ptr: u32, value_len: u32) -> Result<(), FuncError>;
 
     /// Transfers the specified number of Grays to a specified Address
-    /// - `transfer_input_ptr` points to memory of 40 bytes address: 32-byte address and 8-byte little endian integer.
+    /// - `transfer_input_ptr` references the memory location which stores a 40-byte input: 32-byte recipient address and 8-byte little endian integer amount.
     fn transfer(env: &T, transfer_input_ptr: u32) -> Result<(), FuncError>;
 
-    /// Insert command execution after success of this contract call.
-    /// - `create_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::blockchain::Command::CreateDeposit].
+    /// Creates a deposit after success of current contract call.
+    /// - `create_deposit_input_ptr` references the memory location which stores a serialized [pchain_types::blockchain::Command::CreateDeposit].
     fn defer_create_deposit(
         env: &T,
         create_deposit_input_ptr: u32,
         create_deposit_input_len: u32,
     ) -> Result<(), FuncError>;
 
-    /// Insert command execution after success of this contract call.
-    /// - `set_deposit_settings_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::blockchain::Command::SetDepositSettings].
+    /// Sets deposit settings after success of current contract call.
+    /// - `set_deposit_settings_input_ptr` references the memory location which stores a serialized [pchain_types::blockchain::Command::SetDepositSettings].
     fn defer_set_deposit_settings(
         env: &T,
         set_deposit_settings_input_ptr: u32,
         set_deposit_settings_input_len: u32,
     ) -> Result<(), FuncError>;
 
-    /// Insert command execution after success of this contract call.
-    /// - `top_up_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::blockchain::Command::TopUpDeposit].
+    /// Top up deposit after success of current contract call.
+    /// - `top_up_deposit_input_ptr` references the memory location which stores a serialized [pchain_types::blockchain::Command::TopUpDeposit].
     fn defer_topup_deposit(
         env: &T,
         top_up_deposit_input_ptr: u32,
         top_up_deposit_input_len: u32,
     ) -> Result<(), FuncError>;
 
-    /// Insert command execution after success of this contract call.
-    /// - `withdraw_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::blockchain::Command::WithdrawDeposit].
+    /// Withdraw deposit after success of current contract call.
+    /// - `withdraw_deposit_input_ptr` references the memory location which stores a serialized [pchain_types::blockchain::Command::WithdrawDeposit].
     fn defer_withdraw_deposit(
         env: &T,
         withdraw_deposit_input_ptr: u32,
         withdraw_deposit_input_len: u32,
     ) -> Result<(), FuncError>;
 
-    /// Insert command execution after success of this contract call.
-    /// - `stake_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::blockchain::Command::StakeDeposit].
+    /// Stake deposit after success of current contract call.
+    /// - `stake_deposit_input_ptr` references the memory location which stores a serialized [pchain_types::blockchain::Command::StakeDeposit].
     fn defer_stake_deposit(
         env: &T,
         stake_deposit_input_ptr: u32,
         stake_deposit_input_len: u32,
     ) -> Result<(), FuncError>;
 
-    /// Insert command execution after success of this contract call.
-    /// - `unstake_deposit_input_ptr` points to memory of arbitrary input which expects to be a serialized [pchain_types::blockchain::Command::UnstakeDeposit].
+    /// Unstake deposit after success of current contract call.
+    /// - `unstake_deposit_input_ptr` references the memory location which stores a serialized [pchain_types::blockchain::Command::UnstakeDeposit].
     fn defer_unstake_deposit(
         env: &T,
         unstake_deposit_input_ptr: u32,
@@ -166,19 +165,21 @@ where
     fn log(env: &T, log_ptr: u32, log_len: u32) -> Result<(), FuncError>;
 
     /// Computes the SHA256 digest of arbitrary input.
-    /// - returns 32 bytes digest.
+    /// `digest_ptr_ptr` references the memory location to store the 32-byte digest
     fn sha256(env: &T, msg_ptr: u32, msg_len: u32, digest_ptr_ptr: u32) -> Result<(), FuncError>;
 
     /// Computes the Keccak256 digest of arbitrary input.
-    /// - returns 32 bytes digest.
+    /// `digest_ptr_ptr` references the memory location to store the 32-byte digest
     fn keccak256(env: &T, msg_ptr: u32, msg_len: u32, digest_ptr_ptr: u32)
         -> Result<(), FuncError>;
 
     /// Computes the RIPEMD160 digest of arbitrary input.
-    /// - returns 20 bytes digest.
+    /// `digest_ptr_ptr` references the memory location to store the 20-byte digest
     fn ripemd(env: &T, msg_ptr: u32, msg_len: u32, digest_ptr_ptr: u32) -> Result<(), FuncError>;
 
+    // TODO confirm this
     /// Returns whether an Ed25519 signature was produced by a specified by a specified address over some specified message.
+    /// 1 is returned if the signature is valid, 0 otherwise.
     fn verify_ed25519_signature(
         env: &T,
         msg_ptr: u32,

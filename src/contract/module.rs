@@ -5,10 +5,14 @@
 
 //! Defines structs for contract instantiation and contract call which are used in executing Commands Phase.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    mem::transmute,
+    sync::{Arc, Mutex},
+};
 
 use pchain_types::cryptography::PublicAddress;
-use pchain_world_state::storage::WorldStateStorage;
+use pchain_world_state::{VersionProvider, DB};
+// use pchain_world_state::storage::WorldStateStorage;
 use wasmer::Store;
 
 use crate::{
@@ -83,28 +87,45 @@ impl ContractModule {
         self.module.bytes_length()
     }
 
-    pub(crate) fn instantiate<S>(
+    pub(crate) fn instantiate<'a, S, V>(
         self,
-        ctx: Arc<Mutex<TransitionContext<S>>>,
+        ctx: Arc<Mutex<TransitionContext<'a, S, V>>>,
         call_counter: u32,
         is_view: bool,
         tx: CallTx,
         bd: BlockchainParams,
-    ) -> Result<ContractInstance<S>, ()>
+    ) -> Result<ContractInstance<'a, S, V>, ()>
     where
-        S: WorldStateStorage + Send + Sync + Clone + 'static,
+        S: DB + Send + Sync + Clone + 'static,
+        // TODO this may be hacky, using static on V
+        V: VersionProvider + Send + Sync + Clone + 'static,
     {
         let gas_limit = tx.gas_limit;
         let environment = env::Env::new(ctx, call_counter, is_view, tx, bd);
 
+        // SAFETY: The following unsafe block assumes that the Env AWLAYS outlives the Wasm instance.
+        // This invariant is maintained because a new Wasm instance is created on each call.
+        // Any code change that violates this assumption could lead to undefined behavior.
+        let env_static: &env::Env<'static, S, V> =
+            unsafe { transmute::<&env::Env<'a, S, V>, &env::Env<'static, S, V>>(&environment) };
+
+        // Now `env_static` can be used with `create_importable_view` or other functions
+        // expecting a `'static` lifetime. It is the programmer's responsibility to ensure
+        // that `env_static` does not outlive `env`.
+
         let importable = if is_view {
-            contract::create_importable_view::<env::Env<S>, HostFunctions>(
+            contract::create_importable_view::<env::Env<'static, S, V>, HostFunctions>(
                 &self.store,
-                &environment,
+                env_static,
             )
         } else {
-            contract::create_importable::<env::Env<S>, HostFunctions>(&self.store, &environment)
+            contract::create_importable::<env::Env<'static, S, V>, HostFunctions>(
+                &self.store,
+                env_static,
+            )
         };
+
+        let environment: env::Env<'a, S, V> = unsafe { transmute(environment) };
 
         let instance = self
             .module

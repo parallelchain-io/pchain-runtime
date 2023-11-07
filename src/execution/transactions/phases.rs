@@ -13,8 +13,8 @@
 //!
 //! The actual command execution happens in Commands Phase. It is implemented in modules [account](crate::execution::account) and
 //! [protocol](crate::execution::protocol).
-
-use pchain_world_state::storage::WorldStateStorage;
+//!
+use pchain_world_state::{VersionProvider, DB};
 
 use crate::{
     execution::state::ExecutionState,
@@ -23,9 +23,12 @@ use crate::{
 };
 
 /// Pre-Charge is a Phase in State Transition. It transits state and returns gas consumption if success.
-pub(crate) fn pre_charge<S, E>(state: &mut ExecutionState<S, E>) -> Result<(), TransitionError>
+pub(crate) fn pre_charge<S, E, V>(
+    state: &mut ExecutionState<S, E, V>,
+) -> Result<(), TransitionError>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     state
         .ctx
@@ -39,12 +42,13 @@ where
     let signer = state.tx.signer;
     let ws_cache = state.ctx.inner_ws_cache_mut();
 
-    let origin_nonce = ws_cache.ws.nonce(signer);
+    // TODO remove unwrap
+    let origin_nonce = ws_cache.ws.account_trie().nonce(&signer).unwrap();
     if state.tx.nonce != origin_nonce {
         return Err(TransitionError::WrongNonce);
     }
 
-    let origin_balance = ws_cache.ws.balance(signer);
+    let origin_balance = ws_cache.ws.account_trie().balance(&signer).unwrap();
     let gas_limit = state.tx.gas_limit;
     let base_fee = state.bd.this_base_fee;
     let priority_fee = state.tx.priority_fee_per_gas;
@@ -62,16 +66,17 @@ where
 
     ws_cache
         .ws
-        .with_commit()
-        .set_balance(signer, pre_charged_balance);
+        .account_trie_mut()
+        .set_balance(&signer, pre_charged_balance);
 
     Ok(())
 }
 
 /// Charge is a Phase in State Transition. It finalizes balance of accounts to world state.
-pub(crate) fn charge<S, E>(mut state: ExecutionState<S, E>) -> ExecutionState<S, E>
+pub(crate) fn charge<S, E, V>(mut state: ExecutionState<S, E, V>) -> ExecutionState<S, E, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     let signer = state.tx.signer;
     let base_fee = state.bd.this_base_fee;
@@ -110,22 +115,28 @@ where
         .saturating_add((gas_used * base_fee * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE);
 
     // Commit updated balances
+    // TODO error handling
     ws_cache
         .ws
-        .with_commit()
-        .set_balance(signer, new_signer_balance);
+        .account_trie_mut()
+        .set_balance(&signer, new_signer_balance);
     ws_cache
         .ws
-        .with_commit()
-        .set_balance(proposer_address, new_proposer_balance);
+        .account_trie_mut()
+        .set_balance(&proposer_address, new_proposer_balance);
     ws_cache
         .ws
-        .with_commit()
-        .set_balance(treasury_address, new_treasury_balance);
+        .account_trie_mut()
+        .set_balance(&treasury_address, new_treasury_balance);
 
     // Commit Signer's Nonce
-    let nonce = ws_cache.ws.nonce(signer).saturating_add(1);
-    ws_cache.ws.with_commit().set_nonce(signer, nonce);
+    let nonce = ws_cache
+        .ws
+        .account_trie()
+        .nonce(&signer)
+        .unwrap()
+        .saturating_add(1);
+    ws_cache.ws.account_trie_mut().set_nonce(&signer, nonce);
 
     state
 }

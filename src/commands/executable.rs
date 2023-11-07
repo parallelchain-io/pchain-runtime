@@ -14,7 +14,7 @@ use pchain_types::{
         UnstakeDepositInput, WithdrawDepositInput,
     },
 };
-use pchain_world_state::storage::WorldStateStorage;
+use pchain_world_state::{VersionProvider, DB};
 
 use crate::{
     commands::account, execution::state::ExecutionState, types::DeferredCommand, TransitionError,
@@ -22,24 +22,26 @@ use crate::{
 
 use super::staking;
 
-pub(crate) trait Executable<S, E>
+pub(crate) trait Executable<S, E, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     fn execute(
         self,
-        state: &mut ExecutionState<S, E>,
+        state: &mut ExecutionState<S, E, V>,
         command_index: usize,
     ) -> Result<(), TransitionError>;
 }
 
-impl<S, E> Executable<S, E> for Command
+impl<S, E, V> Executable<S, E, V> for Command
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone + 'static,
 {
     fn execute(
         self,
-        state: &mut ExecutionState<S, E>,
+        state: &mut ExecutionState<S, E, V>,
         command_index: usize,
     ) -> Result<(), TransitionError> {
         let actor = state.tx.signer;
@@ -47,13 +49,14 @@ where
     }
 }
 
-impl<S, E> Executable<S, E> for DeferredCommand
+impl<S, E, V> Executable<S, E, V> for DeferredCommand
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone + 'static,
 {
     fn execute(
         self,
-        state: &mut ExecutionState<S, E>,
+        state: &mut ExecutionState<S, E, V>,
         command_index: usize,
     ) -> Result<(), TransitionError> {
         let actor = self.contract_address;
@@ -62,14 +65,15 @@ where
     }
 }
 
-fn execute<S, E>(
-    state: &mut ExecutionState<S, E>,
+fn execute<'a, 'b, S, E, V>(
+    state: &'b mut ExecutionState<'a, S, E, V>,
     command_index: usize,
     actor: PublicAddress,
     command: Command,
 ) -> Result<(), TransitionError>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone + 'static,
 {
     match command {
         Command::Transfer(TransferInput { recipient, amount }) => {

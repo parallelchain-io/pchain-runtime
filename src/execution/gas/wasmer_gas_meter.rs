@@ -1,7 +1,8 @@
+use core::panic;
 use std::mem::MaybeUninit;
 
 use pchain_types::{blockchain::Log, cryptography::PublicAddress};
-use pchain_world_state::{keys::AppKey, storage::WorldStateStorage};
+use pchain_world_state::{VersionProvider, DB};
 use wasmer::Global;
 
 use crate::{
@@ -15,69 +16,86 @@ use super::{
     GasMeter,
 };
 
-/// Tracks the webassemby global instance which represents the remaining gas
-/// during wasmer execution.
+/// Tracks the WebAssembly global instance which represents the remaining gas
+/// during Wasmer execution.
 pub(crate) struct WasmerRemainingGas {
     /// global vaiable of wasmer_middlewares::metering remaining points.
     wasmer_gas: MaybeUninit<Global>,
+    is_initialized: bool,
 }
 
 impl WasmerRemainingGas {
     pub fn new() -> Self {
         Self {
             wasmer_gas: MaybeUninit::uninit(),
+            is_initialized: false,
         }
     }
 
     pub fn write(&mut self, global: Global) {
         self.wasmer_gas.write(global);
+        self.is_initialized = true;
     }
 
     pub fn clear(&mut self) {
         unsafe {
+            self.check_init();
             self.wasmer_gas.assume_init_drop();
         }
+        self.is_initialized = false;
     }
 
     pub fn gas(&self) -> u64 {
-        unsafe { self.wasmer_gas.assume_init_ref().get().try_into().unwrap() }
+        unsafe {
+            self.check_init();
+            self.wasmer_gas.assume_init_ref().get().try_into().unwrap()
+        }
     }
 
     /// subtract amount from wasmer_gas
     pub fn subtract(&self, amount: u64) -> u64 {
+        let current_remaining_points: u64 = self.gas();
+        let new_remaining_points = current_remaining_points.saturating_sub(amount);
+
         unsafe {
-            let current_remaining_points: u64 = self.gas();
-            let new_remaining_points = current_remaining_points.saturating_sub(amount);
+            self.check_init();
             self.wasmer_gas
                 .assume_init_ref()
-                .set(new_remaining_points.into())
-                .expect("Can't subtract `wasmer_metering_remaining_points` in Env");
+                .set(new_remaining_points.into());
             new_remaining_points
+        }
+    }
+
+    fn check_init(&self) {
+        if !self.is_initialized {
+            panic!("Can't access `wasmer_metering_remaining_points` as not initialized");
         }
     }
 }
 
-pub(crate) struct WasmerGasMeter<'a, S, M>
+pub(crate) struct WasmerGasMeter<'lock, 'a, S, M, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
     M: MemoryContext,
+    V: VersionProvider + Send + Sync + Clone,
 {
     version: TxnVersion,
-    memory_ctx: &'a M,
-    wasmer_remaining_gas: &'a WasmerRemainingGas,
-    command_output_cache: &'a mut CommandOutputCache,
-    ws_cache: &'a mut WorldStateCache<S>,
+    memory_ctx: &'lock M,
+    wasmer_remaining_gas: &'lock WasmerRemainingGas,
+    command_output_cache: &'lock mut CommandOutputCache,
+    ws_cache: &'lock mut WorldStateCache<'a, S, V>, // a locked version of ws_cache, 'lock
 }
 
-impl<'a, S, M> WasmerGasMeter<'a, S, M>
+impl<'lock, 'a, S, M, V> WasmerGasMeter<'lock, 'a, S, M, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
     M: MemoryContext,
+    V: VersionProvider + Send + Sync + Clone,
 {
     pub fn new(
-        memory_ctx: &'a M,
-        wasmer_remaining_gas: &'a WasmerRemainingGas,
-        gas_meter: &'a mut GasMeter<S>,
+        memory_ctx: &'lock M,
+        wasmer_remaining_gas: &'lock WasmerRemainingGas,
+        gas_meter: &'lock mut GasMeter<'a, S, V>,
     ) -> Self {
         Self {
             version: gas_meter.version,
@@ -100,8 +118,9 @@ where
         self.command_output_cache
     }
 
-    pub fn ws_get_app_data(&self, address: PublicAddress, key: AppKey) -> Option<Vec<u8>> {
-        let result = operation::ws_get_app_data(self.version, self.ws_cache, address, key);
+    // TODO 90 is this used
+    pub fn ws_get_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
+        let result = operation::ws_get_storage_data(self.version, self.ws_cache, address, key);
         self.charge(result).filter(|v| !v.is_empty())
     }
 
@@ -111,14 +130,13 @@ where
         self.charge(result)
     }
 
-    pub fn ws_set_app_data(&mut self, address: PublicAddress, app_key: AppKey, value: Vec<u8>) {
+    pub fn ws_set_storage_data(&mut self, address: PublicAddress, key: &[u8], value: Vec<u8>) {
         let result =
-            operation::ws_set_app_data(self.version, self.ws_cache, address, app_key, value);
+            operation::ws_set_storage_data(self.version, self.ws_cache, address, key, value);
         self.charge(result);
     }
 
-    // TODO 98 remove all these comments about "not write to WS immediately"
-    /// Sets balance in the write set. It does not write to WS immediately.
+    /// Sets balance in the WSCache. It does not write to WS immediately.
     pub fn ws_set_balance(&mut self, address: PublicAddress, value: u64) {
         let result = operation::ws_set_balance(self.ws_cache, address, value);
         self.charge(result);
@@ -133,13 +151,13 @@ where
         self.charge(result)
     }
 
-    /// write the data to memory, charge the write cost and return the length
+    /// write data to linear memory, charge the write cost and return the length
     pub fn write_bytes(&self, value: Vec<u8>, val_ptr_ptr: u32) -> Result<u32, anyhow::Error> {
         let result = operation::write_bytes(self.memory_ctx, value, val_ptr_ptr);
         self.charge(result)
     }
 
-    /// read data from memory and charge the read cost
+    /// read data from linear memory and charge the read cost
     pub fn read_bytes(&self, offset: u32, len: u32) -> Result<Vec<u8>, anyhow::Error> {
         let result = operation::read_bytes(self.memory_ctx, offset, len);
         self.charge(result)

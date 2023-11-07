@@ -254,7 +254,7 @@ pub fn tx_inclusion_cost_v1(tx_size: usize, commands_len: usize) -> u64 {
 /// tx_inclusion_cost is the minimum cost for a transaction to be included in the blockchain.
 ///
 /// [V1](tx_inclusion_cost_v1) -> V2:
-/// - TODO
+/// - TODO 100 https://hackmd.io/@V8G7dGj7QPG84VX_SNL6Wg/HkL1cff0n#Gas, needs to iter through commands
 pub fn tx_inclusion_cost_v2(tx_size: usize, commands_len: usize) -> u64 {
     // (1) Transaction storage size
     let tx_size = tx_size as u64;

@@ -11,7 +11,8 @@
 use pchain_types::blockchain::{
     CommandReceiptV1, CommandReceiptV2, ExitCodeV1, ExitCodeV2, ReceiptV1, ReceiptV2,
 };
-use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
+use pchain_world_state::{VersionProvider, WorldState, DB};
+// use pchain_world_state::{states::WorldState, storage::WorldStateStorage, VersionProvider};
 use receipt_cache::ReceiptCacher;
 
 use crate::{
@@ -25,9 +26,10 @@ use super::cache::{receipt_cache, CommandReceiptCache};
 /// ExecutionState is a collection of all useful information required to transit an state through Phases.
 /// Methods defined in ExecutionState do not directly update data to world state, but associate with the
 /// [crate::read_write_set::ReadWriteSet] in [TransitionContext] which serves as a data cache in between runtime and world state.
-pub(crate) struct ExecutionState<S, E>
+pub(crate) struct ExecutionState<'a, S, E, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     /*** Transaction ***/
     /// Base Transaction as a transition input
@@ -39,17 +41,18 @@ where
 
     /*** World State ***/
     /// Transition Context which also contains world state as input
-    pub ctx: TransitionContext<S>,
+    pub ctx: TransitionContext<'a, S, V>,
 
     /*** Command Receipts ***/
     pub receipt: CommandReceiptCache<E>,
 }
 
-impl<S, E> ExecutionState<S, E>
+impl<'a, S, E, V> ExecutionState<'a, S, E, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    pub fn new(tx: BaseTx, bd: BlockchainParams, ctx: TransitionContext<S>) -> Self {
+    pub fn new(tx: BaseTx, bd: BlockchainParams, ctx: TransitionContext<'a, S, V>) -> Self {
         Self {
             tx,
             bd,
@@ -59,11 +62,12 @@ where
     }
 }
 
-impl<S> FinalizeState<S, CommandReceiptV1, ReceiptV1> for ExecutionState<S, CommandReceiptV1>
+impl<'a, S, V> FinalizeState<'a, S, ReceiptV1, V> for ExecutionState<'a, S, CommandReceiptV1, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    fn finalize(self) -> (WorldState<S>, ReceiptV1) {
+    fn finalize(self) -> (WorldState<'a, S, V>, ReceiptV1) {
         let gas_used = self.ctx.gas_meter.total_gas_used_for_executed_commands();
         (
             self.ctx.into_ws_cache().commit_to_world_state(),
@@ -112,11 +116,12 @@ where
             });
     }
 }
-impl<S> FinalizeState<S, CommandReceiptV2, ReceiptV2> for ExecutionState<S, CommandReceiptV2>
+impl<'a, S, V> FinalizeState<'a, S, ReceiptV2, V> for ExecutionState<'a, S, CommandReceiptV2, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    fn finalize(self) -> (WorldState<S>, ReceiptV2) {
+    fn finalize(self) -> (WorldState<'a, S, V>, ReceiptV2) {
         let gas_used = self.ctx.gas_meter.total_gas_used_for_executed_commands();
         (
             self.ctx.into_ws_cache().commit_to_world_state(),
@@ -167,9 +172,10 @@ where
     }
 }
 
-pub(crate) trait FinalizeState<S, E, R>
+pub(crate) trait FinalizeState<'a, S, R, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     fn finalize_deferred_cmd_receipt<Q>(
         &mut self,
@@ -183,5 +189,5 @@ where
         execution_result: &Result<Q, TransitionError>,
     ) -> Option<Vec<DeferredCommand>>;
 
-    fn finalize(self) -> (WorldState<S>, R);
+    fn finalize(self) -> (WorldState<'a, S, V>, R);
 }

@@ -14,21 +14,23 @@ use pchain_types::{
     blockchain::{CallReceipt, CommandReceiptV1, CommandReceiptV2, ExitCodeV1, ExitCodeV2},
     cryptography::PublicAddress,
 };
-use pchain_world_state::storage::WorldStateStorage;
+use pchain_world_state::{VersionProvider, DB};
+// use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{commands::account, TransitionError};
 
 use super::state::ExecutionState;
 
 /// Execution entry point for a single View call, returning a result with CommandReceiptV1
-pub(crate) fn execute_view_v1<S>(
-    mut state: ExecutionState<S, CommandReceiptV1>,
+pub(crate) fn execute_view_v1<S, V>(
+    mut state: ExecutionState<S, CommandReceiptV1, V>,
     target: PublicAddress,
     method: String,
     arguments: Option<Vec<Vec<u8>>>,
 ) -> (CommandReceiptV1, Option<TransitionError>)
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone + 'static,
 {
     let (exit_code, transition_error) =
         match account::call(&mut state, true, target, method, arguments, None) {
@@ -49,14 +51,15 @@ where
 }
 
 /// Execution entry point for a single View call, returning a result with CommandReceiptV2
-pub(crate) fn execute_view_v2<S>(
-    mut state: ExecutionState<S, CommandReceiptV2>,
+pub(crate) fn execute_view_v2<S, V>(
+    mut state: ExecutionState<S, CommandReceiptV2, V>,
     target: PublicAddress,
     method: String,
     arguments: Option<Vec<Vec<u8>>>,
 ) -> (CommandReceiptV2, Option<TransitionError>)
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone + 'static,
 {
     let (exit_code, transition_error) =
         match account::call(&mut state, true, target, method, arguments, None) {

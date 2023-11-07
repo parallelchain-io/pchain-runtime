@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct that implements operations of reading and writing byte arrays into WASM linear memory.
+//! Defines a struct that implements operations of reading and writing byte arrays into the linear memory of the Wasm instance.
 
 use anyhow::{anyhow, Result};
 use wasmer::{Array, Memory, NativeFunc, WasmPtr};

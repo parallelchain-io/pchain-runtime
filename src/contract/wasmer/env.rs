@@ -3,13 +3,13 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines environment for constructing instance of wasmer execution.
+//! Defines environment used for constructing the Wasm (specifically Wasmer) instance.
 //!
-//! The environment (Env) keeps track on the data changes happens inside a contract call. Data
-//! changes include the read-write operation on world state, the incurring gas consumption and
+//! The environment (Env) keeps track on the data changes happening inside a contract call.
+//! Data changes include read-write operation on world state, gas consumed and
 //! context related to cross-contract calls.
 
-use pchain_world_state::storage::WorldStateStorage;
+use pchain_world_state::{VersionProvider, DB};
 use std::sync::{Arc, Mutex, MutexGuard};
 use wasmer::{Global, LazyInit, Memory, NativeFunc};
 
@@ -28,16 +28,18 @@ use super::memory::MemoryContext;
 ///
 /// Wasmer handles everything for us.
 #[derive(wasmer::WasmerEnv, Clone)]
-pub(crate) struct Env<S>
+pub(crate) struct Env<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     /// Transition Context
-    pub context: Arc<Mutex<TransitionContext<S>>>,
+    pub context: Arc<Mutex<TransitionContext<'a, S, V>>>,
+
     /// gas meter for wasm execution.
     gas_meter: Arc<Mutex<WasmerRemainingGas>>,
 
-    /// counter of calls. It starts with zero and increases for every Internal Calls
+    /// Counter of calls, starting with zero and increases for every Internal Call
     pub call_counter: u32,
 
     /// Call Transaction consists of information such as target_address, gas limit, and data which is parameters provided to contract.
@@ -47,7 +49,7 @@ where
     /// Blockchain data as an input to state transition
     pub params_from_blockchain: BlockchainParams,
 
-    /// Indicator of whether this environment is used in view calls.
+    /// Indicator of whether this environment is created for a view call.
     pub is_view: bool,
 
     #[wasmer(export)]
@@ -57,19 +59,20 @@ where
     pub alloc: LazyInit<NativeFunc<u32, wasmer::WasmPtr<u8, wasmer::Array>>>,
 }
 
-impl<S> Env<S>
+impl<'a, 'lock, S, V> Env<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     /// env is a helper function to create an Env, which is an object used in functions exported to smart
     /// contract modules.
     pub fn new(
-        context: Arc<Mutex<TransitionContext<S>>>,
+        context: Arc<Mutex<TransitionContext<'a, S, V>>>,
         call_counter: u32,
         is_view: bool,
         call_tx: CallTx,
         params_from_blockchain: BlockchainParams,
-    ) -> Env<S> {
+    ) -> Env<'a, S, V> {
         Env {
             context,
             call_counter,
@@ -92,8 +95,24 @@ where
         self.gas_meter.lock().unwrap().clear();
     }
 
-    pub fn lock(&self) -> LockWasmerTransitionContext<'_, S> {
-        LockWasmerTransitionContext {
+    /* TODO 96, I still find this a little confusing
+    why is there a gas_meter() and .gas_meter, which points to wasmer_remaining_gas
+    .gas_meter() returns a new instance of WasmGasMeter,
+    which wraps Env itself (through self, WTF mind blown)
+
+    how can something (WamserGasMeter), which we concieve to be a hierachcal child of Env,
+    itself wrap a ref to Env?
+
+    the black magic used to achieve this
+    lock() returns a subset struct of Env, which is a LockWasmerTransitionContext
+    LockWasmerTransitionContext has a gas_meter() method returning WasmGasMeter, conceptually something like "into"
+    that turns arounds and wraps the parent Env in a WasmGasMeter
+
+    i smell a cyclic reference
+    */
+
+    pub fn lock(&self) -> LockedWasmerTransitionContext<'a, '_, S, V> {
+        LockedWasmerTransitionContext {
             env: self,
             context: self.context.lock().unwrap(),
             wasmer_remaining_gas: self.gas_meter.lock().unwrap(),
@@ -101,9 +120,10 @@ where
     }
 }
 
-impl<S> MemoryContext for Env<S>
+impl<'a, 'b, S, V> MemoryContext for Env<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     fn get_memory(&self) -> &Memory {
         self.memory_ref().unwrap()
@@ -114,20 +134,27 @@ where
     }
 }
 
-pub(crate) struct LockWasmerTransitionContext<'a, S>
+pub(crate) struct LockedWasmerTransitionContext<'a, 'lock, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    env: &'a Env<S>,
-    context: MutexGuard<'a, TransitionContext<S>>,
-    wasmer_remaining_gas: MutexGuard<'a, WasmerRemainingGas>,
+    env: &'lock Env<'a, S, V>,
+    context: MutexGuard<'lock, TransitionContext<'a, S, V>>,
+    wasmer_remaining_gas: MutexGuard<'lock, WasmerRemainingGas>,
 }
 
-impl<'a, S> LockWasmerTransitionContext<'a, S>
+impl<'a, 'lock, S, V> LockedWasmerTransitionContext<'a, 'lock, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    pub fn gas_meter(&mut self) -> WasmerGasMeter<'_, S, Env<S>> {
+    // TODO 96,
+    // take the ref to the env, and passes it to create a wasmer gas meter
+    // the lifetime is that of the lock
+    // taking the source gas_meter from (main Runtime, or parent caller)
+    // and wrapping it in a new instance of WasmGasMeter
+    pub fn gas_meter(&mut self) -> WasmerGasMeter<'lock, 'a, S, Env<'a, S, V>, V> {
         WasmerGasMeter::new(
             self.env,
             &self.wasmer_remaining_gas,

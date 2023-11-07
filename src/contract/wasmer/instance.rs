@@ -3,12 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct to use [wasmer::Instance] to perform method call according to ParallelChain Smart Contract Defintions.
+//! Defines a struct containing [wasmer::Instance] to execute a method call according to ParallelChain Smart Contract Defintions.
 
 use anyhow::Result;
 
-/// Instance represents a WebAssembly module that has been 'instantiated' into a stateful quasi-process and can have its methods
-/// called.
+/// Instance represents a stateful instance of a WebAssembly module (quasi-process) and ready for contract method execution
+/// through its callable function.
 pub(in crate::contract) struct Instance(pub(crate) wasmer::Instance);
 
 impl Instance {

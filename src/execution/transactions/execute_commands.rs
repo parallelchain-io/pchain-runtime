@@ -26,7 +26,7 @@
 //!
 
 use pchain_types::blockchain::{Command, CommandReceiptV1, CommandReceiptV2, ReceiptV1, ReceiptV2};
-use pchain_world_state::storage::WorldStateStorage;
+use pchain_world_state::{VersionProvider, DB};
 
 use crate::{
     commands::executable::Executable,
@@ -38,10 +38,14 @@ use crate::{
     types::{CommandKind, DeferredCommand},
     TransitionError, TransitionResultV1,
 };
-fn execute_commands<S, E, R, P>(mut state: ExecutionState<S, E>, commands: Vec<Command>) -> R
+fn execute_commands<'a, S, E, V, R, P>(
+    mut state: ExecutionState<'a, S, E, V>,
+    commands: Vec<Command>,
+) -> R
 where
-    S: WorldStateStorage + Send + Sync + Clone,
-    P: UserCommandHandler<S, E, R>,
+    S: DB + Send + Sync + Clone,
+    P: UserCommandHandler<'a, S, E, R, V>,
+    V: VersionProvider + Send + Sync + Clone + 'static,
 {
     // Phase: Pre-Charge
     let pre_charge_result = phases::pre_charge(&mut state);
@@ -93,39 +97,36 @@ where
 }
 
 /// Defines the behavior of command execution
-/// Allowing generic versions of of CommandReceipts and TransitionResults
-trait UserCommandHandler<S, CommandReceipt, TransitionResult>
+/// Allowing generic versions of CommandReceipts and TransitionResults
+trait UserCommandHandler<'a, S, E, R, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    fn handle_precharge_error(
-        state: ExecutionState<S, CommandReceipt>,
-        error: TransitionError,
-    ) -> TransitionResult;
+    fn handle_precharge_error(state: ExecutionState<'a, S, E, V>, error: TransitionError) -> R;
     fn handle_command_execution_result(
-        state: &mut ExecutionState<S, CommandReceipt>,
+        state: &mut ExecutionState<S, E, V>,
         command_kind: CommandKind,
         execution_result: &Result<(), TransitionError>,
         is_deferred: bool,
     ) -> Option<Vec<DeferredCommand>>;
-    fn handle_abort(
-        state: ExecutionState<S, CommandReceipt>,
-        error: TransitionError,
-    ) -> TransitionResult;
-    fn handle_charge(state: ExecutionState<S, CommandReceipt>) -> TransitionResult;
+    fn handle_abort(state: ExecutionState<'a, S, E, V>, error: TransitionError) -> R;
+    fn handle_charge(state: ExecutionState<'a, S, E, V>) -> R;
 }
 
 /// Strategy struct for V1 specific execution output
 struct ExecuteCommandsV1;
 
-impl<S> UserCommandHandler<S, CommandReceiptV1, TransitionResultV1<S>> for ExecuteCommandsV1
+impl<'a, S, V> UserCommandHandler<'a, S, CommandReceiptV1, TransitionResultV1<'a, S, V>, V>
+    for ExecuteCommandsV1
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     fn handle_precharge_error(
-        state: ExecutionState<S, CommandReceiptV1>,
+        state: ExecutionState<'a, S, CommandReceiptV1, V>,
         error: TransitionError,
-    ) -> TransitionResultV1<S> {
+    ) -> TransitionResultV1<'a, S, V> {
         let (new_state, _): (_, ReceiptV1) = state.finalize();
         TransitionResultV1 {
             new_state,
@@ -136,7 +137,7 @@ where
     }
 
     fn handle_command_execution_result(
-        state: &mut ExecutionState<S, CommandReceiptV1>,
+        state: &mut ExecutionState<S, CommandReceiptV1, V>,
         command_kind: CommandKind,
         execution_result: &Result<(), TransitionError>,
         is_user_sent: bool,
@@ -149,9 +150,9 @@ where
     }
 
     fn handle_abort(
-        state: ExecutionState<S, CommandReceiptV1>,
+        state: ExecutionState<'a, S, CommandReceiptV1, V>,
         error: TransitionError,
-    ) -> TransitionResultV1<S> {
+    ) -> TransitionResultV1<'a, S, V> {
         let (new_state, receipt) = phases::charge(state).finalize();
         TransitionResultV1 {
             new_state,
@@ -161,9 +162,10 @@ where
         }
     }
 
-    fn handle_charge(state: ExecutionState<S, CommandReceiptV1>) -> TransitionResultV1<S> {
+    fn handle_charge(
+        state: ExecutionState<'a, S, CommandReceiptV1, V>,
+    ) -> TransitionResultV1<'a, S, V> {
         let (new_state, receipt) = phases::charge(state).finalize();
-
         TransitionResultV1 {
             new_state,
             error: None,
@@ -176,14 +178,16 @@ where
 /// Strategy struct for V2 specific execution output
 struct ExecuteCommandsV2;
 
-impl<S> UserCommandHandler<S, CommandReceiptV2, TransitionResultV2<S>> for ExecuteCommandsV2
+impl<'a, S, V> UserCommandHandler<'a, S, CommandReceiptV2, TransitionResultV2<'a, S, V>, V>
+    for ExecuteCommandsV2
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     fn handle_precharge_error(
-        state: ExecutionState<S, CommandReceiptV2>,
+        state: ExecutionState<'a, S, CommandReceiptV2, V>,
         error: TransitionError,
-    ) -> TransitionResultV2<S> {
+    ) -> TransitionResultV2<'a, S, V> {
         let (new_state, _): (_, ReceiptV2) = state.finalize();
         TransitionResultV2 {
             new_state,
@@ -194,7 +198,7 @@ where
     }
 
     fn handle_command_execution_result(
-        state: &mut ExecutionState<S, CommandReceiptV2>,
+        state: &mut ExecutionState<S, CommandReceiptV2, V>,
         command_kind: CommandKind,
         execution_result: &Result<(), TransitionError>,
         is_user_sent: bool,
@@ -207,9 +211,9 @@ where
     }
 
     fn handle_abort(
-        state: ExecutionState<S, CommandReceiptV2>,
+        state: ExecutionState<'a, S, CommandReceiptV2, V>,
         error: TransitionError,
-    ) -> TransitionResultV2<S> {
+    ) -> TransitionResultV2<'a, S, V> {
         let (new_state, receipt) = phases::charge(state).finalize();
         TransitionResultV2 {
             new_state,
@@ -219,7 +223,9 @@ where
         }
     }
 
-    fn handle_charge(state: ExecutionState<S, CommandReceiptV2>) -> TransitionResultV2<S> {
+    fn handle_charge(
+        state: ExecutionState<'a, S, CommandReceiptV2, V>,
+    ) -> TransitionResultV2<'a, S, V> {
         let (new_state, receipt) = phases::charge(state).finalize();
         TransitionResultV2 {
             new_state,
@@ -287,13 +293,14 @@ impl ExecutableCommand {
     }
 
     /// Consumes the Executable Command and returns the result
-    pub fn consume_and_execute<S, E>(
+    pub fn consume_and_execute<S, E, V>(
         self,
-        state: &mut ExecutionState<S, E>,
+        state: &mut ExecutionState<S, E, V>,
         command_index: usize,
     ) -> Result<(), TransitionError>
     where
-        S: WorldStateStorage + Send + Sync + Clone,
+        S: DB + Send + Sync + Clone,
+        V: VersionProvider + Send + Sync + Clone + 'static,
     {
         match self {
             ExecutableCommand::TransactionCommmand(command) => {
@@ -307,23 +314,27 @@ impl ExecutableCommand {
 }
 
 /// Execution entry point for commands in TransactionV1
-pub(crate) fn execute_commands_v1<S>(
-    state: ExecutionState<S, CommandReceiptV1>,
+pub(crate) fn execute_commands_v1<'a, S, V>(
+    state: ExecutionState<'a, S, CommandReceiptV1, V>,
     commands: Vec<Command>,
-) -> TransitionResultV1<S>
+) -> TransitionResultV1<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone + 'static,
 {
-    execute_commands::<_, _, _, ExecuteCommandsV1>(state, commands)
+    // TODO
+    // execute_commands::<_, _, _, TransitionResultV1<S, V>, ExecuteCommandsV1>(state, commands)
+    execute_commands::<_, _, _, _, ExecuteCommandsV1>(state, commands)
 }
 
 /// Execution entry point for commands in TransactionV2
-pub(crate) fn execute_commands_v2<S>(
-    state: ExecutionState<S, CommandReceiptV2>,
+pub(crate) fn execute_commands_v2<'a, S, V>(
+    state: ExecutionState<'a, S, CommandReceiptV2, V>,
     commands: Vec<Command>,
-) -> TransitionResultV2<S>
+) -> TransitionResultV2<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone + 'static,
 {
-    execute_commands::<_, _, _, ExecuteCommandsV2>(state, commands)
+    execute_commands::<_, _, _, _, ExecuteCommandsV2>(state, commands)
 }

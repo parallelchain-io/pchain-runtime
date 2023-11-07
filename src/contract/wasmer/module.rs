@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct to use [wasmer::Module] as underlying WASM module to work with compiled contract bytecode in Parallelchain Mainnet.
+//! Defines a struct that encaspulates [wasmer::Module] to represent compiled contract bytecode in Parallelchain Mainnet.
 
 use pchain_types::cryptography::PublicAddress;
 

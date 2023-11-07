@@ -3,14 +3,11 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+use core::panic;
 use std::cell::RefCell;
 
 use pchain_types::cryptography::PublicAddress;
-use pchain_world_state::{
-    keys::AppKey,
-    network::{constants::NETWORK_ADDRESS, network_account::NetworkAccountStorage},
-    storage::WorldStateStorage,
-};
+use pchain_world_state::{NetworkAccountStorage, VersionProvider, DB, NETWORK_ADDRESS};
 
 use crate::{
     contract::{ContractModule, SmartContractContext},
@@ -29,9 +26,10 @@ use crate::execution::cache::{CommandOutputCache, WorldStateCache};
 /// GasMeter is a global struct that keeps track of gas used from operations OUTSIDE of a Wasmer guest instance (compute and memory access).
 /// It implements a facade for all chargeable methods.
 #[derive(Clone)]
-pub(crate) struct GasMeter<S>
+pub(crate) struct GasMeter<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     pub version: TxnVersion,
 
@@ -51,14 +49,15 @@ where
     /*** Mutation on the below Data should be charged. ***/
     pub output_cache_of_current_command: CommandOutputCache,
 
-    pub ws_cache: WorldStateCache<S>,
+    pub ws_cache: WorldStateCache<'a, S, V>,
 }
 
-impl<S> GasMeter<S>
+impl<'a, S, V> GasMeter<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    pub fn new(version: TxnVersion, ws_cache: WorldStateCache<S>, gas_limit: u64) -> Self {
+    pub fn new(version: TxnVersion, ws_cache: WorldStateCache<'a, S, V>, gas_limit: u64) -> Self {
         Self {
             version,
             ws_cache,
@@ -201,9 +200,9 @@ where
     // CONTAINS methods
     //
     /// Check if App key has non-empty data
-    pub fn ws_contains_app_data(&self, address: PublicAddress, app_key: AppKey) -> bool {
+    pub fn ws_contains_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> bool {
         let result =
-            operation::ws_contains_app_data(self.version, &self.ws_cache, address, app_key);
+            operation::ws_contains_storage_data(self.version, &mut self.ws_cache, address, key);
         self.charge(result)
     }
 
@@ -211,8 +210,8 @@ where
     // GET methods
     //
     /// Gets app data from the read-write set.
-    pub fn ws_get_app_data(&self, address: PublicAddress, app_key: AppKey) -> Option<Vec<u8>> {
-        let result = operation::ws_get_app_data(self.version, &self.ws_cache, address, app_key);
+    pub fn ws_get_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
+        let result = operation::ws_get_storage_data(self.version, &mut self.ws_cache, address, key);
         let value = self.charge(result)?;
         (!value.is_empty()).then_some(value)
     }
@@ -243,9 +242,9 @@ where
     //
     // SET methods
     //
-    pub fn ws_set_app_data(&mut self, address: PublicAddress, app_key: AppKey, value: Vec<u8>) {
+    pub fn ws_set_storage_data(&mut self, address: PublicAddress, key: &[u8], value: Vec<u8>) {
         let result =
-            operation::ws_set_app_data(self.version, &mut self.ws_cache, address, app_key, value);
+            operation::ws_set_storage_data(self.version, &mut self.ws_cache, address, key, value);
         self.charge(result)
     }
 
@@ -269,24 +268,27 @@ where
 }
 
 /// GasMeter implements NetworkAccountStorage with charegable read-write operations to world state
-impl<S> NetworkAccountStorage for GasMeter<S>
+impl<'a, S, V> NetworkAccountStorage for GasMeter<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.ws_get_app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()))
+        panic!("TODO");
+        // self.ws_get_storage_data(NETWORK_ADDRESS, key)
     }
 
     fn contains(&self, key: &[u8]) -> bool {
-        self.ws_contains_app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()))
+        panic!("TODO");
+        // self.ws_contains_storage_data(NETWORK_ADDRESS, key)
     }
 
     fn set(&mut self, key: &[u8], value: Vec<u8>) {
-        self.ws_set_app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()), value)
+        self.ws_set_storage_data(NETWORK_ADDRESS, key, value)
     }
 
     fn delete(&mut self, key: &[u8]) {
-        self.ws_set_app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()), Vec::new())
+        self.ws_set_storage_data(NETWORK_ADDRESS, key, Vec::new())
     }
 }
 

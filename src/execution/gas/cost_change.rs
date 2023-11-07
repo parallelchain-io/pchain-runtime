@@ -41,6 +41,8 @@ impl CostChange {
             reward: value,
         }
     }
+
+    // TODO i don't like this, not obvious that it is post-reconcillation
     pub fn values(&self) -> (u64, u64) {
         (
             self.deduct.saturating_sub(self.reward),

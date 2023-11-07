@@ -6,7 +6,7 @@
 //! Execution implementation of [Account Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#account-commands).
 
 use pchain_types::cryptography::{contract_address_v1, contract_address_v2, PublicAddress};
-use pchain_world_state::storage::WorldStateStorage;
+use pchain_world_state::{VersionProvider, DB};
 use std::sync::{Arc, Mutex};
 
 use crate::{
@@ -23,13 +23,14 @@ use crate::{
 use crate::execution::state::ExecutionState;
 
 /// Execution of [pchain_types::blockchain::Command::Transfer]
-pub(crate) fn transfer<S, E>(
-    state: &mut ExecutionState<S, E>,
+pub(crate) fn transfer<S, E, V>(
+    state: &mut ExecutionState<'_, S, E, V>,
     recipient: PublicAddress,
     amount: u64,
 ) -> Result<(), TransitionError>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     let signer = state.tx.signer;
     let origin_balance = state.ctx.gas_meter.ws_get_balance(signer);
@@ -55,8 +56,8 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::Call]
-pub(crate) fn call<S, E>(
-    state: &mut ExecutionState<S, E>,
+pub(crate) fn call<S, E, V>(
+    state: &mut ExecutionState<S, E, V>,
     is_view: bool,
     target: PublicAddress,
     method: String,
@@ -64,7 +65,8 @@ pub(crate) fn call<S, E>(
     amount: Option<u64>,
 ) -> Result<(), TransitionError>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone + 'static,
 {
     if let Some(amount) = amount {
         let signer = state.tx.signer;
@@ -104,22 +106,24 @@ where
 }
 
 /// CallInstance defines the steps of contract instantiation and contract call.
-struct CallInstance<'a, S, E>
+struct CallInstance<'a, 'b, S, E, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    state: &'a mut ExecutionState<S, E>,
-    instance: ContractInstance<S>,
+    state: &'b mut ExecutionState<'a, S, E, V>,
+    instance: ContractInstance<'a, S, V>,
 }
 
-impl<'a, S, E> CallInstance<'a, S, E>
+impl<'a, 'b, S, E, V> CallInstance<'a, 'b, S, E, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     /// Instantiate an instance to be called. It returns transition error for failures in
     /// contract instantiation and verification.
     fn instantiate(
-        state: &'a mut ExecutionState<S, E>,
+        state: &'b mut ExecutionState<'a, S, E, V>,
         is_view: bool,
         target: PublicAddress,
         method: String,
@@ -127,7 +131,8 @@ where
         amount: Option<u64>,
     ) -> Result<Self, TransitionError>
     where
-        S: WorldStateStorage + Send + Sync + Clone + 'static,
+        S: DB + Send + Sync + Clone + 'static,
+        V: VersionProvider + Send + Sync + Clone + 'static,
     {
         // Check CBI version
         state
@@ -166,7 +171,7 @@ where
 
         let instance = contract_module
             .instantiate(
-                Arc::new(Mutex::new(state.ctx.clone())), // TODO avoid clone
+                Arc::new(Mutex::new(state.ctx.clone())), // TODO 95 don't clone the Transition context. on entry, intstead remove it from the ARC
                 0,
                 is_view,
                 call_tx,
@@ -191,14 +196,15 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::Deploy]
-pub(crate) fn deploy<S, E>(
-    state: &mut ExecutionState<S, E>,
+pub(crate) fn deploy<'a, 'b, S, E, V>(
+    state: &'b mut ExecutionState<'a, S, E, V>,
     cmd_index: u32,
     contract: Vec<u8>,
     cbi_version: u32,
 ) -> Result<(), TransitionError>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     let contract_address = match state.tx.version {
         TxnVersion::V1 => contract_address_v1(&state.tx.signer, state.tx.nonce),
@@ -220,24 +226,26 @@ where
 }
 
 /// DeployInstance defines the steps of contract instantiation and contract deploy.
-struct DeployInstance<'a, S, E>
+struct DeployInstance<'a, 'b, S, E, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    state: &'a mut ExecutionState<S, E>,
+    state: &'b mut ExecutionState<'a, S, E, V>,
     module: ContractModule,
     contract_address: PublicAddress,
     contract: Vec<u8>,
     cbi_version: u32,
 }
 
-impl<'a, S, E> DeployInstance<'a, S, E>
+impl<'a, 'b, S, E, V> DeployInstance<'a, 'b, S, E, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
     /// Instantiate an instance after contract validation
     fn instantiate(
-        state: &'a mut ExecutionState<S, E>,
+        state: &'b mut ExecutionState<'a, S, E, V>,
         contract: Vec<u8>,
         cbi_version: u32,
         contract_address: PublicAddress,

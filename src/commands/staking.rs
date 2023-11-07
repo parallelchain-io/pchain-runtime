@@ -7,12 +7,7 @@
 
 use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{
-    network::{
-        network_account::{NetworkAccount, NetworkAccountStorage},
-        pool::PoolKey,
-        stake::{Stake, StakeValue},
-    },
-    storage::WorldStateStorage,
+    NetworkAccount, NetworkAccountStorage, PoolKey, Stake, StakeValue, VersionProvider, DB,
 };
 
 use crate::{
@@ -25,13 +20,14 @@ use crate::{
 };
 
 /// Execution of [pchain_types::blockchain::Command::CreatePool]
-pub(crate) fn create_pool<S, E>(
+pub(crate) fn create_pool<S, E, V>(
     operator: PublicAddress,
-    state: &mut ExecutionState<S, E>,
+    state: &mut ExecutionState<S, E, V>,
     commission_rate: u8,
 ) -> Result<(), TransitionError>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     if commission_rate > 100 {
         abort!(state, TransitionError::InvalidPoolPolicy)
@@ -55,13 +51,14 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::SetPoolSettings]
-pub(crate) fn set_pool_settings<S, E>(
+pub(crate) fn set_pool_settings<S, E, V>(
     operator: PublicAddress,
-    state: &mut ExecutionState<S, E>,
+    state: &mut ExecutionState<S, E, V>,
     new_commission_rate: u8,
 ) -> Result<(), TransitionError>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     if new_commission_rate > 100 {
         abort!(state, TransitionError::InvalidPoolPolicy)
@@ -83,12 +80,13 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::DeletePool]
-pub(crate) fn delete_pool<S, E>(
+pub(crate) fn delete_pool<S, E, V>(
     operator: PublicAddress,
-    state: &mut ExecutionState<S, E>,
+    state: &mut ExecutionState<S, E, V>,
 ) -> Result<(), TransitionError>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
@@ -103,15 +101,16 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::CreateDeposit]
-pub(crate) fn create_deposit<S, E>(
+pub(crate) fn create_deposit<S, E, V>(
     owner: PublicAddress,
-    state: &mut ExecutionState<S, E>,
+    state: &mut ExecutionState<S, E, V>,
     operator: PublicAddress,
     balance: u64,
     auto_stake_rewards: bool,
 ) -> Result<(), TransitionError>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
@@ -139,14 +138,15 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::SetDepositSettings]
-pub(crate) fn set_deposit_settings<S, E>(
+pub(crate) fn set_deposit_settings<S, E, V>(
     owner: PublicAddress,
-    state: &mut ExecutionState<S, E>,
+    state: &mut ExecutionState<S, E, V>,
     operator: PublicAddress,
     new_auto_stake_rewards: bool,
 ) -> Result<(), TransitionError>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     let mut deposits = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
     if !deposits.exists() {
@@ -163,14 +163,15 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::TopUpDeposit]
-pub(crate) fn topup_deposit<S, E>(
+pub(crate) fn topup_deposit<S, E, V>(
     owner: PublicAddress,
-    state: &mut ExecutionState<S, E>,
+    state: &mut ExecutionState<S, E, V>,
     operator: PublicAddress,
     amount: u64,
 ) -> Result<(), TransitionError>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     if !NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner).exists() {
         abort!(state, TransitionError::DepositsNotExists)
@@ -194,14 +195,15 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::WithdrawDeposit]
-pub(crate) fn withdraw_deposit<S, E>(
+pub(crate) fn withdraw_deposit<S, E, V>(
     owner: PublicAddress,
-    state: &mut ExecutionState<S, E>,
+    state: &mut ExecutionState<S, E, V>,
     operator: PublicAddress,
     max_amount: u64,
 ) -> Result<(), TransitionError>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     // 1. Check if there is any deposit to withdraw
     let deposits = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
@@ -298,14 +300,15 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::StakeDeposit]
-pub(crate) fn stake_deposit<S, E>(
+pub(crate) fn stake_deposit<S, E, V>(
     owner: PublicAddress,
-    state: &mut ExecutionState<S, E>,
+    state: &mut ExecutionState<S, E, V>,
     operator: PublicAddress,
     max_amount: u64,
 ) -> Result<(), TransitionError>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     // 1. Check if there is a Deposit to stake
     let deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
@@ -367,14 +370,15 @@ where
 }
 
 /// Execution of [pchain_types::blockchain::Command::UnstakeDeposit]
-pub(crate) fn unstake_deposit<S, E>(
+pub(crate) fn unstake_deposit<S, E, V>(
     owner: PublicAddress,
-    state: &mut ExecutionState<S, E>,
+    state: &mut ExecutionState<S, E, V>,
     operator: PublicAddress,
     max_amount: u64,
 ) -> Result<(), TransitionError>
 where
-    S: pchain_world_state::storage::WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone,
+    V: VersionProvider + Send + Sync + Clone,
 {
     // 1. Check if there is a Deposit to unstake.
     if !NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner).exists() {

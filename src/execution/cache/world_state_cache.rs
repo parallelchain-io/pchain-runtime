@@ -5,55 +5,60 @@
 
 //! Defines a struct that serves as a cache layer on top of World State.
 //!
-//! There are two data caches:
-//! - `reads` (first-hand data obtained from world state)
-//! - `writes` (the data pended to commit to world state)
 //!
-//! The cache layer also measures gas consumption for the read-write operations.
+//! The caches are split into different categories representing the types of data that
+//! are stored in an Account
+//! // TODO excluding nonce?
 //!
-//! In Read Operation, `writes` is accessed first. If data is not found, search `reads`. If it fails in both Sets,
-//! then finally World State is accessed. The result will then be cached to `reads`.
+//! Within each data category, there are two sets of caches
+//! - `reads` (data read first-hand from world state)
+//! - `writes` (data pending to be written to world state)
 //!
-//! In Write Operation, it first performs a Read Operation, and then updates the `writes` with the newest data.
+//! Procedure of a Read operation: First, `writes` is checked. If data is not found, search in `reads`.
+//! If data is still not found, access the World State. The result, if retrieved, will then be cached to `reads`.
 //!
-//! At the end of state transition, if it succeeds, the data in `writes` will be committed to World State. Otherwise,
+//! Procedure of a Write operation: The `writes` cache is updated with the latest data.
+//!
+//! At the end of a successful state transition, the data in `writes` will be written to World State. Otherwise,
 //! `writes` is discarded without any changes to World State.
 
 use std::{cell::RefCell, collections::HashMap};
 
 use pchain_types::cryptography::PublicAddress;
-use pchain_world_state::{
-    keys::AppKey,
-    states::{AccountStorageState, WorldState},
-    storage::WorldStateStorage,
-};
+use pchain_world_state::{VersionProvider, WorldState, DB};
+
+// TODO - change to 'static
 
 /// ReadWriteSet defines data cache for Read-Write opertaions during state transition.
 #[derive(Clone)]
-pub(crate) struct WorldStateCache<S>
+pub(crate) struct WorldStateCache<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    /// World State services as the data source
-    pub ws: WorldState<S>,
-
+    /// World State serves as the data source
+    pub ws: WorldState<'a, S, V>,
     pub balances: CacheBalance,
-    pub cbi_verions: CacheCBIVersion,
+    pub cbi_versions: CacheCBIVersion,
     pub contract_codes: CacheContractCode,
-    pub app_data: CacheAppData,
+    pub storage_data: CacheStorageData,
 }
 
-impl<S> WorldStateCache<S>
+impl<'a, S, V> WorldStateCache<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    pub fn new(ws: WorldState<S>) -> Self {
+    pub fn new(ws: WorldState<'a, S, V>) -> Self {
         Self {
             ws,
             balances: Default::default(),
-            cbi_verions: Default::default(),
+            cbi_versions: Default::default(),
             contract_codes: Default::default(),
-            app_data: CacheAppData { reads: RefCell::new(HashMap::new()), writes: HashMap::new() },
+            storage_data: CacheStorageData {
+                reads: RefCell::new(HashMap::new()),
+                writes: HashMap::new(),
+            },
         }
     }
 
@@ -68,42 +73,43 @@ where
     /// reverts changes to read-write set
     pub fn revert(&mut self) {
         self.balances.revert();
-        self.cbi_verions.revert();
+        self.cbi_versions.revert();
         self.contract_codes.revert();
-        self.app_data.revert();
+        self.storage_data.revert();
     }
 
-    /// check if App Key already exists. It is gas-free operation.
-    pub fn contains_app_data_from_account_storage_state(
-        &self,
-        account_storage_state: &AccountStorageState<S>,
-        app_key: AppKey,
-    ) -> bool {
-        let address = account_storage_state.address();
-        self.app_data.contains(&(address, app_key), |(_, app_key)| {
-            self.ws
-                .contains()
-                .storage_value_from_account_storage_state(account_storage_state, app_key)
-        })
+    // TODO 90 does ws.storage_trie need &mut?
+    // TODO 92 collapose with contains_app_data
+    /// check if a key exists in storage data for a particular address
+    pub fn contains_storage_data(&mut self, address: &PublicAddress, key: &[u8]) -> bool {
+        self.storage_data
+            // TODO
+            .contains(&(address.clone(), key.to_vec()), |(_, key)| -> bool {
+                // TODO remove unwrap()
+                self.ws
+                    .storage_trie(address)
+                    .unwrap()
+                    .contains(key)
+                    .unwrap()
+            })
     }
 
-    /// Get app data given a account storage state. It is gas-free operation.
-    pub fn app_data_from_account_storage_state(
-        &self,
-        account_storage_state: &AccountStorageState<S>,
-        app_key: AppKey,
-    ) -> Option<Vec<u8>> {
-        let address = account_storage_state.address();
-        self.app_data.get(&(address, app_key), |(address, app_key)| {
-            self.ws
-                .cached_get()
-                .storage_value(*address, app_key)
-                .or_else(|| account_storage_state.get(app_key))
-        })
+    // TODO 90 does ws.storage_trie need &mut?
+    // TODO 92 collapose with get_storage_data
+    /// get data for a key in storage data for a particular address
+    pub fn storage_data(&mut self, address: &PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
+        self.storage_data
+            .get(&(address.clone(), key.to_vec()), |(address, key)| {
+                // TODO remove unwrap()
+                self.ws.storage_trie(address).unwrap().get(key).unwrap()
+            })
     }
 
     pub fn get_balance(&self, address: &PublicAddress) -> u64 {
-        self.balances.get(address, |key| Some(self.ws.balance(*key))).unwrap()
+        self.balances
+            .get(address, |key| self.ws.account_trie().balance(key).ok())
+            // TODO remove unwrap()
+            .unwrap()
     }
 
     pub fn set_balance(&mut self, address: PublicAddress, balance: u64) {
@@ -111,54 +117,82 @@ where
     }
 
     pub fn get_cbi_version(&self, address: &PublicAddress) -> Option<u32> {
-        self.cbi_verions.get(address, |key| self.ws.cbi_version(*key))
+        self.cbi_versions
+            // TODO remove ok()
+            .get(address, |key| self.ws.account_trie().cbi_version(key).ok())
     }
 
     pub fn set_cbi_version(&mut self, address: PublicAddress, cbi_version: u32) {
-        self.cbi_verions.set(address, cbi_version);
+        self.cbi_versions.set(address, cbi_version);
     }
 
     pub fn get_contract_code(&self, address: &PublicAddress) -> Option<Vec<u8>> {
-        self.contract_codes.get(address, |key| self.ws.code(*key) )
+        self.contract_codes.get(address, |key| {
+            // TODO remove unwrap
+            self.ws.account_trie().code(key).ok().unwrap()
+        })
     }
 
     pub fn set_contract_code(&mut self, address: PublicAddress, code: Vec<u8>) {
         self.contract_codes.set(address, code);
     }
 
-    pub fn get_app_data(&self, address: PublicAddress, app_key: AppKey) -> Option<Vec<u8>> {
-        self.app_data.get(&(address, app_key), |(address, app_key)| self.ws.storage_value(address, app_key))
+    pub fn get_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
+        self.storage_data
+            .get(&(address, key.to_vec()), |(address, key)| {
+                // TODO remove unwrap()
+                self.ws.storage_trie(address).unwrap().get(key).unwrap()
+            })
     }
 
-    /// set value to contract storage. This operation does not write to world state immediately.
-    /// It is gas-free operation.
-    pub fn set_app_data(&mut self, address: PublicAddress, app_key: AppKey, value: Vec<u8>) {
-        self.app_data.set((address, app_key), value);
+    /// set key-value to storage for a particular address
+    pub fn set_storage_data(&mut self, address: PublicAddress, key: &[u8], value: Vec<u8>) {
+        self.storage_data.set((address, key.to_vec()), value);
     }
 
-    pub fn contains_app_data(&self, address: PublicAddress, app_key: AppKey) -> bool {
-        self.app_data.contains(&(address, app_key), |(address, app_key)| {
-            self.ws.contains().storage_value(address, app_key)
-        })
+    // TODO 92 collapose with contains_app_data
+    pub fn contains_app_data(&mut self, address: PublicAddress, key: &[u8]) -> bool {
+        self.storage_data
+            .contains(&(address, key.to_vec()), |(address, key)| {
+                // TODO remove unwrap()
+                self.ws
+                    .storage_trie(address)
+                    .unwrap()
+                    .contains(key)
+                    .unwrap()
+            })
     }
 
-    pub fn commit_to_world_state(self) -> WorldState<S> {
+    pub fn commit_to_world_state(self) -> WorldState<'a, S, V> {
         let mut ws = self.ws;
         // apply changes to world state
-        self.balances.writes.into_iter().for_each(|(address, balance)| {
-            ws.cached().set_balance(address, balance);
-        });
-        self.cbi_verions.writes.into_iter().for_each(|(address, version)| {
-            ws.cached().set_cbi_version(address, version);
-        });
-        self.contract_codes.writes.into_iter().for_each(|(address, code)| {
-            ws.cached().set_code(address, code);
-        });
-        self.app_data.writes.into_iter().for_each(|((address, app_key), value)| {
-            ws.cached().set_storage_value(address, app_key, value);
-        });
-
-        ws.commit();
+        self.balances
+            .writes
+            .into_iter()
+            .for_each(|(address, balance)| {
+                ws.account_trie_mut().set_balance(&address, balance);
+            });
+        self.cbi_versions
+            .writes
+            .into_iter()
+            .for_each(|(address, version)| {
+                ws.account_trie_mut().set_cbi_version(&address, version);
+            });
+        self.contract_codes
+            .writes
+            .into_iter()
+            .for_each(|(address, code)| {
+                ws.account_trie_mut().set_code(&address, code);
+            });
+        self.storage_data
+            .writes
+            .into_iter()
+            .for_each(|((address, key), value)| {
+                ws.storage_trie_mut(&address)
+                    .unwrap()
+                    .set(&key, value)
+                    .unwrap()
+            });
         ws
     }
 }
@@ -166,7 +200,7 @@ where
 type CacheBalance = CacheData<PublicAddress, u64>;
 type CacheCBIVersion = CacheData<PublicAddress, u32>;
 type CacheContractCode = CacheData<PublicAddress, Vec<u8>>;
-type CacheAppData = CacheData<(PublicAddress, AppKey), Vec<u8>>;
+type CacheStorageData = CacheData<(PublicAddress, Vec<u8>), Vec<u8>>;
 
 pub(crate) trait CacheValue {
     fn len(&self) -> usize;
@@ -201,10 +235,10 @@ pub(crate) struct CacheData<K, V> {
 impl<K, V> CacheData<K, V>
 where
     K: PartialEq + Eq + std::hash::Hash + Clone,
-    V: CacheValue + Clone
+    V: CacheValue + Clone,
 {
     /// Get latest value from readwrite set. If not found, get from world state and then cache it.
-    pub fn get<WS: FnOnce(&K)->Option<V>>(&self, key: &K, ws_get: WS) -> Option<V> {
+    pub fn get<WS: FnOnce(&K) -> Option<V>>(&self, key: &K, ws_get: WS) -> Option<V> {
         // 1. Return the value that was written earlier in the transaction ('read-your-write' semantics)
         if let Some(value) = self.writes.get(key) {
             return Some(value.clone());
@@ -230,7 +264,7 @@ where
 
     // Low Level Operations
     /// Check if this key is set before.
-    pub fn contains<WS: FnOnce(&K)->bool>(&self, key: &K, ws_contains: WS) -> bool {
+    pub fn contains<WS: FnOnce(&K) -> bool>(&self, key: &K, ws_contains: WS) -> bool {
         // Check if readwrite set contains this key.
         self.writes.get(key).filter(|v| v.len() != 0).is_some()
         || self
