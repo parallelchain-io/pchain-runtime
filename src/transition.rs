@@ -19,6 +19,8 @@
 //! [Runtime] also exposes a method to execute a [view call]
 //! (https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
 
+use std::collections::HashMap;
+
 use pchain_types::{
     blockchain::{
         Command, CommandReceiptV1, CommandReceiptV2, ReceiptV1, ReceiptV2, TransactionV1,
@@ -26,7 +28,7 @@ use pchain_types::{
     },
     cryptography::PublicAddress,
 };
-use pchain_world_state::{VersionProvider, WorldState, DB};
+use pchain_world_state::{VersionProvider, WorldState, DB, V1, V2};
 // use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
 
 use crate::{
@@ -94,7 +96,6 @@ impl Runtime {
         ctx.sc_context = self.sc_context.clone();
 
         // initial state for transition
-        // TODO do we need need to include generics
         let state = ExecutionState::new(base_tx, bd, ctx);
 
         // initiate command execution
@@ -197,6 +198,13 @@ impl Runtime {
 
         // execute view
         execute_view_v2(state, target, method, arguments)
+    }
+
+    pub fn transition_v1_to_v2<'a, S: DB + Send + Sync + Clone + 'static>(
+        ws: WorldState<'a, S, V1>,
+    ) -> WorldState<'a, S, V2> {
+        // TODO check this signature, provide a TransitionResult
+        WorldState::<S, V1>::upgrade(ws).unwrap()
     }
 }
 

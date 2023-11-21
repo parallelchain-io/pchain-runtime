@@ -30,10 +30,11 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    state
-        .ctx
-        .gas_meter
-        .charge_txn_pre_exec_inclusion(state.tx.size, state.tx.commands_len)?;
+    state.ctx.gas_meter.charge_txn_pre_exec_inclusion(
+        state.tx.version,
+        state.tx.size,
+        &state.tx.command_kinds,
+    )?;
 
     // note, remaining reads/ writes are performed directly on WS
     // not through GasMeter, hence not chargeable
@@ -42,13 +43,20 @@ where
     let signer = state.tx.signer;
     let ws_cache = state.ctx.inner_ws_cache_mut();
 
-    // TODO remove unwrap
-    let origin_nonce = ws_cache.ws.account_trie().nonce(&signer).unwrap();
+    let origin_nonce = ws_cache.ws.account_trie().nonce(&signer).expect(&format!(
+        "Account trie should get CBI version for {:?}",
+        signer
+    ));
     if state.tx.nonce != origin_nonce {
         return Err(TransitionError::WrongNonce);
     }
 
-    let origin_balance = ws_cache.ws.account_trie().balance(&signer).unwrap();
+    let origin_balance = ws_cache
+        .ws
+        .account_trie()
+        .balance(&signer)
+        .expect(&format!("Account trie should get balance for {:?}", signer));
+
     let gas_limit = state.tx.gas_limit;
     let base_fee = state.bd.this_base_fee;
     let priority_fee = state.tx.priority_fee_per_gas;
@@ -64,10 +72,12 @@ where
         .checked_sub(pre_charge)
         .ok_or(TransitionError::NotEnoughBalanceForGasLimit)?; // pre_charge > origin_balance
 
+    // TODO remove unwrap
     ws_cache
         .ws
         .account_trie_mut()
-        .set_balance(&signer, pre_charged_balance);
+        .set_balance(&signer, pre_charged_balance)
+        .expect(&format!("Account trie should set balance for {:?}", signer));
 
     Ok(())
 }
@@ -115,28 +125,41 @@ where
         .saturating_add((gas_used * base_fee * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE);
 
     // Commit updated balances
-    // TODO error handling
     ws_cache
         .ws
         .account_trie_mut()
-        .set_balance(&signer, new_signer_balance);
+        .set_balance(&signer, new_signer_balance)
+        .expect(&format!("Account trie should set balance for {:?}", signer));
     ws_cache
         .ws
         .account_trie_mut()
-        .set_balance(&proposer_address, new_proposer_balance);
+        .set_balance(&proposer_address, new_proposer_balance)
+        .expect(&format!(
+            "Account trie should set balance for {:?}",
+            proposer_address
+        ));
     ws_cache
         .ws
         .account_trie_mut()
-        .set_balance(&treasury_address, new_treasury_balance);
+        .set_balance(&treasury_address, new_treasury_balance)
+        .expect(&format!(
+            "Account trie should set balance for {:?}",
+            treasury_address
+        ));
 
     // Commit Signer's Nonce
     let nonce = ws_cache
         .ws
         .account_trie()
         .nonce(&signer)
-        .unwrap()
+        .expect(&format!("Account trie should get nonce for {:?}", signer))
         .saturating_add(1);
-    ws_cache.ws.account_trie_mut().set_nonce(&signer, nonce);
+
+    ws_cache
+        .ws
+        .account_trie_mut()
+        .set_nonce(&signer, nonce)
+        .expect(&format!("Account trie should set nonce for {:?}", signer));
 
     state
 }

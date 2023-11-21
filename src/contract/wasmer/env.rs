@@ -59,7 +59,7 @@ where
     pub alloc: LazyInit<NativeFunc<u32, wasmer::WasmPtr<u8, wasmer::Array>>>,
 }
 
-impl<'a, 'lock, S, V> Env<'a, S, V>
+impl<'a, S, V> Env<'a, S, V>
 where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone,
@@ -134,27 +134,26 @@ where
     }
 }
 
-pub(crate) struct LockedWasmerTransitionContext<'a, 'lock, S, V>
+pub(crate) struct LockedWasmerTransitionContext<'a, 'b, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    env: &'lock Env<'a, S, V>,
-    context: MutexGuard<'lock, TransitionContext<'a, S, V>>,
-    wasmer_remaining_gas: MutexGuard<'lock, WasmerRemainingGas>,
+    env: &'b Env<'a, S, V>,
+    context: MutexGuard<'b, TransitionContext<'a, S, V>>,
+    wasmer_remaining_gas: MutexGuard<'b, WasmerRemainingGas>,
 }
 
-impl<'a, 'lock, S, V> LockedWasmerTransitionContext<'a, 'lock, S, V>
+// 'a is the lifetime of the DB ref within TransitionContext
+// 'b is the lifetime of the Env ref inside LockedWasmerTransitionContext
+// 'c is the lifetime of the LockedWasmerTransitionContext ref inside WasmGasMeter, passed to the gas_meter
+
+impl<'a, 'b, S, V> LockedWasmerTransitionContext<'a, 'b, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    // TODO 96,
-    // take the ref to the env, and passes it to create a wasmer gas meter
-    // the lifetime is that of the lock
-    // taking the source gas_meter from (main Runtime, or parent caller)
-    // and wrapping it in a new instance of WasmGasMeter
-    pub fn gas_meter(&mut self) -> WasmerGasMeter<'lock, 'a, S, Env<'a, S, V>, V> {
+    pub fn gas_meter(&mut self) -> WasmerGasMeter<'a, '_, S, Env<'a, S, V>, V> {
         WasmerGasMeter::new(
             self.env,
             &self.wasmer_remaining_gas,

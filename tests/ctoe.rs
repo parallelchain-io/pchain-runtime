@@ -1,7 +1,11 @@
-use pchain_types::{blockchain::{ExitCodeV1, TransactionV1}, cryptography::contract_address_v1};
+use pchain_types::{
+    blockchain::{ExitCodeV1, TransactionV1},
+    cryptography::contract_address_v1,
+};
+use pchain_world_state::V1;
 
 use crate::common::{
-    gas::extract_gas_used, ArgsBuilder, SimulateWorldState, TestData,
+    gas::extract_gas_used, ArgsBuilder, SimulateWorldState, SimulateWorldStateStorage, TestData,
 };
 
 mod common;
@@ -18,7 +22,8 @@ fn test_success_ctoe() {
 
     let bd = TestData::block_params();
 
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = 500_000_000_000;
     sws.set_balance(origin_address, init_from_balance);
 
@@ -33,7 +38,7 @@ fn test_success_ctoe() {
     let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd.clone());
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     let mut base_tx = TestData::transaction();
     base_tx.signer = origin_address;
@@ -55,7 +60,7 @@ fn test_success_ctoe() {
     assert_eq!(extract_gas_used(&result), 2281166);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check contract balance is unchanged.
     let contract_balance = sws.get_balance(contract_address);
@@ -77,7 +82,7 @@ fn test_success_ctoe() {
     assert_eq!(extract_gas_used(&result), 2281166);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check contract balance is empty.
     let contract_balance = sws.get_balance(contract_address);
@@ -96,7 +101,8 @@ fn test_ctoe_tx_with_insufficient_balance() {
 
     let bd = TestData::block_params();
 
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = 500_000_000_000;
     sws.set_balance(origin_address, init_from_balance);
 
@@ -118,7 +124,7 @@ fn test_ctoe_tx_with_insufficient_balance() {
     assert_eq!(extract_gas_used(&result), 220290230);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     let mut base_tx = TestData::transaction();
     base_tx.signer = origin_address;

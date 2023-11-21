@@ -26,7 +26,6 @@ use super::wasmer::instance::MethodCallError;
 ///
 pub trait CBIHostFunctions<T>
 where
-    // TODO I don't think this needs to be static
     T: wasmer::WasmerEnv,
 {
     /// Sets a key to a value in the current Contract Account’s Storage.
@@ -177,7 +176,6 @@ where
     /// `digest_ptr_ptr` references the memory location to store the 20-byte digest
     fn ripemd(env: &T, msg_ptr: u32, msg_len: u32, digest_ptr_ptr: u32) -> Result<(), FuncError>;
 
-    // TODO confirm this
     /// Returns whether an Ed25519 signature was produced by a specified by a specified address over some specified message.
     /// 1 is returned if the signature is valid, 0 otherwise.
     fn verify_ed25519_signature(

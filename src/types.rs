@@ -82,8 +82,6 @@ pub(crate) struct BaseTx {
 
     // serialized size of the original transaction
     pub size: usize,
-    /// length of commands in the transaction
-    pub commands_len: usize,
 }
 
 impl From<&TransactionV1> for BaseTx {
@@ -97,7 +95,6 @@ impl From<&TransactionV1> for BaseTx {
             gas_limit: tx.gas_limit,
             priority_fee_per_gas: tx.priority_fee_per_gas,
             size: tx.serialize().len(),
-            commands_len: tx.commands.len(),
         }
     }
 }
@@ -113,13 +110,12 @@ impl From<&TransactionV2> for BaseTx {
             gas_limit: tx.gas_limit,
             priority_fee_per_gas: tx.priority_fee_per_gas,
             size: tx.serialize().len(),
-            commands_len: tx.commands.len(),
         }
     }
 }
 
 /// Marker for transaction version
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum TxnVersion {
     V1,
     V2,
@@ -133,7 +129,7 @@ impl Default for TxnVersion {
 
 /// Used to distinguish command types for V2 (ReceiptV2 and CommandReceiptV2)
 #[derive(Clone, Copy)]
-pub(crate) enum CommandKind {
+pub enum CommandKind {
     Transfer,
     Deploy,
     Call,

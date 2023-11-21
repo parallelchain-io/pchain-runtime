@@ -50,8 +50,11 @@ where
     // - Transaction nonce matches with the nonce in state
 
     let ws_cache = state.ctx.inner_ws_cache();
-    // TODO remove unwrap
-    let nonce = ws_cache.ws.account_trie().nonce(&signer).unwrap();
+    let nonce = ws_cache
+        .ws
+        .account_trie()
+        .nonce(&signer)
+        .expect(&format!("Account trie should get nonce for {:?}", signer));
 
     if commands.len() != 1
         || commands.first() != Some(&Command::NextEpoch)
@@ -68,12 +71,11 @@ where
     // by the signer will have different transaction hash.
     let ws_cache = state.ctx.inner_ws_cache_mut();
     let nonce = nonce.saturating_add(1);
-    // TODO remove unwrap or handle error
     ws_cache
         .ws
         .account_trie_mut()
         .set_nonce(&signer, nonce)
-        .unwrap();
+        .expect(&format!("Account trie should set nonce for {:?}", signer));
 
     P::handle_post_execution(state, new_vs)
 }
@@ -143,10 +145,6 @@ where
 
         // Commit to New world state
         let (new_state, receipt) = state.finalize();
-
-        // TODO Learn
-        // previous error here is that new_state could live longer than 'a
-        // because ExecutionState is not constrained by 'a
         TransitionResultV2 {
             new_state,
             error: None,

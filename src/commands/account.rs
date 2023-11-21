@@ -85,6 +85,7 @@ where
         let target_balance = state.ctx.gas_meter.ws_get_balance(target);
 
         // Ceiling to MAX for safety. Overflow should not happen in real situation.
+
         state
             .ctx
             .gas_meter
@@ -135,6 +136,7 @@ where
         V: VersionProvider + Send + Sync + Clone + 'static,
     {
         // Check CBI version
+
         state
             .ctx
             .gas_meter
@@ -253,12 +255,10 @@ where
         if !is_cbi_compatible(cbi_version) {
             return Err(TransitionError::OtherDeployError);
         }
-
         let exist_cbi_version = state.ctx.gas_meter.ws_get_cbi_version(contract_address);
         if exist_cbi_version.is_some() {
             return Err(TransitionError::ContractAlreadyExists);
         }
-
         let module =
             ContractModule::from_contract_code(&contract, state.ctx.sc_context.memory_limit)
                 .map_err(|build_err| match build_err {

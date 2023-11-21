@@ -25,7 +25,7 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use pchain_types::cryptography::PublicAddress;
-use pchain_world_state::{VersionProvider, WorldState, DB};
+use pchain_world_state::{StorageTrie, VersionProvider, WorldState, DB};
 
 // TODO - change to 'static
 
@@ -78,38 +78,13 @@ where
         self.storage_data.revert();
     }
 
-    // TODO 90 does ws.storage_trie need &mut?
-    // TODO 92 collapose with contains_app_data
-    /// check if a key exists in storage data for a particular address
-    pub fn contains_storage_data(&mut self, address: &PublicAddress, key: &[u8]) -> bool {
-        self.storage_data
-            // TODO
-            .contains(&(address.clone(), key.to_vec()), |(_, key)| -> bool {
-                // TODO remove unwrap()
-                self.ws
-                    .storage_trie(address)
-                    .unwrap()
-                    .contains(key)
-                    .unwrap()
-            })
-    }
-
-    // TODO 90 does ws.storage_trie need &mut?
-    // TODO 92 collapose with get_storage_data
-    /// get data for a key in storage data for a particular address
-    pub fn storage_data(&mut self, address: &PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
-        self.storage_data
-            .get(&(address.clone(), key.to_vec()), |(address, key)| {
-                // TODO remove unwrap()
-                self.ws.storage_trie(address).unwrap().get(key).unwrap()
-            })
-    }
-
     pub fn get_balance(&self, address: &PublicAddress) -> u64 {
         self.balances
             .get(address, |key| self.ws.account_trie().balance(key).ok())
-            // TODO remove unwrap()
-            .unwrap()
+            .expect(&format!(
+                "Account trie should get balance for {:?}",
+                address
+            ))
     }
 
     pub fn set_balance(&mut self, address: PublicAddress, balance: u64) {
@@ -117,9 +92,12 @@ where
     }
 
     pub fn get_cbi_version(&self, address: &PublicAddress) -> Option<u32> {
-        self.cbi_versions
-            // TODO remove ok()
-            .get(address, |key| self.ws.account_trie().cbi_version(key).ok())
+        self.cbi_versions.get(address, |key| {
+            self.ws.account_trie().cbi_version(key).expect(&format!(
+                "Account trie should get CBI version for {:?}",
+                address
+            ))
+        })
     }
 
     pub fn set_cbi_version(&mut self, address: PublicAddress, cbi_version: u32) {
@@ -128,8 +106,10 @@ where
 
     pub fn get_contract_code(&self, address: &PublicAddress) -> Option<Vec<u8>> {
         self.contract_codes.get(address, |key| {
-            // TODO remove unwrap
-            self.ws.account_trie().code(key).ok().unwrap()
+            self.ws.account_trie().code(key).expect(&format!(
+                "Account trie should get contract code for {:?}",
+                address
+            ))
         })
     }
 
@@ -137,11 +117,28 @@ where
         self.contract_codes.set(address, code);
     }
 
+    pub fn contains_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> bool {
+        self.storage_data
+            .contains(&(address, key.to_vec()), |(addr, key)| -> bool {
+                self.ws
+                    .storage_trie(addr)
+                    .expect(&format!("Storage trie should exist for {:?}", address))
+                    .contains(key)
+                    .expect(&format!(
+                        "Storage trie should contain data for {:?}",
+                        address
+                    ))
+            })
+    }
+
     pub fn get_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
         self.storage_data
-            .get(&(address, key.to_vec()), |(address, key)| {
-                // TODO remove unwrap()
-                self.ws.storage_trie(address).unwrap().get(key).unwrap()
+            .get(&(address, key.to_vec()), |(addr, k)| {
+                self.ws
+                    .storage_trie(addr)
+                    .expect(&format!("Storage trie should exist for {:?}", address))
+                    .get(k)
+                    .expect(&format!("Storage trie should get data for {:?}", address))
             })
     }
 
@@ -150,49 +147,53 @@ where
         self.storage_data.set((address, key.to_vec()), value);
     }
 
-    // TODO 92 collapose with contains_app_data
-    pub fn contains_app_data(&mut self, address: PublicAddress, key: &[u8]) -> bool {
-        self.storage_data
-            .contains(&(address, key.to_vec()), |(address, key)| {
-                // TODO remove unwrap()
-                self.ws
-                    .storage_trie(address)
-                    .unwrap()
-                    .contains(key)
-                    .unwrap()
-            })
-    }
-
     pub fn commit_to_world_state(self) -> WorldState<'a, S, V> {
         let mut ws = self.ws;
-        // apply changes to world state
-        self.balances
-            .writes
-            .into_iter()
-            .for_each(|(address, balance)| {
-                ws.account_trie_mut().set_balance(&address, balance);
-            });
-        self.cbi_versions
-            .writes
-            .into_iter()
-            .for_each(|(address, version)| {
-                ws.account_trie_mut().set_cbi_version(&address, version);
-            });
-        self.contract_codes
-            .writes
-            .into_iter()
-            .for_each(|(address, code)| {
-                ws.account_trie_mut().set_code(&address, code);
-            });
-        self.storage_data
-            .writes
-            .into_iter()
-            .for_each(|((address, key), value)| {
-                ws.storage_trie_mut(&address)
-                    .unwrap()
-                    .set(&key, value)
-                    .unwrap()
-            });
+        for (address, balance) in self.balances.writes.into_iter() {
+            ws.account_trie_mut()
+                .set_balance(&address, balance)
+                .expect(&format!(
+                    "Account trie should set balance for {:?}",
+                    address
+                ));
+        }
+
+        for (address, version) in self.cbi_versions.writes.into_iter() {
+            ws.account_trie_mut()
+                .set_cbi_version(&address, version)
+                .expect(&format!(
+                    "Account trie should set CBI version for {:?}",
+                    address
+                ));
+        }
+
+        for (address, code) in self.contract_codes.writes.into_iter() {
+            ws.account_trie_mut()
+                .set_code(&address, code)
+                .expect(&format!(
+                    "Account trie should set contract code for {:?}",
+                    address
+                ));
+        }
+
+        // TODO probably can't improve much here
+        // transform data in memory to use StorageTrie .batch_set()
+        // as calling .set() individually will incur a muuch heavier performance cost
+        let mut transformed_data = HashMap::with_capacity(self.storage_data.writes.len());
+        for ((address, key), value) in self.storage_data.writes.into_iter() {
+            transformed_data
+                .entry(address)
+                .or_insert_with(HashMap::new)
+                .insert(key, value);
+        }
+        for (address, data) in transformed_data {
+            let trie = ws
+                .storage_trie_mut(&address)
+                .expect(&format!("Storage trie should exist for {:?}", address));
+            trie.batch_set(&data)
+                .expect(&format!("Storage trie should set data for {:?}", address));
+        }
+
         ws
     }
 }

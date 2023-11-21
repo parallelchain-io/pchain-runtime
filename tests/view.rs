@@ -1,8 +1,9 @@
 use pchain_runtime::TransitionError;
 use pchain_types::{blockchain::ExitCodeV1, cryptography::contract_address_v1};
+use pchain_world_state::V1;
 
 use crate::common::{
-    ArgsBuilder, CallResult, SimulateWorldState, TestData,
+    ArgsBuilder, CallResult, SimulateWorldState, SimulateWorldStateStorage, TestData,
     CONTRACT_CACHE_FOLDER,
 };
 
@@ -19,7 +20,8 @@ fn test_view() {
     let contract_address = contract_address_v1(&[123u8; 32], 0);
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     sws.add_contract(contract_address, wasm_bytes, pchain_runtime::cbi_version());
 
     // 1. call contract from world state
@@ -98,7 +100,8 @@ fn test_view_failure() {
     let target = [2u8; 32];
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     sws.add_contract(target, wasm_bytes, pchain_runtime::cbi_version());
 
     // 1. wasm execution fails

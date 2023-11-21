@@ -10,11 +10,11 @@ use pchain_types::{
         UnstakeDepositInput, WithdrawDepositInput,
     },
 };
-use pchain_world_state::network::constants::NETWORK_ADDRESS;
+use pchain_world_state::{NETWORK_ADDRESS, V1};
 
 use crate::common::{
-    gas::extract_gas_used, ArgsBuilder, CallResult, SimulateWorldState, TestData,
-    CONTRACT_CACHE_FOLDER,
+    gas::extract_gas_used, ArgsBuilder, CallResult, SimulateWorldState, SimulateWorldStateStorage,
+    TestData, CONTRACT_CACHE_FOLDER,
 };
 
 mod common;
@@ -29,7 +29,8 @@ fn test_success_etoc_tx_with_different_setters_getters() {
 
     let bd = TestData::block_params();
 
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = 500_000_000_000;
     sws.set_balance(origin_address, init_from_balance);
 
@@ -47,7 +48,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
         result.receipt.unwrap().last().unwrap().exit_code,
         ExitCodeV1::Success
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // prepare inputs
     let mut base_tx = TestData::transaction();
@@ -72,7 +73,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
         result.receipt.unwrap().last().unwrap().exit_code,
         ExitCodeV1::Success
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let mut sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Verify the state changes
     assert_eq!(
@@ -99,7 +100,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
         result.receipt.unwrap().last().unwrap().exit_code,
         ExitCodeV1::Success
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let mut sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Verify the state changes
     assert_eq!(
@@ -124,7 +125,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
     assert_eq!(extract_gas_used(&result), 1324005);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Check the result of "get_state_with_self".
     let return_value: u64 =
@@ -175,7 +176,8 @@ fn test_success_etoc_multiple_methods() {
 
     let bd = TestData::block_params();
 
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = 500_000_000_000;
     sws.set_balance(origin_address, init_from_balance);
 
@@ -191,7 +193,7 @@ fn test_success_etoc_multiple_methods() {
         result.receipt.unwrap().last().unwrap().exit_code,
         ExitCodeV1::Success
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // prepare inputs
     let mut base_tx = TestData::transaction();
@@ -216,7 +218,7 @@ fn test_success_etoc_multiple_methods() {
 
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Check result of "set_data" by "init";
     let return_value: i32 =
@@ -242,7 +244,7 @@ fn test_success_etoc_multiple_methods() {
         result.receipt.unwrap().last().unwrap().exit_code,
         ExitCodeV1::Success
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let mut sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Check if the value is really written into world state.
     assert_eq!(
@@ -266,7 +268,7 @@ fn test_success_etoc_multiple_methods() {
     );
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Check result of "set_data" by the second call to "set_data_to_storage";
     let return_value: i32 =
@@ -291,7 +293,7 @@ fn test_success_etoc_multiple_methods() {
 
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Check result of "multiple_inputs".
     let return_string: String =
@@ -317,7 +319,7 @@ fn test_success_etoc_multiple_methods() {
     assert_eq!(extract_gas_used(&result), 1259021);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Check return value from print_event is None.
     assert!(receipt.last().unwrap().return_values.is_empty());
@@ -351,7 +353,7 @@ fn test_success_etoc_multiple_methods() {
     assert_eq!(extract_gas_used(&result), 1260899);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Check result of "raw_get" should be None for non-existing key.
     let return_value: Option<Vec<u8>> =
@@ -395,7 +397,8 @@ fn test_success_etoc_set_all_contract_fields() {
 
     let bd = TestData::block_params();
 
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = 500_000_000_000;
     sws.set_balance(origin_address, init_from_balance);
 
@@ -413,7 +416,7 @@ fn test_success_etoc_set_all_contract_fields() {
         result.receipt.unwrap().last().unwrap().exit_code,
         ExitCodeV1::Success
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // 1. Call entrypoint to mutate data in contract storage.
     let result = pchain_runtime::Runtime::new().transition_v1(
@@ -439,7 +442,7 @@ fn test_success_etoc_set_all_contract_fields() {
         result.receipt.unwrap().last().unwrap().exit_code,
         ExitCodeV1::Success
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let mut sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Verify the fields altered by the execution of entrypoint.
     // key and the borsh-serialized bytes of expected value.
@@ -479,7 +482,8 @@ fn test_success_etoc_network_state() {
 
     let bd = TestData::block_params();
 
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = 500_000_000_000;
     sws.set_storage_data(
         NETWORK_ADDRESS,
@@ -524,7 +528,7 @@ fn test_success_etoc_network_state() {
         result.receipt.unwrap().last().unwrap().exit_code,
         ExitCodeV1::Success
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // 1. Call entrypoint to mutate data in contract storage.
     let result = pchain_runtime::Runtime::new().transition_v1(
@@ -547,7 +551,7 @@ fn test_success_etoc_network_state() {
     assert_eq!(extract_gas_used(&result), 2246202);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Check result of "get_network_state";
     let return_value: Vec<u8> =
@@ -596,7 +600,7 @@ fn test_success_etoc_network_state() {
         receipt.last().unwrap().return_values,
         1000u64.to_le_bytes().to_vec()
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let mut sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check if network command takes effect.
     let deposit_balance = sws
@@ -643,7 +647,7 @@ fn test_success_etoc_network_state() {
         receipt.last().unwrap().return_values,
         1235u64.to_le_bytes().to_vec()
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let mut sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check if network command takes effect.
     let deposit_balance = sws.get_storage_data(
@@ -670,7 +674,8 @@ fn test_failure_etoc_tx_with_invalid_argument_data_type() {
 
     let bd = TestData::block_params();
 
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = 500_000_000_000;
     sws.set_balance(origin_address, init_from_balance);
 
@@ -686,7 +691,7 @@ fn test_failure_etoc_tx_with_invalid_argument_data_type() {
         result.receipt.unwrap().last().unwrap().exit_code,
         ExitCodeV1::Success
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // 1. Passing criteria: smart contract should fail to get the correct arguments (u64) as it is set to u32 for now.
     let tx = TransactionV1 {
@@ -718,7 +723,8 @@ fn test_failure_etoc_tx_with_invalid_method_name() {
 
     let bd = TestData::block_params();
 
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = 500_000_000_000;
     sws.set_balance(origin_address, init_from_balance);
 
@@ -733,7 +739,7 @@ fn test_failure_etoc_tx_with_invalid_method_name() {
         result.receipt.unwrap().last().unwrap().exit_code,
         ExitCodeV1::Success
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // 1. EtoC call with non-exist method name
     let tx = TransactionV1 {
@@ -765,7 +771,8 @@ fn test_success_etoc_crypto_functions() {
 
     let bd = TestData::block_params();
 
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = 500_000_000_000;
     sws.set_balance(origin_address, init_from_balance);
 
@@ -782,7 +789,7 @@ fn test_success_etoc_crypto_functions() {
         result.receipt.unwrap().last().unwrap().exit_code,
         ExitCodeV1::Success
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // prepare inputs
     let mut base_tx = TestData::transaction();

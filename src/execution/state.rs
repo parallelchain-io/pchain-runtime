@@ -121,6 +121,7 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
+    // TODO 101 rename to finalize_receipt
     fn finalize(self) -> (WorldState<'a, S, V>, ReceiptV2) {
         let gas_used = self.ctx.gas_meter.total_gas_used_for_executed_commands();
         (

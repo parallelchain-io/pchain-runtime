@@ -30,14 +30,6 @@ where
     let block_performance = state.bd.validator_performance.clone().unwrap();
 
     let new_validator_set = {
-        // TODO remove
-        // let acc_state = state
-        //     .ctx
-        //     .inner_ws_cache()
-        //     .ws
-        //     .account_storage_state(NETWORK_ADDRESS)
-        // .unwrap();
-
         let mut state = NetworkAccountWorldState::new(&mut state);
 
         let mut pools_in_vp = Vec::new();
@@ -50,7 +42,7 @@ where
         let pool_length = NetworkAccount::vp(&mut state).length();
         for i in 0..pool_length {
             let mut vp = NetworkAccount::vp(&mut state);
-            let pool = vp.pool_at(i).unwrap();
+            let mut pool = vp.pool_at(i).unwrap();
             pools_in_vp.push(Pool {
                 operator: pool.operator().unwrap(),
                 commission_rate: pool.commission_rate().unwrap(),
@@ -80,7 +72,7 @@ where
             let mut vp_stakes = Vec::new();
             let mut vp = NetworkAccount::vp(&mut state);
             if let Some(mut vp_pool) = vp.pool(pool_operator) {
-                let stakes = vp_pool.delegated_stakes();
+                let mut stakes = vp_pool.delegated_stakes();
                 let stakes_length = stakes.length();
                 for j in 0..stakes_length {
                     let stake = stakes.get(j).unwrap();
@@ -242,14 +234,12 @@ where
 /// NetworkAccountWorldState is specific to accessing storage of an Account Storage State.
 /// It stores account storage state and use it for subsequent Read / Writes operations.
 /// Write opertions would store to read write set.
-/// Different with [state::ExecutionState] which also implements Trait [NetworkAccountStorage],
-/// it does not charge gas for opertaions.
+
 pub(crate) struct NetworkAccountWorldState<'a, 'b, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    // account_storage_state: AccountStorageState<S>,
     ws_cache: &'b mut WorldStateCache<'a, S, V>,
 }
 
@@ -270,21 +260,18 @@ where
     }
 }
 
-// TODO do we need this?
+/// NetworkAccountWorldState implements NetworkAccountStorage for NON-charegable read-write operations to world state
 impl<'a, 'b, S, V> NetworkAccountStorage for NetworkAccountWorldState<'a, 'b, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    // TODO 92 make consistent alls ignatures
-    fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        panic!("TODO");
-        // self.ws_cache.storage_data(&NETWORK_ADDRESS, key)
+    fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
+        self.ws_cache.get_storage_data(NETWORK_ADDRESS, key)
     }
 
-    fn contains(&self, key: &[u8]) -> bool {
-        panic!("TODO");
-        // self.ws_cache.contains_storage_data(&NETWORK_ADDRESS, key)
+    fn contains(&mut self, key: &[u8]) -> bool {
+        self.ws_cache.contains_storage_data(NETWORK_ADDRESS, key)
     }
 
     fn set(&mut self, key: &[u8], value: Vec<u8>) {

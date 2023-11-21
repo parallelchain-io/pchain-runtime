@@ -56,12 +56,12 @@ impl WasmerRemainingGas {
     pub fn subtract(&self, amount: u64) -> u64 {
         let current_remaining_points: u64 = self.gas();
         let new_remaining_points = current_remaining_points.saturating_sub(amount);
-
         unsafe {
             self.check_init();
             self.wasmer_gas
                 .assume_init_ref()
-                .set(new_remaining_points.into());
+                .set(new_remaining_points.into())
+                .unwrap();
             new_remaining_points
         }
     }
@@ -73,29 +73,29 @@ impl WasmerRemainingGas {
     }
 }
 
-pub(crate) struct WasmerGasMeter<'lock, 'a, S, M, V>
+pub(crate) struct WasmerGasMeter<'a, 'b, S, M, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     M: MemoryContext,
     V: VersionProvider + Send + Sync + Clone,
 {
     version: TxnVersion,
-    memory_ctx: &'lock M,
-    wasmer_remaining_gas: &'lock WasmerRemainingGas,
-    command_output_cache: &'lock mut CommandOutputCache,
-    ws_cache: &'lock mut WorldStateCache<'a, S, V>, // a locked version of ws_cache, 'lock
+    memory_ctx: &'b M,
+    wasmer_remaining_gas: &'b WasmerRemainingGas,
+    command_output_cache: &'b mut CommandOutputCache,
+    ws_cache: &'b mut WorldStateCache<'a, S, V>,
 }
 
-impl<'lock, 'a, S, M, V> WasmerGasMeter<'lock, 'a, S, M, V>
+impl<'a, 'b, S, M, V> WasmerGasMeter<'a, 'b, S, M, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     M: MemoryContext,
     V: VersionProvider + Send + Sync + Clone,
 {
     pub fn new(
-        memory_ctx: &'lock M,
-        wasmer_remaining_gas: &'lock WasmerRemainingGas,
-        gas_meter: &'lock mut GasMeter<'a, S, V>,
+        memory_ctx: &'b M,
+        wasmer_remaining_gas: &'b WasmerRemainingGas,
+        gas_meter: &'b mut GasMeter<'a, S, V>,
     ) -> Self {
         Self {
             version: gas_meter.version,
@@ -118,7 +118,6 @@ where
         self.command_output_cache
     }
 
-    // TODO 90 is this used
     pub fn ws_get_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
         let result = operation::ws_get_storage_data(self.version, self.ws_cache, address, key);
         self.charge(result).filter(|v| !v.is_empty())

@@ -88,7 +88,7 @@ where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone,
 {
-    let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
         abort!(state, TransitionError::PoolNotExists)
     }
@@ -112,7 +112,7 @@ where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone,
 {
-    let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
         abort!(state, TransitionError::PoolNotExists)
     }
@@ -206,7 +206,7 @@ where
     V: VersionProvider + Send + Sync + Clone,
 {
     // 1. Check if there is any deposit to withdraw
-    let deposits = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
+    let mut deposits = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
     if !deposits.exists() {
         abort!(state, TransitionError::DepositsNotExists)
     }
@@ -311,14 +311,14 @@ where
     V: VersionProvider + Send + Sync + Clone,
 {
     // 1. Check if there is a Deposit to stake
-    let deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
+    let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
     if !deposit.exists() {
         abort!(state, TransitionError::DepositsNotExists)
     }
     let deposit_balance = deposit.balance().unwrap();
 
     // 2. Check if there is a Pool to stake to.
-    let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
         abort!(state, TransitionError::PoolNotExists)
     }
@@ -386,7 +386,7 @@ where
     }
 
     // 2. If there is no Pool, then there is no Stake to unstake.
-    let pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
     if !pool.exists() {
         abort!(state, TransitionError::PoolNotExists)
     }

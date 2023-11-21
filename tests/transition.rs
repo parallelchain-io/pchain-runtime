@@ -1,6 +1,7 @@
 use pchain_runtime::{
     formulas::{TOTAL_BASE_FEE, TREASURY_CUT_OF_BASE_FEE},
     gas::tx_inclusion_cost_v1,
+    types::CommandKind,
     TransitionError,
 };
 use pchain_types::{
@@ -9,9 +10,10 @@ use pchain_types::{
     runtime::TransferInput,
     serialization::Serializable,
 };
+use pchain_world_state::V1;
 
 use crate::common::{
-    ArgsBuilder, CallResult, SimulateWorldState, TestData,
+    ArgsBuilder, CallResult, SimulateWorldState, SimulateWorldStateStorage, TestData,
     EXPECTED_CBI_VERSION,
 };
 
@@ -20,6 +22,13 @@ mod common;
 #[test]
 fn version() {
     assert_eq!(pchain_runtime::cbi_version(), EXPECTED_CBI_VERSION);
+}
+
+fn tx_base_cost_v1(tx: &TransactionV1) -> u64 {
+    tx_inclusion_cost_v1(
+        tx.serialize().len(),
+        &tx.commands.iter().map(CommandKind::from).collect(),
+    )
 }
 
 /// Transfer tokens from external account to external account
@@ -33,13 +42,17 @@ fn test_etoe() {
         amount: transfer_value,
     })];
     let priority_fee_per_gas = tx.priority_fee_per_gas;
-    let tx_base_cost = tx_inclusion_cost_v1(tx.serialize().len(), tx.commands.len());
+    let tx_base_cost = tx_inclusion_cost_v1(
+        tx.serialize().len(),
+        &tx.commands.iter().map(CommandKind::from).collect(),
+    );
 
     let bd = TestData::block_params();
     let base_fee_per_gas = bd.this_base_fee;
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let from_address = tx.signer;
     let to_address = target;
     let init_from_balance = 100_000_000;
@@ -48,7 +61,7 @@ fn test_etoe() {
     let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check from_address balance
     let gas_used = receipt.last().unwrap().gas_used + tx_base_cost;
@@ -81,12 +94,15 @@ fn test_etoc() {
         vec![ArgsBuilder::new()
             .add(method_args.clone())
             .make_call(Some(0), target, method_name)];
-    let tx_base_cost = tx_inclusion_cost_v1(tx.serialize().len(), tx.commands.len());
+
+    let tx_base_cost = tx_base_cost_v1(&tx);
+
     let bd = TestData::block_params();
     let base_fee_per_gas = bd.this_base_fee;
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let from_address = tx.signer;
     let to_address = target;
     let init_from_balance = 100_000_000;
@@ -97,7 +113,7 @@ fn test_etoc() {
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
 
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check from_address balance
     let gas_used = receipt.last().unwrap().gas_used + tx_base_cost;
@@ -165,7 +181,8 @@ fn test_etoc_multiple() {
     let base_fee_per_gas = bd.this_base_fee;
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let from_address = tx.signer;
     let init_from_balance = 500_000_000;
     sws.set_balance(from_address, init_from_balance);
@@ -182,8 +199,11 @@ fn test_etoc_multiple() {
 
     // test for two commands (dry run)
     tx.commands = vec![command_1.clone(), command_3.clone()];
-    let result =
-        pchain_runtime::Runtime::new().transition_v1(sws.world_state.clone(), tx.clone(), bd.clone());
+    let result = pchain_runtime::Runtime::new().transition_v1(
+        sws.world_state.clone(),
+        tx.clone(),
+        bd.clone(),
+    );
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.len(), tx.commands.len());
     assert!(!receipt.iter().any(|r| r.exit_code != ExitCodeV1::Success));
@@ -192,8 +212,8 @@ fn test_etoc_multiple() {
 
     // test for three commands (insert a command in the middle)
     tx.commands = vec![command_1.clone(), command_2.clone(), command_3.clone()];
-    let tx_base_cost = tx_inclusion_cost_v1(tx.serialize().len(), tx.commands.len());
-    let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx.clone(), bd.clone());
+    let result =
+        pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx.clone(), bd.clone());
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.len(), tx.commands.len());
     assert!(!receipt.iter().any(|r| r.exit_code != ExitCodeV1::Success));
@@ -206,14 +226,14 @@ fn test_etoc_multiple() {
     let get_data_value: i32 = CallResult::parse(receipt[2].return_values.clone()).unwrap();
     assert_eq!(method_args_1, get_data_value);
 
-    let sws: SimulateWorldState = result.new_state.into();
+    let mut sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check state change from contract
     let data = sws.get_storage_data(contract_address_1, vec![0u8]);
     assert_eq!(data, Some(123_i32.to_le_bytes().to_vec()));
 
     // check from_address balance
-    let total_gas_used = gas_consumed_1 + gas_consumed_2 + gas_consumed_3 + tx_base_cost;
+    let total_gas_used = gas_consumed_1 + gas_consumed_2 + gas_consumed_3 + tx_base_cost_v1(&tx);
     let new_from_balance = sws.get_balance(from_address);
     assert_eq!(
         new_from_balance,
@@ -266,7 +286,8 @@ fn test_etoc_multiple_insufficient_gas() {
     let base_fee_per_gas = bd.this_base_fee;
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let from_address = tx.signer;
     let init_from_balance = 500_000_000;
     sws.set_balance(from_address, init_from_balance);
@@ -283,9 +304,12 @@ fn test_etoc_multiple_insufficient_gas() {
 
     // all commands success
     tx.commands = vec![command_1.clone(), command_2.clone(), command_3.clone()];
-    let tx_base_cost = tx_inclusion_cost_v1(tx.serialize().len(), tx.commands.len());
-    let result =
-        pchain_runtime::Runtime::new().transition_v1(sws.world_state.clone(), tx.clone(), bd.clone());
+    let tx_base_cost = tx_base_cost_v1(&tx);
+    let result = pchain_runtime::Runtime::new().transition_v1(
+        sws.world_state.clone(),
+        tx.clone(),
+        bd.clone(),
+    );
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.len(), tx.commands.len());
     assert!(!receipt.iter().any(|r| r.exit_code != ExitCodeV1::Success));
@@ -295,8 +319,11 @@ fn test_etoc_multiple_insufficient_gas() {
 
     // 1. Exhausted at first command
     tx.gas_limit = tx_base_cost;
-    let result =
-        pchain_runtime::Runtime::new().transition_v1(sws.world_state.clone(), tx.clone(), bd.clone());
+    let result = pchain_runtime::Runtime::new().transition_v1(
+        sws.world_state.clone(),
+        tx.clone(),
+        bd.clone(),
+    );
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.len(), 1);
     assert_eq!(
@@ -304,7 +331,7 @@ fn test_etoc_multiple_insufficient_gas() {
         ExitCodeV1::GasExhausted
     );
     assert_eq!(receipt.iter().last().unwrap().gas_used, 0);
-    let sws_1: SimulateWorldState = result.new_state.into();
+    let sws_1: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check state unchange from contract
     let data = sws.get_storage_data(contract_address_1, vec![0u8]);
@@ -324,8 +351,11 @@ fn test_etoc_multiple_insufficient_gas() {
 
     // 2. Exhausted at second command
     tx.gas_limit = gas_consumed_1 + tx_base_cost;
-    let result =
-        pchain_runtime::Runtime::new().transition_v1(sws.world_state.clone(), tx.clone(), bd.clone());
+    let result = pchain_runtime::Runtime::new().transition_v1(
+        sws.world_state.clone(),
+        tx.clone(),
+        bd.clone(),
+    );
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.len(), 2);
     assert_eq!(
@@ -335,7 +365,7 @@ fn test_etoc_multiple_insufficient_gas() {
     assert_eq!(receipt.iter().last().unwrap().gas_used, 0);
     let sum_of_gas: u64 = receipt.iter().map(|r| r.gas_used).sum();
     assert_eq!(sum_of_gas, gas_consumed_1);
-    let sws_2: SimulateWorldState = result.new_state.into();
+    let sws_2: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check state unchange from contract
     let data = sws.get_storage_data(contract_address_1, vec![0u8]);
@@ -355,8 +385,11 @@ fn test_etoc_multiple_insufficient_gas() {
 
     // 3. Exhausted at third command
     tx.gas_limit = gas_consumed_1 + gas_consumed_2 + tx_base_cost;
-    let result =
-        pchain_runtime::Runtime::new().transition_v1(sws.world_state.clone(), tx.clone(), bd.clone());
+    let result = pchain_runtime::Runtime::new().transition_v1(
+        sws.world_state.clone(),
+        tx.clone(),
+        bd.clone(),
+    );
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.len(), 3);
     assert_eq!(
@@ -366,7 +399,7 @@ fn test_etoc_multiple_insufficient_gas() {
     assert_eq!(receipt.iter().last().unwrap().gas_used, 0);
     let sum_of_gas: u64 = receipt.iter().map(|r| r.gas_used).sum();
     assert_eq!(sum_of_gas, gas_consumed_1 + gas_consumed_2);
-    let sws_3: SimulateWorldState = result.new_state.into();
+    let sws_3: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check state unchange from contract
     let data = sws.get_storage_data(contract_address_1, vec![0u8]);
@@ -386,8 +419,11 @@ fn test_etoc_multiple_insufficient_gas() {
 
     // 4. Exhausted at third command (1 Gas difference)
     tx.gas_limit = gas_consumed_1 + gas_consumed_2 + gas_consumed_3 + tx_base_cost - 1;
-    let result =
-        pchain_runtime::Runtime::new().transition_v1(sws.world_state.clone(), tx.clone(), bd.clone());
+    let result = pchain_runtime::Runtime::new().transition_v1(
+        sws.world_state.clone(),
+        tx.clone(),
+        bd.clone(),
+    );
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.len(), 3);
     assert_eq!(
@@ -400,7 +436,7 @@ fn test_etoc_multiple_insufficient_gas() {
         sum_of_gas,
         gas_consumed_1 + gas_consumed_2 + gas_consumed_3 - 1
     );
-    let sws_4: SimulateWorldState = result.new_state.into();
+    let sws_4: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check state unchange from contract
     let data = sws.get_storage_data(contract_address_1, vec![0u8]);
@@ -431,12 +467,13 @@ fn test_etoc_panic() {
             .add(method_args.clone())
             .make_call(None, target, method_name)];
     tx.gas_limit = 10_000_000;
-    let tx_base_cost = tx_inclusion_cost_v1(tx.serialize().len(), tx.commands.len());
+    let tx_base_cost = tx_base_cost_v1(&tx);
     let bd = TestData::block_params();
     let base_fee_per_gas = bd.this_base_fee;
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let from_address = tx.signer;
     let to_address = target;
     let init_from_balance = 100_000_000;
@@ -447,8 +484,7 @@ fn test_etoc_panic() {
     assert_eq!(result.error, Some(TransitionError::RuntimeError));
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Failed);
-
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check from_address balance
     let gas_used = receipt.last().unwrap().gas_used + tx_base_cost;
@@ -478,23 +514,28 @@ fn test_etoc_insufficient_gas() {
             .add(method_args.clone())
             .make_call(Some(1), target, method_name)];
     success_tx.gas_limit = method_call_success_gas_consumption;
-    let tx_base_cost = tx_inclusion_cost_v1(success_tx.serialize().len(), success_tx.commands.len());
+    let tx_base_cost = tx_base_cost_v1(&success_tx);
+
     let bd = TestData::block_params();
     let base_fee_per_gas = bd.this_base_fee;
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let from_address = success_tx.signer;
     let to_address = target;
     let init_from_balance = (method_call_success_gas_consumption + 1) * bd.this_base_fee;
     sws.set_balance(from_address, init_from_balance);
     sws.add_contract(to_address, wasm_bytes, pchain_runtime::cbi_version());
 
-    let result =
-        pchain_runtime::Runtime::new().transition_v1(sws.world_state, success_tx.clone(), bd.clone());
+    let result = pchain_runtime::Runtime::new().transition_v1(
+        sws.world_state,
+        success_tx.clone(),
+        bd.clone(),
+    );
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let mut sws: SimulateWorldState = result.new_state.into();
+    let mut sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Obtain the gas_used and reset setup.
     let method_call_theoretical_gas_consumption = receipt.last().unwrap().gas_used + tx_base_cost;
@@ -508,20 +549,16 @@ fn test_etoc_insufficient_gas() {
         ..success_tx
     };
     let tx_gas_limit = tx.gas_limit;
-    let tx_base_cost = tx_inclusion_cost_v1(tx.serialize().len(), tx.commands.len());
+    let tx_base_cost = tx_base_cost_v1(&tx);
 
     let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd);
     let receipt = result.receipt.unwrap();
-    assert_eq!(
-        receipt.last().unwrap().exit_code,
-        ExitCodeV1::GasExhausted
-    );
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::GasExhausted);
     assert_eq!(
         receipt.last().unwrap().gas_used,
         tx_gas_limit - tx_base_cost
     );
-
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check from_address balance
     let gas_used = receipt.last().unwrap().gas_used + tx_base_cost;
@@ -552,7 +589,8 @@ fn test_etoc_host_functions() {
     let bd = TestData::block_params();
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let from_address = tx.signer;
     let to_address = target;
     let init_from_balance = 100_000_000;
@@ -594,13 +632,14 @@ fn test_ctoc() {
             "call_other_contract",
         )];
     tx.gas_limit = 100_000_000;
-    let tx_base_cost = tx_inclusion_cost_v1(tx.serialize().len(), tx.commands.len());
+    let tx_base_cost = tx_base_cost_v1(&tx);
 
     let bd = TestData::block_params();
     let base_fee_per_gas = bd.this_base_fee;
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let from_address = tx.signer;
     let to_address = contract_address_2;
     let init_from_balance = 1_000_000_000;
@@ -624,8 +663,7 @@ fn test_ctoc() {
     let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check from_address balance
     let gas_used = receipt.last().unwrap().gas_used + tx_base_cost;
@@ -670,21 +708,21 @@ fn test_ctoe() {
             "make_balance_transfer",
         )];
     tx.gas_limit = 10_000_000;
-    let tx_base_cost = tx_inclusion_cost_v1(tx.serialize().len(), tx.commands.len());
+    let tx_base_cost = tx_base_cost_v1(&tx);
 
     let bd = TestData::block_params();
     let base_fee_per_gas = bd.this_base_fee;
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     sws.set_balance(origin_address, init_from_balance);
     sws.add_contract(contract_addr, wasm_bytes, pchain_runtime::cbi_version());
 
     let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check origin_address balance
     let gas_used = receipt.last().unwrap().gas_used + tx_base_cost;
@@ -722,21 +760,21 @@ fn test_deploy() {
     let mut tx = TestData::transaction();
     tx.commands = vec![ArgsBuilder::new().make_deploy(wasm_bytes, 0)];
     tx.gas_limit = 400_000_000;
-    let tx_base_cost = tx_inclusion_cost_v1(tx.serialize().len(), tx.commands.len());
+    let tx_base_cost = tx_base_cost_v1(&tx);
 
     let bd = TestData::block_params();
     let base_fee_per_gas = bd.this_base_fee;
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = 5_000_000_000;
     sws.set_balance(origin_address, init_from_balance);
 
     let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check origin_address balance
     let gas_used = receipt.last().unwrap().gas_used + tx_base_cost;
@@ -771,13 +809,14 @@ fn test_deploy_invalid_entrypoint_contract() {
     let mut tx = TestData::transaction();
     tx.commands = vec![ArgsBuilder::new().make_deploy(wasm_bytes, 0)];
     tx.gas_limit = 20_500_000;
-    let tx_base_cost = tx_inclusion_cost_v1(tx.serialize().len(), tx.commands.len());
+    let tx_base_cost = tx_base_cost_v1(&tx);
 
     let bd = TestData::block_params();
     let base_fee_per_gas = bd.this_base_fee;
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = 500_000_000;
     sws.set_balance(origin_address, init_from_balance);
 
@@ -789,7 +828,7 @@ fn test_deploy_invalid_entrypoint_contract() {
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Failed);
     let gas_used = receipt.last().unwrap().gas_used + tx_base_cost;
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Verify the contract code not save to world state
     assert!(sws.get_contract_code(contract_address).is_none());
@@ -817,7 +856,8 @@ fn test_deploy_contract_with_invalid_opcode() {
     let bd = TestData::block_params();
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = 500_000_000;
     sws.set_balance(origin_address, init_from_balance);
 
@@ -837,24 +877,28 @@ fn test_deploy_insufficient_gas() {
     let mut success_tx = TestData::transaction();
     success_tx.commands = vec![ArgsBuilder::new().make_deploy(wasm_bytes, 0)];
     success_tx.gas_limit = method_call_success_gas_consumption;
-    let tx_base_cost = tx_inclusion_cost_v1(success_tx.serialize().len(), success_tx.commands.len());
 
     let bd = TestData::block_params();
     let base_fee_per_gas = bd.this_base_fee;
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = (method_call_success_gas_consumption + 1) * bd.this_base_fee;
     sws.set_balance(origin_address, init_from_balance);
 
-    let result =
-        pchain_runtime::Runtime::new().transition_v1(sws.world_state, success_tx.clone(), bd.clone());
+    let result = pchain_runtime::Runtime::new().transition_v1(
+        sws.world_state,
+        success_tx.clone(),
+        bd.clone(),
+    );
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let mut sws: SimulateWorldState = result.new_state.into();
+    let mut sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Obtain the gas_used and reset setup.
-    let method_call_theoretical_gas_consumption = receipt.last().unwrap().gas_used + tx_base_cost;
+    let method_call_theoretical_gas_consumption =
+        receipt.last().unwrap().gas_used + tx_base_cost_v1(&success_tx);
     let init_from_balance = method_call_theoretical_gas_consumption * bd.this_base_fee;
     sws.set_balance(origin_address, init_from_balance);
 
@@ -864,7 +908,7 @@ fn test_deploy_insufficient_gas() {
         ..success_tx
     };
     let tx_gas_limit = tx.gas_limit;
-    let tx_base_cost = tx_inclusion_cost_v1(tx.serialize().len(), tx.commands.len());
+    let tx_base_cost = tx_base_cost_v1(&tx);
 
     let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd);
     assert_eq!(
@@ -872,15 +916,12 @@ fn test_deploy_insufficient_gas() {
         Some(TransitionError::ExecutionProperGasExhausted)
     );
     let receipt = result.receipt.unwrap();
-    assert_eq!(
-        receipt.last().unwrap().exit_code,
-        ExitCodeV1::GasExhausted
-    );
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::GasExhausted);
     assert_eq!(
         receipt.last().unwrap().gas_used,
         tx_gas_limit - tx_base_cost
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check origin_address balance
     let gas_used = receipt.last().unwrap().gas_used + tx_base_cost;
@@ -908,8 +949,8 @@ fn test_memory_limited_contract_module() {
     tx.commands = vec![ArgsBuilder::new().make_deploy(wasm_bytes, 0)];
     tx.gas_limit = 400_000_000;
     let bd = TestData::block_params();
-
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     sws.set_balance(tx.signer, 5_000_000_000);
 
     // Within Memory limit
@@ -933,17 +974,17 @@ fn test_memory_limited_contract_module() {
 #[test]
 fn test_fail_in_pre_charge() {
     let tx = TestData::transaction();
-    let tx_base_cost = tx_inclusion_cost_v1(tx.serialize().len(), tx.commands.len());
     let bd = TestData::block_params();
 
     // initialize world state
-    let mut sws = SimulateWorldState::default();
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     let init_from_balance = 100_000_000;
     sws.set_balance(tx.signer, init_from_balance);
 
     // 1. gas limit is smaller than minimum required gas
     let tx1 = TransactionV1 {
-        gas_limit: tx_base_cost - 1,
+        gas_limit: tx_base_cost_v1(&tx) - 1,
         ..tx.clone()
     };
     let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx1, bd.clone());
@@ -952,7 +993,7 @@ fn test_fail_in_pre_charge() {
         result.error,
         Some(TransitionError::PreExecutionGasExhausted)
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // 2. nonce is incorrect
     let tx2 = TransactionV1 {
@@ -962,7 +1003,7 @@ fn test_fail_in_pre_charge() {
     let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx2, bd.clone());
     assert!(result.receipt.is_none());
     assert_eq!(result.error, Some(TransitionError::WrongNonce));
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // 3. balance is not enough
     let tx3 = TransactionV1 {
@@ -975,7 +1016,7 @@ fn test_fail_in_pre_charge() {
         result.error,
         Some(TransitionError::NotEnoughBalanceForGasLimit)
     );
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // check from_address balance (unchanged)
     let new_from_balance = sws.get_balance(tx.signer);

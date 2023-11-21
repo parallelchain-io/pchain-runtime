@@ -97,7 +97,6 @@ impl ContractModule {
     ) -> Result<ContractInstance<'a, S, V>, ()>
     where
         S: DB + Send + Sync + Clone + 'static,
-        // TODO this may be hacky, using static on V
         V: VersionProvider + Send + Sync + Clone + 'static,
     {
         let gas_limit = tx.gas_limit;

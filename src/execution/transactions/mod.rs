@@ -8,6 +8,13 @@ pub mod abort;
 pub mod execute_commands;
 
 pub mod phases;
+mod test;
 
 #[cfg(test)]
-mod test;
+mod tests {
+    mod basic;
+    mod next_epoch;
+    mod pool;
+    mod staking;
+    mod test_utils;
+}

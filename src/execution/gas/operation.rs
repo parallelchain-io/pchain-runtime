@@ -202,8 +202,7 @@ where
 {
     let key_len = chargeable_storage_trie_key_len(version, &address, key);
     let cost_change = CostChange::deduct(gas::contains_cost(key_len));
-    // TODO 92 - check out any last instances of app_
-    let ret = ws_cache.contains_app_data(address, key);
+    let ret = ws_cache.contains_storage_data(address, key);
     (ret, cost_change)
 }
 

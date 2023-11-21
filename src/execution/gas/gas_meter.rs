@@ -3,7 +3,6 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-use core::panic;
 use std::cell::RefCell;
 
 use pchain_types::cryptography::PublicAddress;
@@ -12,7 +11,7 @@ use pchain_world_state::{NetworkAccountStorage, VersionProvider, DB, NETWORK_ADD
 use crate::{
     contract::{ContractModule, SmartContractContext},
     gas,
-    types::{CommandOutput, TxnVersion},
+    types::{BaseTx, CommandKind, CommandOutput, TxnVersion},
     TransitionError,
 };
 
@@ -140,11 +139,18 @@ where
 
     pub fn charge_txn_pre_exec_inclusion(
         &mut self,
+        version: TxnVersion,
         tx_size: usize,
-        commands_len: usize,
+        tx_command_kinds: &Vec<CommandKind>,
     ) -> Result<(), TransitionError> {
         // stored separately because it is not considered to belong to a single command
-        let required_cost = gas::tx_inclusion_cost_v1(tx_size, commands_len);
+        let required_cost = match version {
+            TxnVersion::V1 => gas::tx_inclusion_cost_v1(tx_size, tx_command_kinds),
+            TxnVersion::V2 => gas::tx_inclusion_cost_v2(tx_size, tx_command_kinds),
+        };
+        println!("version {:?}", version);
+        println!("required_cost {:?}", required_cost);
+
         if required_cost > self.gas_limit {
             return Err(TransitionError::PreExecutionGasExhausted);
         } else {
@@ -267,20 +273,19 @@ where
     }
 }
 
-/// GasMeter implements NetworkAccountStorage with charegable read-write operations to world state
+/// GasMeter implements NetworkAccountStorage to expose CHARGEABLE read-write operations to the network world state
+/// such as when contracts interact with the network account's storage.
 impl<'a, S, V> NetworkAccountStorage for GasMeter<'a, S, V>
 where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone,
 {
-    fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        panic!("TODO");
-        // self.ws_get_storage_data(NETWORK_ADDRESS, key)
+    fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
+        self.ws_get_storage_data(NETWORK_ADDRESS, key)
     }
 
-    fn contains(&self, key: &[u8]) -> bool {
-        panic!("TODO");
-        // self.ws_contains_storage_data(NETWORK_ADDRESS, key)
+    fn contains(&mut self, key: &[u8]) -> bool {
+        self.ws_contains_storage_data(NETWORK_ADDRESS, key)
     }
 
     fn set(&mut self, key: &[u8], value: Vec<u8>) {
@@ -299,10 +304,15 @@ pub(crate) struct GasUsed {
 
 impl GasUsed {
     pub fn chargeable_cost(&self) -> u64 {
+        println!(
+            "CHARGEABLE---------------- cost_change {:?}",
+            self.cost_change.borrow()
+        );
         self.cost_change.borrow().values().0
     }
 
     pub fn charge(&self, cost_change: CostChange) {
+        println!("------------------- cost_change {:?}", cost_change);
         *self.cost_change.borrow_mut() += cost_change;
     }
 

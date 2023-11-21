@@ -1,8 +1,13 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use pchain_types::{blockchain::{ExitCodeV1, TransactionV1}, cryptography::contract_address_v1};
+use pchain_runtime::types::CommandKind;
+use pchain_types::{
+    blockchain::{ExitCodeV1, TransactionV1},
+    cryptography::contract_address_v1,
+};
+use pchain_world_state::V1;
 
 use crate::common::{
-    gas::extract_gas_used, ArgsBuilder, CallResult, SimulateWorldState,
+    gas::extract_gas_used, ArgsBuilder, CallResult, SimulateWorldState, SimulateWorldStateStorage,
     TestData,
 };
 
@@ -11,8 +16,9 @@ mod common;
 /// Simulate test to call smart contract which invokes method from another contract.
 #[test]
 fn test_ctoc_api() {
+    let storage = SimulateWorldStateStorage::default();
     let (mut sws, contract_addr_1, contract_addr_2) =
-        deploy_two_contracts("all_features", true, "all_features", true);
+        deploy_two_contracts("all_features", true, "all_features", true, &storage);
     let origin_address = [2u8; 32];
     sws.set_balance(origin_address, 300_000_000);
 
@@ -39,7 +45,7 @@ fn test_ctoc_api() {
     assert_eq!(extract_gas_used(&result), 2262500);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // make contract call from Second Contract to call get_data_only from First Contract.
     let function_args = Vec::<Vec<u8>>::new().try_to_vec().unwrap();
@@ -61,7 +67,7 @@ fn test_ctoc_api() {
     assert_eq!(extract_gas_used(&result), 4467014);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Check result of "call_other_contract" -> "get_data_only"
     let return_bs: Vec<u8> =
@@ -96,7 +102,7 @@ fn test_ctoc_api() {
     assert_eq!(extract_gas_used(&result), 4483108);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let mut sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     assert_eq!(
         sws.get_storage_data(contract_addr_1, vec![0u8]),
@@ -107,8 +113,9 @@ fn test_ctoc_api() {
 /// Simulate test to call smart contract which invokes another contract with multiple entrypoints by use_contract.
 #[test]
 fn test_ctoc_use_contract() {
+    let storage = SimulateWorldStateStorage::default();
     let (mut sws, _, contract_addr_2) =
-        deploy_two_contracts("basic_contract", false, "all_features", true);
+        deploy_two_contracts("basic_contract", false, "all_features", true, &storage);
     let origin_address = [2u8; 32];
     sws.set_balance(origin_address, 300_000_000);
 
@@ -134,7 +141,7 @@ fn test_ctoc_use_contract() {
     assert_eq!(extract_gas_used(&result), 3473496);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // Check result of "call_other_contract_using_macro" -> "hello".
     let return_bs: Vec<u8> =
@@ -173,7 +180,8 @@ fn test_ctoc_use_contract() {
     assert_eq!(extract_gas_used(&result), 3489103);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let _: SimulateWorldState = result.new_state.into();
+    // TODO this line would be redundant
+    // let _: SimulateWorldState = result.new_state.into();
 
     // Check the result of "call_other_contract_using_macro_with_input".
     let return_value: u32 =
@@ -197,8 +205,9 @@ fn test_ctoc_use_contract() {
 // Simulate test to call smart contract which invokes another contract with insufficient gas limit
 #[test]
 fn test_ctoc_with_insufficient_gas_limit() {
+    let storage = SimulateWorldStateStorage::default();
     let (mut sws, contract_addr_1, contract_addr_2) =
-        deploy_two_contracts("all_features", true, "all_features", true);
+        deploy_two_contracts("all_features", true, "all_features", true, &storage);
     let origin_address = [2u8; 32];
     sws.set_balance(origin_address, 300_000_000);
 
@@ -223,27 +232,25 @@ fn test_ctoc_with_insufficient_gas_limit() {
     };
     let tx_base_cost = pchain_runtime::gas::tx_inclusion_cost_v1(
         pchain_types::serialization::Serializable::serialize(&tx).len(),
-        tx.commands.len(),
+        &tx.commands.iter().map(CommandKind::from).collect(),
     );
     let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd.clone());
     assert_eq!(extract_gas_used(&result), 6862810);
     let receipt = result.receipt.unwrap();
-    assert_eq!(
-        receipt.last().unwrap().exit_code,
-        ExitCodeV1::GasExhausted
-    );
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::GasExhausted);
     assert_eq!(
         receipt.last().unwrap().gas_used,
         base_tx.gas_limit - tx_base_cost
     ); // tx.gas_limit - tx_base_cost
 }
 
-fn deploy_two_contracts(
+fn deploy_two_contracts<'a>(
     contract_name_1: &str,
     call_init_1: bool,
     contract_name_2: &str,
     call_init_2: bool,
-) -> (SimulateWorldState, [u8; 32], [u8; 32]) {
+    storage: &'a SimulateWorldStateStorage,
+) -> (SimulateWorldState<'a, V1>, [u8; 32], [u8; 32]) {
     let contract_code_1 = TestData::get_test_contract_code(contract_name_1);
     let contract_code_2 = TestData::get_test_contract_code(contract_name_2);
     let origin_address = TestData::get_origin_address();
@@ -252,7 +259,7 @@ fn deploy_two_contracts(
 
     let bd = TestData::block_params();
 
-    let mut sws = SimulateWorldState::default();
+    let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(storage);
     let init_from_balance = 500_000_000_000;
     sws.set_balance(origin_address, init_from_balance);
 
@@ -271,8 +278,9 @@ fn deploy_two_contracts(
 
     let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd.clone());
     let receipt = result.receipt.unwrap();
+    println!("receipt: {:?}", receipt);
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     let deploy_2 = if call_init_2 {
         ArgsBuilder::new()
@@ -292,7 +300,7 @@ fn deploy_two_contracts(
     assert_eq!(extract_gas_used(&result), 220290230);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    let sws: SimulateWorldState = result.new_state.into();
+    let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     (sws, contract_address_1, contract_address_2)
 }

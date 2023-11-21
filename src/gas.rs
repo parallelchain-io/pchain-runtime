@@ -37,6 +37,8 @@
 
 use wasmer::wasmparser::Operator;
 
+use crate::types::CommandKind;
+
 /// wasm_opcode_gas_schedule maps between a WASM Operator to the cost of executing it. It
 /// specifies the gas cost of executing every legal opcode for the smart contract method calls.
 pub fn wasm_opcode_gas_schedule(operator: &Operator) -> u64 {
@@ -214,10 +216,16 @@ pub const fn ceil_div_8(l: u64) -> u64 {
 
 /// Cost of including 1 byte of data in a Block as part of a transaction or a receipt.
 pub const BLOCKCHAIN_WRITE_PER_BYTE_COST: u64 = 30;
-/// Serialized size of a receipt containing empty command receipts.
-pub const MIN_RECP_SIZE: u64 = 4;
-/// Serialized size of a minimum-size command receipt.
-pub const MIN_CMDRECP_SIZE: u64 = 17;
+/// Serialized size of a ReceiptV1 containing empty command receipts
+pub const MIN_RECP_SIZE_V1: u64 = 4;
+/// Serialized size of a ReceiptV2 containing empty command receipts
+pub const MIN_RECP_SIZE_V2: u64 = 13;
+/// Serialized size of a minimum-size CommandReceiptV1.
+pub const MIN_CMDRECP_SIZE_V1: u64 = 17;
+/// Serialized size of a CommandReceiptV2 with common fields only.
+pub const MIN_CMDRECP_SIZE_V2_BASIC: u64 = 9;
+/// Serialized size of a CommandReceiptV2 with custom fields for certain commands.
+pub const MIN_CMDRECP_SIZE_V2_EXTENDED: u64 = 17;
 
 /// tx_inclusion_cost is the minimum cost for a transaction to be included in the blockchain.
 ///
@@ -229,11 +237,13 @@ pub const MIN_CMDRECP_SIZE: u64 = 17;
 ///     - signer's balance during two phases
 ///     - proposer's balance
 ///     - treasury's balance
-pub fn tx_inclusion_cost_v1(tx_size: usize, commands_len: usize) -> u64 {
+pub fn tx_inclusion_cost_v1(tx_size: usize, commands: &Vec<CommandKind>) -> u64 {
     // (1) Transaction storage size
     let tx_size = tx_size as u64;
+    println!("TODO v1 - tx_size: {}", tx_size);
     // (2) Minimum size of receipt
-    let min_receipt_size = minimum_receipt_size(commands_len);
+    let min_receipt_size = minimum_receipt_size_v1(commands);
+    println!("TODO v1 - min_receipt_size: {}", min_receipt_size);
     // (3) Cost for 5 read-write operations
     let rw_key_cost = (
         // Read cost
@@ -243,6 +253,7 @@ pub fn tx_inclusion_cost_v1(tx_size: usize, commands_len: usize) -> u64 {
             .saturating_add(set_cost_rehash(ACCOUNT_TRIE_KEY_LENGTH))
     )
     .saturating_mul(5);
+    println!("TODO v1 - rw_key_cost: {}", rw_key_cost);
 
     // Multiply by blockchain storage write cost and add the cost of 5 read-write operations.
     tx_size
@@ -254,12 +265,13 @@ pub fn tx_inclusion_cost_v1(tx_size: usize, commands_len: usize) -> u64 {
 /// tx_inclusion_cost is the minimum cost for a transaction to be included in the blockchain.
 ///
 /// [V1](tx_inclusion_cost_v1) -> V2:
-/// - TODO 100 https://hackmd.io/@V8G7dGj7QPG84VX_SNL6Wg/HkL1cff0n#Gas, needs to iter through commands
-pub fn tx_inclusion_cost_v2(tx_size: usize, commands_len: usize) -> u64 {
+pub fn tx_inclusion_cost_v2(tx_size: usize, commands: &Vec<CommandKind>) -> u64 {
     // (1) Transaction storage size
     let tx_size = tx_size as u64;
+    println!("TODO v2 - tx_size: {}", tx_size);
     // (2) Minimum size of receipt
-    let min_receipt_size = minimum_receipt_size(commands_len);
+    let min_receipt_size = minimum_receipt_size_v2(commands);
+    println!("TODO v2 - min_receipt_size: {}", min_receipt_size);
     // (3) Cost for 5 read-write operations
     let rw_key_cost = (
         // Read cost
@@ -269,6 +281,7 @@ pub fn tx_inclusion_cost_v2(tx_size: usize, commands_len: usize) -> u64 {
             .saturating_add(set_cost_rehash(ACCOUNT_TRIE_KEY_LENGTH))
     )
     .saturating_mul(5);
+    println!("TODO v2 - rw_key_cost: {}", rw_key_cost);
 
     // Multiply by blockchain storage write cost and add the cost of 5 read-write operations.
     tx_size
@@ -277,9 +290,29 @@ pub fn tx_inclusion_cost_v2(tx_size: usize, commands_len: usize) -> u64 {
         .saturating_add(rw_key_cost)
 }
 
-/// Serialized size of a receipt containing `commands_len` minimum-sized command receipts.
-pub const fn minimum_receipt_size(commands_len: usize) -> u64 {
-    MIN_RECP_SIZE.saturating_add(MIN_CMDRECP_SIZE.saturating_mul(commands_len as u64))
+/// Serialized size of a ReceiptV1 for Vec<CommandKind> containing minimum-sized command receipts.
+///
+pub fn minimum_receipt_size_v1(commands: &Vec<CommandKind>) -> u64 {
+    MIN_RECP_SIZE_V1.saturating_add(MIN_CMDRECP_SIZE_V1.saturating_mul(commands.len() as u64))
+}
+
+/// Serialized size of a ReceiptV2 for Vec<CommandKind> containing minimum-sized command receipts.
+pub fn minimum_receipt_size_v2(commands: &Vec<CommandKind>) -> u64 {
+    MIN_RECP_SIZE_V2.saturating_add(
+        commands
+            .iter()
+            .fold(0, |acc, cmd| acc.saturating_add(cmd_recp_min_size_v2(cmd))),
+    )
+}
+
+fn cmd_recp_min_size_v2(command: &CommandKind) -> u64 {
+    match command {
+        CommandKind::Call
+        | CommandKind::WithdrawDeposit
+        | CommandKind::StakeDeposit
+        | CommandKind::UnstakeDeposit => MIN_CMDRECP_SIZE_V2_EXTENDED,
+        _ => MIN_CMDRECP_SIZE_V2_BASIC,
+    }
 }
 
 /// blockchain_return_values_cost calculates the cost of writing return data into the receipt.
@@ -343,14 +376,9 @@ pub const fn set_cost_read_key(key_len: usize, value_len: usize) -> u64 {
 
 /// Set Cost (2): Cost for deleting the old value for a refund.
 #[allow(clippy::double_comparisons)]
-pub const fn set_cost_delete_old_value(
-    key_len: usize,
-    old_val_len: usize,
-    new_val_len: usize,
-) -> u64 {
+pub fn set_cost_delete_old_value(key_len: usize, old_val_len: usize, new_val_len: usize) -> u64 {
     let old_val_len = old_val_len as u64; // (a)
     let new_val_len = new_val_len as u64; // (b)
-
     if (old_val_len > 0 || old_val_len == 0) && new_val_len > 0 {
         // a * C_write * C_refund
         old_val_len
