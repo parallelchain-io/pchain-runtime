@@ -24,7 +24,7 @@ fn test_ctoc_api() {
 
     let bd = TestData::block_params();
 
-    let mut base_tx = TestData::transaction();
+    let mut base_tx = TestData::transaction_v1();
     base_tx.signer = origin_address;
     base_tx.gas_limit = 200_000_000;
 
@@ -120,7 +120,7 @@ fn test_ctoc_use_contract() {
     sws.set_balance(origin_address, 300_000_000);
 
     let bd = TestData::block_params();
-    let mut base_tx = TestData::transaction();
+    let mut base_tx = TestData::transaction_v1();
     base_tx.signer = origin_address;
     base_tx.gas_limit = 200_000_000;
 
@@ -180,8 +180,6 @@ fn test_ctoc_use_contract() {
     assert_eq!(extract_gas_used(&result), 3489103);
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
-    // TODO this line would be redundant
-    // let _: SimulateWorldState = result.new_state.into();
 
     // Check the result of "call_other_contract_using_macro_with_input".
     let return_value: u32 =
@@ -213,7 +211,7 @@ fn test_ctoc_with_insufficient_gas_limit() {
 
     let bd = TestData::block_params();
 
-    let mut base_tx = TestData::transaction();
+    let mut base_tx = TestData::transaction_v1();
     base_tx.signer = origin_address;
     base_tx.gas_limit = 7_000_000;
 
@@ -271,7 +269,7 @@ fn deploy_two_contracts<'a>(
         ArgsBuilder::new().make_deploy(contract_code_1, 0)
     };
     // 0a. deploy first contract
-    let mut tx = TestData::transaction();
+    let mut tx = TestData::transaction_v1();
     tx.signer = origin_address;
     tx.commands = vec![deploy_1];
     tx.gas_limit = 300_000_000;
@@ -290,7 +288,7 @@ fn deploy_two_contracts<'a>(
         ArgsBuilder::new().make_deploy(contract_code_2, 0)
     };
     // 0b. deploy second contract
-    let mut tx = TestData::transaction();
+    let mut tx = TestData::transaction_v1();
     tx.signer = origin_address;
     tx.commands = vec![deploy_2];
     tx.nonce = 1;

@@ -3,7 +3,6 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-// TODO
 //! Defines struct which holds the contract Wasm instance and Env metadata
 //! and exposes an entry point for calling contract methods
 //!

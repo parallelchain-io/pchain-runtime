@@ -15,6 +15,9 @@ use crate::contract::{wasmer::instance::MethodCallError, FuncError};
 /// Descriptive error definitions of a Transition
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TransitionError {
+    /// Failed to upgrade World State
+    FailedWorldStateUpgrade,
+
     /// Nonce is not current nonce.
     WrongNonce,
 

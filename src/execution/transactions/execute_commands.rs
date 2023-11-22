@@ -58,14 +58,12 @@ where
     let mut command_index = 0;
 
     while let Some(executable_cmd) = executable_commands.next_command() {
-        // Increment index per user sent command
         let is_txn_sent_cmd = executable_cmd.is_txn_sent();
-        if is_txn_sent_cmd {
-            command_index += 1;
-        }
 
         // Execute command
         let cmd_kind = executable_cmd.command_kind();
+        // println!("executing command: {:?}", executable_cmd);
+        println!("cmd idx: {:?}", command_index);
         let execution_result = executable_cmd.consume_and_execute(&mut state, command_index);
 
         let deferred_cmds_from_execution = P::handle_command_execution_result(
@@ -89,6 +87,11 @@ where
                 // Phase: Charge (abort)
                 return P::handle_abort(state, error);
             }
+        }
+
+        // Increment index per user sent command
+        if is_txn_sent_cmd {
+            command_index += 1;
         }
     }
 

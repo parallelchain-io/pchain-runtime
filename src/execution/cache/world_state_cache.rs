@@ -25,7 +25,7 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use pchain_types::cryptography::PublicAddress;
-use pchain_world_state::{StorageTrie, VersionProvider, WorldState, DB};
+use pchain_world_state::{VersionProvider, WorldState, DB};
 
 // TODO - change to 'static
 

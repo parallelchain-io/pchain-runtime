@@ -28,7 +28,7 @@ fn test_success_ctoe() {
     sws.set_balance(origin_address, init_from_balance);
 
     // 0. deploy contract
-    let mut tx = TestData::transaction();
+    let mut tx = TestData::transaction_v1();
     tx.signer = origin_address;
     tx.gas_limit = 300_000_000;
     tx.commands = vec![ArgsBuilder::new()
@@ -40,7 +40,7 @@ fn test_success_ctoe() {
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
-    let mut base_tx = TestData::transaction();
+    let mut base_tx = TestData::transaction_v1();
     base_tx.signer = origin_address;
     base_tx.gas_limit = 100_000_000;
 
@@ -126,7 +126,7 @@ fn test_ctoe_tx_with_insufficient_balance() {
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
     let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
-    let mut base_tx = TestData::transaction();
+    let mut base_tx = TestData::transaction_v1();
     base_tx.signer = origin_address;
     base_tx.gas_limit = 100_000_000;
 

@@ -11,7 +11,7 @@ use pchain_world_state::{NetworkAccountStorage, VersionProvider, DB, NETWORK_ADD
 use crate::{
     contract::{ContractModule, SmartContractContext},
     gas,
-    types::{BaseTx, CommandKind, CommandOutput, TxnVersion},
+    types::{CommandKind, CommandOutput, TxnVersion},
     TransitionError,
 };
 

@@ -654,8 +654,6 @@ fn test_stake_deposit_delegated_stakes_insert() {
     ));
 }
 
-// TODO stop here
-
 // Prepare: pool (account c), with maximum number of stakes in world state, stakes (account b) is the minimum value.
 // Prepare: deposits (account b) to pool (account c)
 // Commands (account b): Stake Deposit (to be included in delegated stakes, but not the minimum one)
@@ -708,14 +706,14 @@ fn test_stake_deposit_delegated_stakes_change_key() {
 
     /* Version 2 */
     let fixture = TestFixture::new();
-    let mut state = create_state_v1(Some(fixture.ws()));
+    let mut state = create_state_v2(Some(fixture.ws()));
     create_full_stakes_in_pool(&mut state, ACCOUNT_C);
     let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_C, ACCOUNT_B);
     deposit.set_balance(310_000);
     deposit.set_auto_stake_rewards(false);
 
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
-    let mut state = create_state_v1(Some(ws));
+    let mut state = create_state_v2(Some(ws));
     let prev_pool_power = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_C)
         .power()
         .unwrap();
@@ -723,21 +721,27 @@ fn test_stake_deposit_delegated_stakes_change_key() {
         operator: ACCOUNT_C,
         max_amount: 110_000,
     })];
-    set_tx(&mut state, ACCOUNT_B, 0, &commands);
-    let ret = execute_commands_v1(state, commands);
-    assert_eq!(
-        (
-            &ret.error,
-            &ret.receipt.as_ref().unwrap().last().unwrap().exit_code
-        ),
-        (&None, &ExitCodeV1::Success)
-    );
-    assert_eq!(
-        ret.receipt.as_ref().unwrap().last().unwrap().return_values,
-        110_000_u64.to_le_bytes().to_vec()
-    );
-    assert_eq!(extract_gas_used(&ret), 542720);
-    let mut state = create_state_v1(Some(ret.new_state));
+    set_tx_v2(&mut state, ACCOUNT_B, 0, &commands);
+    let ret = execute_commands_v2(state, commands);
+    assert!(ret.error.is_none());
+    println!("{:?}", ret.receipt);
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        613800,
+        480000,
+        ExitCodeV2::Ok,
+        0
+    ));
+    if let Some(CommandReceiptV2::StakeDeposit(cr)) =
+        ret.receipt.as_ref().unwrap().command_receipts.last()
+    {
+        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
+        assert_eq!(cr.amount_staked, 110_000);
+    } else {
+        panic!("Stake deposit command receipt expected");
+    }
+
+    let mut state = create_state_v2(Some(ret.new_state));
 
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_C);
     let cur_pool_power = pool.power().unwrap();
@@ -802,6 +806,57 @@ fn test_stake_deposit_delegated_stakes_existing() {
     let mut delegated_stakes = pool.delegated_stakes();
     let delegated_stake = delegated_stakes.get_by(&ACCOUNT_B).unwrap();
     assert_eq!(delegated_stake.power, 90_000);
+
+    /* Version 2 */
+    let fixture = TestFixture::new();
+    let mut state = create_state_v2(Some(fixture.ws()));
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+    pool.set_operator(ACCOUNT_A);
+    pool.set_power(100_000);
+    pool.set_commission_rate(1);
+    pool.set_operator_stake(None);
+    pool.delegated_stakes()
+        .insert(StakeValue::new(Stake {
+            owner: ACCOUNT_B,
+            power: 50_000,
+        }))
+        .unwrap();
+    let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_B);
+    deposit.set_balance(100_000);
+    deposit.set_auto_stake_rewards(false);
+
+    let ws = state.ctx.into_ws_cache().commit_to_world_state();
+    let mut state = create_state_v2(Some(ws));
+    let commands = vec![Command::StakeDeposit(StakeDepositInput {
+        operator: ACCOUNT_A,
+        max_amount: 40_000,
+    })];
+    set_tx_v2(&mut state, ACCOUNT_B, 0, &commands);
+    let ret = execute_commands_v2(state, commands);
+    assert!(ret.error.is_none());
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        411660,
+        277860,
+        ExitCodeV2::Ok,
+        0
+    ));
+    if let Some(CommandReceiptV2::StakeDeposit(cr)) =
+        ret.receipt.as_ref().unwrap().command_receipts.last()
+    {
+        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
+        assert_eq!(cr.amount_staked, 40_000);
+    } else {
+        panic!("Stake deposit command receipt expected");
+    }
+
+    let mut state = create_state_v2(Some(ret.new_state));
+
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+    assert_eq!(pool.power().unwrap(), 140_000);
+    let mut delegated_stakes = pool.delegated_stakes();
+    let delegated_stake = delegated_stakes.get_by(&ACCOUNT_B).unwrap();
+    assert_eq!(delegated_stake.power, 90_000);
 }
 
 // Prepare: pool (account a) in world state
@@ -849,6 +904,53 @@ fn test_stake_deposit_same_owner() {
     assert_eq!(pool.power().unwrap(), 120_000);
     let mut delegated_stakes = pool.delegated_stakes();
     assert_eq!(delegated_stakes.length(), 0);
+
+    /* Version 2 */
+    let fixture = TestFixture::new();
+    let mut state = create_state_v2(Some(fixture.ws()));
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+    pool.set_operator(ACCOUNT_A);
+    pool.set_power(100_000);
+    pool.set_commission_rate(1);
+    pool.set_operator_stake(None);
+    let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_A);
+    deposit.set_balance(150_000);
+    deposit.set_auto_stake_rewards(false);
+
+    let ws = state.ctx.into_ws_cache().commit_to_world_state();
+    let state = create_state_v2(Some(ws));
+    let ret = execute_commands_v2(
+        state,
+        vec![Command::StakeDeposit(StakeDepositInput {
+            operator: ACCOUNT_A,
+            max_amount: 20_000,
+        })],
+    );
+    assert!(ret.error.is_none());
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        426820,
+        294760,
+        ExitCodeV2::Ok,
+        0
+    ));
+    if let Some(CommandReceiptV2::StakeDeposit(cr)) =
+        ret.receipt.as_ref().unwrap().command_receipts.last()
+    {
+        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
+        assert_eq!(cr.amount_staked, 20_000);
+    } else {
+        panic!("Stake deposit command receipt expected");
+    }
+
+    let mut state = create_state_v2(Some(ret.new_state));
+
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+    let operator_state = pool.operator_stake().unwrap().unwrap();
+    assert_eq!(operator_state.power, 20_000);
+    assert_eq!(pool.power().unwrap(), 120_000);
+    let mut delegated_stakes = pool.delegated_stakes();
+    assert_eq!(delegated_stakes.length(), 0);
 }
 
 // Prepare: set maximum number of pools in world state, pool (account a) has the minimum power.
@@ -886,6 +988,69 @@ fn test_stake_deposit_same_owner_nvp_change_key() {
     );
     assert_eq!(extract_gas_used(&ret), 420710);
     let mut state = create_state_v1(Some(ret.new_state));
+
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+    assert_eq!(pool.power().unwrap(), 210_000);
+    assert_eq!(pool.operator_stake().unwrap().unwrap().power, 210_000);
+    assert_eq!(
+        NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
+        TEST_MAX_VALIDATOR_SET_SIZE as u32
+    );
+    assert_eq!(
+        NetworkAccount::nvp(&mut state.ctx.gas_meter)
+            .get(0)
+            .unwrap()
+            .operator,
+        [
+            2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1
+        ]
+    );
+    assert_eq!(
+        NetworkAccount::nvp(&mut state.ctx.gas_meter)
+            .get(0)
+            .unwrap()
+            .power,
+        200_000
+    );
+
+    /* Version 2 */
+    let fixture = TestFixture::new();
+    let mut state = create_state_v2(Some(fixture.ws()));
+    create_full_pools_in_nvp(&mut state, false, false);
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+    assert_eq!(pool.power().unwrap(), 100_000);
+    let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_A);
+    deposit.set_balance(210_000);
+    deposit.set_auto_stake_rewards(false);
+
+    let ws = state.ctx.into_ws_cache().commit_to_world_state();
+    let mut state = create_state_v2(Some(ws));
+    let commands = vec![Command::StakeDeposit(StakeDepositInput {
+        operator: ACCOUNT_A,
+        max_amount: 110_000,
+    })];
+    set_tx_v2(&mut state, ACCOUNT_A, 0, &commands);
+    let ret = execute_commands_v2(state, commands);
+
+    assert!(ret.error.is_none());
+    println!("{:?}", ret.receipt);
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        503310,
+        369510,
+        ExitCodeV2::Ok,
+        0
+    ));
+    if let Some(CommandReceiptV2::StakeDeposit(cr)) =
+        ret.receipt.as_ref().unwrap().command_receipts.last()
+    {
+        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
+        assert_eq!(cr.amount_staked, 110_000);
+    } else {
+        panic!("Stake deposit command receipt expected");
+    }
+    let mut state = create_state_v2(Some(ret.new_state));
 
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     assert_eq!(pool.power().unwrap(), 210_000);
@@ -976,6 +1141,72 @@ fn test_stake_deposit_same_owner_nvp_insert() {
             .power,
         150_000
     );
+
+    /* Version 2 */
+    let fixture = TestFixture::new();
+    let mut state = create_state_v2(Some(fixture.ws()));
+    create_full_pools_in_nvp(&mut state, false, false);
+    assert!(NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_C)
+        .operator()
+        .is_none());
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_C);
+    pool.set_operator(ACCOUNT_C);
+    pool.set_commission_rate(1);
+    pool.set_power(0);
+    pool.set_operator_stake(None);
+    let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_C, ACCOUNT_C);
+    deposit.set_balance(150_000);
+    deposit.set_auto_stake_rewards(false);
+
+    let ws = state.ctx.into_ws_cache().commit_to_world_state();
+    let mut state = create_state_v2(Some(ws));
+    let commands = vec![Command::StakeDeposit(StakeDepositInput {
+        operator: ACCOUNT_C,
+        max_amount: 150_000,
+    })];
+    set_tx_v2(&mut state, ACCOUNT_C, 0, &commands);
+    let ret = execute_commands_v2(state, commands);
+    assert!(ret.error.is_none());
+    println!("{:?}", ret.receipt);
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        2199290,
+        2065490,
+        ExitCodeV2::Ok,
+        0
+    ));
+    if let Some(CommandReceiptV2::StakeDeposit(cr)) =
+        ret.receipt.as_ref().unwrap().command_receipts.last()
+    {
+        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
+        assert_eq!(cr.amount_staked, 150_000);
+    } else {
+        panic!("Stake deposit command receipt expected");
+    }
+
+    let mut state = create_state_v2(Some(ret.new_state));
+
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_C);
+    assert_eq!(pool.power().unwrap(), 150_000);
+    assert_eq!(pool.operator_stake().unwrap().unwrap().power, 150_000);
+    assert_eq!(
+        NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
+        TEST_MAX_VALIDATOR_SET_SIZE as u32
+    );
+    assert_eq!(
+        NetworkAccount::nvp(&mut state.ctx.gas_meter)
+            .get(0)
+            .unwrap()
+            .operator,
+        ACCOUNT_C
+    );
+    assert_eq!(
+        NetworkAccount::nvp(&mut state.ctx.gas_meter)
+            .get(0)
+            .unwrap()
+            .power,
+        150_000
+    );
 }
 
 // Prepare: pool (account a) in world state, with non-zero value of Operator Stake
@@ -1019,6 +1250,57 @@ fn test_stake_deposit_same_owner_existing() {
     );
     assert_eq!(extract_gas_used(&ret), 277880);
     let mut state = create_state_v1(Some(ret.new_state));
+
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+    let operator_state = pool.operator_stake().unwrap().unwrap();
+    assert_eq!(operator_state.power, 90_000);
+    assert_eq!(pool.power().unwrap(), 110_000);
+    let mut delegated_stake = pool.delegated_stakes();
+    assert_eq!(delegated_stake.length(), 0);
+
+    /* Version 2 */
+    let fixture = TestFixture::new();
+    let mut state = create_state_v2(Some(fixture.ws()));
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+    pool.set_operator(ACCOUNT_A);
+    pool.set_power(100_000);
+    pool.set_commission_rate(1);
+    pool.set_operator_stake(Some(Stake {
+        owner: ACCOUNT_A,
+        power: 80_000,
+    }));
+    let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_A);
+    deposit.set_balance(100_000);
+    deposit.set_auto_stake_rewards(false);
+
+    let ws = state.ctx.into_ws_cache().commit_to_world_state();
+    let state = create_state_v2(Some(ws));
+    let ret = execute_commands_v2(
+        state,
+        vec![Command::StakeDeposit(StakeDepositInput {
+            operator: ACCOUNT_A,
+            max_amount: 10_000,
+        })],
+    );
+    assert!(ret.error.is_none());
+    println!("{:?}", ret.receipt);
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        380820,
+        248760,
+        ExitCodeV2::Ok,
+        0
+    ));
+    if let Some(CommandReceiptV2::StakeDeposit(cr)) =
+        ret.receipt.as_ref().unwrap().command_receipts.last()
+    {
+        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
+        assert_eq!(cr.amount_staked, 10_000);
+    } else {
+        panic!("Stake deposit command receipt expected");
+    }
+
+    let mut state = create_state_v2(Some(ret.new_state));
 
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
     let operator_state = pool.operator_stake().unwrap().unwrap();
@@ -1152,6 +1434,154 @@ fn test_unstake_deposit_delegated_stakes() {
     let ret = execute_commands_v1(state, commands);
     assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
     assert_eq!(extract_gas_used(&ret), 4600);
+
+    /* Version 2 */
+    let fixture = TestFixture::new();
+    let mut state = create_state_v2(Some(fixture.ws()));
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+    pool.set_operator(ACCOUNT_A);
+    pool.set_power(100_000);
+    pool.set_commission_rate(1);
+    pool.set_operator_stake(None);
+    pool.delegated_stakes()
+        .insert(StakeValue::new(Stake {
+            owner: ACCOUNT_B,
+            power: 50_000,
+        }))
+        .unwrap();
+    let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_B);
+    deposit.set_balance(100_000);
+    deposit.set_auto_stake_rewards(false);
+
+    let ws = state.ctx.into_ws_cache().commit_to_world_state();
+    let mut state = create_state_v2(Some(ws));
+    let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
+        operator: ACCOUNT_A,
+        max_amount: 40_000,
+    })];
+    set_tx_v2(&mut state, ACCOUNT_B, 0, &commands);
+    let ret = execute_commands_v2(state, commands);
+    assert!(ret.error.is_none());
+    println!("{:?}", ret.receipt);
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        409280,
+        275480,
+        ExitCodeV2::Ok,
+        0
+    ));
+    if let Some(CommandReceiptV2::UnstakeDeposit(cr)) =
+        ret.receipt.as_ref().unwrap().command_receipts.last()
+    {
+        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
+        assert_eq!(cr.amount_unstaked, 40_000);
+    } else {
+        panic!("Unstake deposit command receipt expected");
+    }
+
+    let mut state = create_state_v2(Some(ret.new_state));
+
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+    assert_eq!(pool.power().unwrap(), 60_000);
+    let mut delegated_stakes = pool.delegated_stakes();
+    let delegated_stake = delegated_stakes.get_by(&ACCOUNT_B).unwrap();
+    assert_eq!(delegated_stake.power, 10_000);
+
+    ///// Exceptions: /////
+    let mut state = create_state_v2(Some(state.ctx.into_ws_cache().ws));
+    let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
+        operator: ACCOUNT_C,
+        max_amount: 40_000,
+    })];
+    set_tx_v2(&mut state, ACCOUNT_B, 1, &commands);
+    let ret = execute_commands_v2(state, commands);
+    assert_eq!(ret.error, Some(TransitionError::DepositsNotExists));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        135780,
+        1980,
+        ExitCodeV2::Error,
+        0
+    ));
+
+    // create Pool and deposit first
+    let mut state = create_state_v2(Some(ret.new_state));
+    let commands = vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })];
+    set_tx_v2(&mut state, ACCOUNT_C, 0, &commands);
+    let ret = execute_commands_v2(state, commands);
+    assert_eq!(ret.error, None);
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        592620,
+        460230,
+        ExitCodeV2::Ok,
+        0
+    ));
+    let mut state = create_state_v2(Some(ret.new_state));
+    let commands = vec![Command::CreateDeposit(CreateDepositInput {
+        operator: ACCOUNT_C,
+        balance: 10_000,
+        auto_stake_rewards: false,
+    })];
+    set_tx_v2(&mut state, ACCOUNT_B, 2, &commands);
+    let ret = execute_commands_v2(state, commands);
+    println!("{:?}", ret.receipt);
+    assert_eq!(ret.error, None);
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        205520,
+        71930,
+        ExitCodeV2::Ok,
+        0
+    ));
+    // and then UnstakeDeposit
+    let mut state = create_state_v2(Some(ret.new_state));
+    let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
+        operator: ACCOUNT_C,
+        max_amount: 10_000,
+    })];
+    set_tx_v2(&mut state, ACCOUNT_B, 3, &commands);
+    let ret = execute_commands_v2(state, commands);
+
+    println!("{:?}", ret.receipt);
+    assert_eq!(ret.error, Some(TransitionError::PoolHasNoStakes));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        140860,
+        7060,
+        ExitCodeV2::Error,
+        0
+    ));
+
+    // // delete pool first
+    let state = create_state_v2(Some(ret.new_state));
+    let ret = execute_commands_v2(state, vec![Command::DeletePool]);
+    println!("{:?}", ret.receipt);
+    assert_eq!(ret.error, None);
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        132060,
+        0,
+        ExitCodeV2::Ok,
+        0
+    ));
+    // then UnstakeDeposit
+    let mut state = create_state_v2(Some(ret.new_state));
+    let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
+        operator: ACCOUNT_A,
+        max_amount: 10_000,
+    })];
+    set_tx_v2(&mut state, ACCOUNT_B, 4, &commands);
+    let ret = execute_commands_v2(state, commands);
+    println!("{:?}", ret.receipt);
+    assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        137120,
+        3320,
+        ExitCodeV2::Error,
+        0
+    ));
 }
 
 // Prepare: pool (account a) in world state, with delegated stakes of account X, X has the biggest stake
@@ -1198,6 +1628,64 @@ fn test_unstake_deposit_delegated_stakes_remove() {
     assert_eq!(extract_gas_used(&ret), 0);
     let mut state = create_state_v1(Some(ret.new_state));
 
+    let new_pool_power = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
+        .power()
+        .unwrap();
+    assert_eq!(origin_pool_power - new_pool_power, stake.power);
+    let stakers = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
+        .delegated_stakes()
+        .unordered_values();
+    assert!(!stakers.iter().any(|v| v.owner == biggest));
+    assert!(NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
+        .delegated_stakes()
+        .get_by(&biggest)
+        .is_none());
+
+    /* Version 2 */
+    let fixture = TestFixture::new();
+    let mut state = create_state_v2(Some(fixture.ws()));
+    create_full_deposits_in_pool(&mut state, ACCOUNT_A, false);
+    create_full_stakes_in_pool(&mut state, ACCOUNT_A);
+    let biggest = [
+        129u8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2,
+    ];
+    state.ctx.gas_meter.ws_set_balance(biggest, 500_000_000);
+    let origin_pool_power = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
+        .power()
+        .unwrap();
+    let stake = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
+        .delegated_stakes()
+        .get_by(&biggest)
+        .unwrap();
+
+    let ws = state.ctx.into_ws_cache().commit_to_world_state();
+    let mut state = create_state_v2(Some(ws));
+    let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
+        operator: ACCOUNT_A,
+        max_amount: stake.power,
+    })];
+    set_tx_v2(&mut state, biggest, 0, &commands);
+    let ret = execute_commands_v2(state, commands);
+    assert!(ret.error.is_none());
+    println!("{:?}", ret.receipt);
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        133800,
+        0,
+        ExitCodeV2::Ok,
+        0
+    ));
+    if let Some(CommandReceiptV2::UnstakeDeposit(cr)) =
+        ret.receipt.as_ref().unwrap().command_receipts.last()
+    {
+        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
+        assert_eq!(cr.amount_unstaked, 12_900_000);
+    } else {
+        panic!("Unstake deposit command receipt expected");
+    }
+
+    let mut state = create_state_v2(Some(ret.new_state));
     let new_pool_power = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
         .power()
         .unwrap();
@@ -1280,6 +1768,73 @@ fn test_unstake_deposit_delegated_stakes_nvp_change_key() {
             .power,
         50_000
     );
+
+    /* Version 2 */
+    let fixture = TestFixture::new();
+    let mut state = create_state_v2(Some(fixture.ws()));
+    create_full_pools_in_nvp(&mut state, false, false);
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
+    assert_eq!(pool.power().unwrap(), 200_000);
+    pool.delegated_stakes()
+        .insert(StakeValue::new(Stake {
+            owner: ACCOUNT_B,
+            power: 150_000,
+        }))
+        .unwrap();
+    let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_T, ACCOUNT_B);
+    deposit.set_balance(200_000);
+    deposit.set_auto_stake_rewards(false);
+
+    let ws = state.ctx.into_ws_cache().commit_to_world_state();
+    let mut state = create_state_v2(Some(ws));
+    let commands = vec![
+        Command::UnstakeDeposit(UnstakeDepositInput {
+            operator: ACCOUNT_T,
+            max_amount: 150_000 + 1,
+        }), // unstake more than staked
+    ];
+    set_tx_v2(&mut state, ACCOUNT_B, 0, &commands);
+    let ret = execute_commands_v2(state, commands);
+
+    assert!(ret.error.is_none());
+    println!("{:?}", ret.receipt);
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        198150,
+        64350,
+        ExitCodeV2::Ok,
+        0
+    ));
+    if let Some(CommandReceiptV2::UnstakeDeposit(cr)) =
+        ret.receipt.as_ref().unwrap().command_receipts.last()
+    {
+        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
+        assert_eq!(cr.amount_unstaked, 150_000);
+    } else {
+        panic!("Unstake deposit command receipt expected");
+    }
+
+    let mut state = create_state_v2(Some(ret.new_state));
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
+    assert_eq!(pool.power().unwrap(), 50_000);
+    assert_eq!(
+        NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
+        TEST_MAX_VALIDATOR_SET_SIZE as u32
+    );
+    assert_eq!(
+        NetworkAccount::nvp(&mut state.ctx.gas_meter)
+            .get(0)
+            .unwrap()
+            .operator,
+        ACCOUNT_T
+    );
+    assert_eq!(
+        NetworkAccount::nvp(&mut state.ctx.gas_meter)
+            .get(0)
+            .unwrap()
+            .power,
+        50_000
+    );
 }
 
 // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with delegated stakes of account b
@@ -1327,6 +1882,65 @@ fn test_unstake_deposit_delegated_stakes_nvp_remove() {
     );
     assert_eq!(extract_gas_used(&ret), 423900);
     let mut state = create_state_v1(Some(ret.new_state));
+
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
+    assert_eq!(pool.power().unwrap(), 0);
+    assert!(pool.delegated_stakes().get_by(&ACCOUNT_B).is_none());
+    assert_eq!(
+        NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
+        TEST_MAX_VALIDATOR_SET_SIZE as u32 - 1
+    );
+    assert_ne!(
+        NetworkAccount::nvp(&mut state.ctx.gas_meter)
+            .get(0)
+            .unwrap()
+            .operator,
+        ACCOUNT_T
+    );
+
+    /* Version 2 */
+    let fixture = TestFixture::new();
+    let mut state = create_state_v2(Some(fixture.ws()));
+    create_full_pools_in_nvp(&mut state, false, false);
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
+    assert_eq!(pool.power().unwrap(), 200_000);
+    pool.delegated_stakes()
+        .insert(StakeValue::new(Stake {
+            owner: ACCOUNT_B,
+            power: 200_000,
+        }))
+        .unwrap();
+    let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_T, ACCOUNT_B);
+    deposit.set_balance(200_000);
+    deposit.set_auto_stake_rewards(false);
+
+    let ws = state.ctx.into_ws_cache().commit_to_world_state();
+    let mut state = create_state_v2(Some(ws));
+    let commands = vec![Command::UnstakeDeposit(UnstakeDepositInput {
+        operator: ACCOUNT_T,
+        max_amount: 200_000,
+    })];
+    set_tx_v2(&mut state, ACCOUNT_B, 0, &commands);
+    let ret = execute_commands_v2(state, commands);
+
+    assert!(ret.error.is_none());
+    println!("{:?}", ret.receipt);
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        572740,
+        438940,
+        ExitCodeV2::Ok,
+        0
+    ));
+    if let Some(CommandReceiptV2::UnstakeDeposit(cr)) =
+        ret.receipt.as_ref().unwrap().command_receipts.last()
+    {
+        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
+        assert_eq!(cr.amount_unstaked, 200_000);
+    } else {
+        panic!("Unstake deposit command receipt expected");
+    }
+    let mut state = create_state_v2(Some(ret.new_state));
 
     let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_T);
     assert_eq!(pool.power().unwrap(), 0);
@@ -1405,7 +2019,79 @@ fn test_unstake_deposit_same_owner() {
     );
     assert_eq!(ret.error, Some(TransitionError::PoolHasNoStakes));
     assert_eq!(extract_gas_used(&ret), 9010);
+
+    /* Version 2 */
+    let fixture = TestFixture::new();
+    let mut state = create_state_v2(Some(fixture.ws()));
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+    pool.set_operator(ACCOUNT_A);
+    pool.set_power(100_000);
+    pool.set_commission_rate(1);
+    pool.set_operator_stake(Some(Stake {
+        owner: ACCOUNT_A,
+        power: 100_000,
+    }));
+    let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, ACCOUNT_A, ACCOUNT_A);
+    deposit.set_balance(150_000);
+    deposit.set_auto_stake_rewards(false);
+
+    let ws = state.ctx.into_ws_cache().commit_to_world_state();
+    let state = create_state_v2(Some(ws));
+    let ret = execute_commands_v2(
+        state,
+        vec![Command::UnstakeDeposit(UnstakeDepositInput {
+            operator: ACCOUNT_A,
+            max_amount: 100_000,
+        })],
+    );
+    assert!(ret.error.is_none());
+    println!("{:?}", ret.receipt);
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        132060,
+        0,
+        ExitCodeV2::Ok,
+        0
+    ));
+    if let Some(CommandReceiptV2::UnstakeDeposit(cr)) =
+        ret.receipt.as_ref().unwrap().command_receipts.last()
+    {
+        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
+        assert_eq!(cr.amount_unstaked, 100_000);
+    } else {
+        panic!("Unstake deposit command receipt expected");
+    }
+
+    let mut state = create_state_v2(Some(ret.new_state));
+
+    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A);
+    assert_eq!(pool.power().unwrap(), 0);
+    assert!(pool.operator_stake().unwrap().is_none());
+
+    ///// Exceptions: /////
+
+    let mut state = create_state_v2(Some(state.ctx.into_ws_cache().ws));
+    state.tx.nonce = 1;
+    let ret = execute_commands_v2(
+        state,
+        vec![Command::UnstakeDeposit(UnstakeDepositInput {
+            operator: ACCOUNT_A,
+            max_amount: 50_000,
+        })],
+    );
+
+    println!("{:?}", ret.receipt);
+    assert_eq!(ret.error, Some(TransitionError::PoolHasNoStakes));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        138510,
+        6450,
+        ExitCodeV2::Error,
+        0
+    ));
 }
+
+// TODO stop here
 
 // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with non-zero value of Operator Stake
 // Prepare: deposits (account t) to pool (account t)

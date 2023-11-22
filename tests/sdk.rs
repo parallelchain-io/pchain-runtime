@@ -35,7 +35,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
     sws.set_balance(origin_address, init_from_balance);
 
     // 0. deploy contract
-    let mut tx = TestData::transaction();
+    let mut tx = TestData::transaction_v1();
     tx.gas_limit = 400_000_000;
     tx.commands = vec![ArgsBuilder::new().make_deploy(contract_code, 0)];
 
@@ -51,7 +51,7 @@ fn test_success_etoc_tx_with_different_setters_getters() {
     let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // prepare inputs
-    let mut base_tx = TestData::transaction();
+    let mut base_tx = TestData::transaction_v1();
     base_tx.signer = origin_address;
     base_tx.gas_limit = 100_000_000;
 
@@ -182,7 +182,7 @@ fn test_success_etoc_multiple_methods() {
     sws.set_balance(origin_address, init_from_balance);
 
     // 0. deploy contract
-    let mut tx = TestData::transaction();
+    let mut tx = TestData::transaction_v1();
     tx.gas_limit = 400_000_000;
     tx.commands = vec![ArgsBuilder::new().make_deploy(contract_code, 0)];
 
@@ -196,7 +196,7 @@ fn test_success_etoc_multiple_methods() {
     let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // prepare inputs
-    let mut base_tx = TestData::transaction();
+    let mut base_tx = TestData::transaction_v1();
     base_tx.signer = origin_address;
     base_tx.gas_limit = 100_000_000;
 
@@ -403,7 +403,7 @@ fn test_success_etoc_set_all_contract_fields() {
     sws.set_balance(origin_address, init_from_balance);
 
     // 0. deploy contract
-    let mut tx = TestData::transaction();
+    let mut tx = TestData::transaction_v1();
     tx.signer = origin_address;
     tx.gas_limit = 400_000_000;
     tx.commands = vec![ArgsBuilder::new()
@@ -515,7 +515,7 @@ fn test_success_etoc_network_state() {
     sws.set_balance(origin_address, init_from_balance);
 
     // 0. deploy contract
-    let mut tx = TestData::transaction();
+    let mut tx = TestData::transaction_v1();
     tx.signer = origin_address;
     tx.gas_limit = 400_000_000;
     tx.commands = vec![ArgsBuilder::new()
@@ -544,7 +544,7 @@ fn test_success_etoc_network_state() {
             ],
             gas_limit: 100_000_000,
             nonce: 1,
-            ..TestData::transaction()
+            ..TestData::transaction_v1()
         },
         bd.clone(),
     );
@@ -590,7 +590,7 @@ fn test_success_etoc_network_state() {
                 .make_call(Some(0), contract_address, "defer_network_commands")],
             gas_limit: 100_000_000,
             nonce: 2,
-            ..TestData::transaction()
+            ..TestData::transaction_v1()
         },
         bd.clone(),
     );
@@ -636,7 +636,7 @@ fn test_success_etoc_network_state() {
                 .make_call(None, contract_address, "defer_network_commands")],
             gas_limit: 100_000_000,
             nonce: 3,
-            ..TestData::transaction()
+            ..TestData::transaction_v1()
         },
         bd.clone(),
     );
@@ -680,7 +680,7 @@ fn test_failure_etoc_tx_with_invalid_argument_data_type() {
     sws.set_balance(origin_address, init_from_balance);
 
     // 0. deploy contract
-    let mut tx = TestData::transaction();
+    let mut tx = TestData::transaction_v1();
     tx.signer = origin_address;
     tx.gas_limit = 200_000_000;
     tx.commands = vec![ArgsBuilder::new().make_deploy(contract_code, 0)];
@@ -703,7 +703,7 @@ fn test_failure_etoc_tx_with_invalid_argument_data_type() {
         )],
         gas_limit: 67_500_000,
         nonce: 1,
-        ..TestData::transaction()
+        ..TestData::transaction_v1()
     };
     let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd.clone());
     assert_eq!(extract_gas_used(&result), 1264607);
@@ -729,7 +729,7 @@ fn test_failure_etoc_tx_with_invalid_method_name() {
     sws.set_balance(origin_address, init_from_balance);
 
     // 0. deploy contract
-    let mut tx = TestData::transaction();
+    let mut tx = TestData::transaction_v1();
     tx.signer = origin_address;
     tx.gas_limit = 200_000_000;
     tx.commands = vec![ArgsBuilder::new().make_deploy(contract_code, 0)];
@@ -751,7 +751,7 @@ fn test_failure_etoc_tx_with_invalid_method_name() {
         )],
         gas_limit: 67_500_000,
         nonce: 1,
-        ..TestData::transaction()
+        ..TestData::transaction_v1()
     };
 
     let result = pchain_runtime::Runtime::new().transition_v1(sws.world_state, tx, bd.clone());
@@ -777,7 +777,7 @@ fn test_success_etoc_crypto_functions() {
     sws.set_balance(origin_address, init_from_balance);
 
     // 0. deploy contract
-    let mut tx = TestData::transaction();
+    let mut tx = TestData::transaction_v1();
     tx.signer = origin_address;
     tx.gas_limit = 400_000_000;
     tx.commands = vec![ArgsBuilder::new().make_deploy(contract_code, 0)];
@@ -792,7 +792,7 @@ fn test_success_etoc_crypto_functions() {
     let sws: SimulateWorldState<'_, V1> = result.new_state.into();
 
     // prepare inputs
-    let mut base_tx = TestData::transaction();
+    let mut base_tx = TestData::transaction_v1();
     base_tx.signer = origin_address;
     base_tx.gas_limit = 100_000_000;
 
