@@ -202,9 +202,38 @@ impl Runtime {
     pub fn upgrade_ws_v1_to_v2<'a, S: DB + Send + Sync + Clone + 'static>(
         &self,
         ws: WorldState<'a, S, V1>,
-    ) -> Result<WorldState<'a, S, V2>, TransitionError> {
-        WorldState::<S, V1>::upgrade(ws).map_err(|_| TransitionError::FailedWorldStateUpgrade)
+    ) -> TransitionResultV1ToV2<'a, S> {
+        match WorldState::<S, V1>::upgrade(ws) {
+            Ok(ws) => TransitionResultV1ToV2 {
+                new_state: Some(ws),
+                receipt: None,
+                error: None,
+                validator_changes: None,
+            },
+            Err(_) => TransitionResultV1ToV2 {
+                new_state: None,
+                receipt: None,
+                error: Some(TransitionError::FailedWorldStateUpgrade),
+                validator_changes: None,
+            },
+        }
     }
+}
+
+/// Result of a world state upgrade from V1 to V2. It is the return type of `pchain_runtime::Runtime::upgrade_ws_v1_to_v2`.
+#[derive(Clone)]
+pub struct TransitionResultV1ToV2<'a, S>
+where
+    S: DB + Send + Sync + Clone + 'static,
+{
+    /// New world state (ws') after upgrading to V2
+    pub new_state: Option<WorldState<'a, S, V2>>,
+    /// Transaction receipt, always None.
+    pub receipt: Option<ReceiptV1>,
+    /// Transition error. None if no error.
+    pub error: Option<TransitionError>,
+    /// Changes in validator set, always None.
+    pub validator_changes: Option<ValidatorChanges>,
 }
 
 /// Result of state transition. It is the return type of `pchain_runtime::Runtime::transition`.

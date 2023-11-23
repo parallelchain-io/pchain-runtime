@@ -45,7 +45,10 @@ pub mod formulas;
 pub mod gas;
 
 pub mod transition;
-pub use transition::{cbi_version, Runtime, TransitionResultV1, ValidatorChanges};
+pub use transition::{
+    cbi_version, Runtime, TransitionResultV1, TransitionResultV1ToV2, TransitionResultV2,
+    ValidatorChanges,
+};
 
 pub mod types;
 pub use types::{BlockProposalStats, BlockchainParams, ValidatorPerformance};

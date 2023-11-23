@@ -2044,9 +2044,11 @@ fn test_upgrade_world_state() {
 
     // upgrade world state
     let ws_v1 = result.new_state.into();
-    let ws_v2 = pchain_runtime::Runtime::new()
-        .upgrade_ws_v1_to_v2(ws_v1)
-        .unwrap();
+
+    let upgraded = pchain_runtime::Runtime::new().upgrade_ws_v1_to_v2(ws_v1);
+    assert_eq!(upgraded.error, None);
+
+    let ws_v2 = upgraded.new_state.unwrap();
     let v2_from_balance = ws_v2
         .account_trie()
         .balance(&from_address)
