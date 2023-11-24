@@ -8,7 +8,7 @@ use crate::{
     gas,
     transition::TransitionContext,
     types::{self, BaseTx, TxnVersion},
-    BlockProposalStats, BlockchainParams, TransitionResultV1, ValidatorPerformance,
+    BlockProposalStats, BlockchainParams, TransitionV1Result, ValidatorPerformance,
 };
 use pchain_types::{
     blockchain::{
@@ -468,7 +468,7 @@ pub(crate) fn execute_next_epoch_test_v2(
     create_state_v2(Some(ret.new_state))
 }
 
-pub(crate) fn extract_gas_used(ret: &TransitionResultV1<SimpleStore, V1>) -> u64 {
+pub(crate) fn extract_gas_used(ret: &TransitionV1Result<SimpleStore, V1>) -> u64 {
     ret.receipt
         .as_ref()
         .unwrap()

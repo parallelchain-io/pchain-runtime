@@ -46,7 +46,7 @@ pub mod gas;
 
 pub mod transition;
 pub use transition::{
-    cbi_version, Runtime, TransitionResultV1, TransitionResultV1ToV2, TransitionResultV2,
+    cbi_version, Runtime, TransitionV1Result, TransitionV1ToV2Result, TransitionV2Result,
     ValidatorChanges,
 };
 

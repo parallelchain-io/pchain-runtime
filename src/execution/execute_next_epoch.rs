@@ -14,8 +14,8 @@ use pchain_world_state::{VersionProvider, DB};
 // use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
-    commands::protocol, transition::TransitionResultV2, types::CommandKind, TransitionError,
-    TransitionResultV1, ValidatorChanges,
+    commands::protocol, transition::TransitionV2Result, types::CommandKind, TransitionError,
+    TransitionV1Result, ValidatorChanges,
 };
 
 use super::state::{ExecutionState, FinalizeState};
@@ -82,7 +82,7 @@ where
 
 struct ExecuteNextEpochV1;
 
-impl<'a, S, V> ProtocolCommandHandler<'a, S, CommandReceiptV1, TransitionResultV1<'a, S, V>, V>
+impl<'a, S, V> ProtocolCommandHandler<'a, S, CommandReceiptV1, TransitionV1Result<'a, S, V>, V>
     for ExecuteNextEpochV1
 where
     S: DB + Send + Sync + Clone + 'static,
@@ -90,8 +90,8 @@ where
 {
     fn handle_invalid_next_epoch_command(
         state: ExecutionState<'a, S, CommandReceiptV1, V>,
-    ) -> TransitionResultV1<'a, S, V> {
-        TransitionResultV1 {
+    ) -> TransitionV1Result<'a, S, V> {
+        TransitionV1Result {
             new_state: state.ctx.into_ws_cache().ws,
             receipt: None,
             error: Some(TransitionError::InvalidNextEpochCommand),
@@ -102,13 +102,13 @@ where
     fn handle_post_execution(
         mut state: ExecutionState<'a, S, CommandReceiptV1, V>,
         validator_changes: ValidatorChanges,
-    ) -> TransitionResultV1<'a, S, V> {
+    ) -> TransitionV1Result<'a, S, V> {
         // Extract receipt from current execution result
         state.finalize_cmd_receipt_collect_deferred(CommandKind::NextEpoch, &Ok(()));
 
         // Commit to New world state
         let (new_state, receipt) = state.finalize();
-        TransitionResultV1 {
+        TransitionV1Result {
             new_state,
             error: None,
             validator_changes: Some(validator_changes),
@@ -119,7 +119,7 @@ where
 
 struct ExecuteNextEpochV2;
 
-impl<'a, S, V> ProtocolCommandHandler<'a, S, CommandReceiptV2, TransitionResultV2<'a, S, V>, V>
+impl<'a, S, V> ProtocolCommandHandler<'a, S, CommandReceiptV2, TransitionV2Result<'a, S, V>, V>
     for ExecuteNextEpochV2
 where
     S: DB + Send + Sync + Clone,
@@ -127,8 +127,8 @@ where
 {
     fn handle_invalid_next_epoch_command(
         state: ExecutionState<'a, S, CommandReceiptV2, V>,
-    ) -> TransitionResultV2<'a, S, V> {
-        TransitionResultV2 {
+    ) -> TransitionV2Result<'a, S, V> {
+        TransitionV2Result {
             new_state: state.ctx.into_ws_cache().ws,
             receipt: None,
             error: Some(TransitionError::InvalidNextEpochCommand),
@@ -139,13 +139,13 @@ where
     fn handle_post_execution(
         mut state: ExecutionState<'a, S, CommandReceiptV2, V>,
         validator_changes: ValidatorChanges,
-    ) -> TransitionResultV2<'a, S, V> {
+    ) -> TransitionV2Result<'a, S, V> {
         // Extract receipt from current execution result
         state.finalize_cmd_receipt_collect_deferred(CommandKind::NextEpoch, &Ok(()));
 
         // Commit to New world state
         let (new_state, receipt) = state.finalize();
-        TransitionResultV2 {
+        TransitionV2Result {
             new_state,
             error: None,
             validator_changes: Some(validator_changes),
@@ -158,7 +158,7 @@ where
 pub(crate) fn execute_next_epoch_v1<S, V>(
     state: ExecutionState<S, CommandReceiptV1, V>,
     commands: Vec<Command>,
-) -> TransitionResultV1<S, V>
+) -> TransitionV1Result<S, V>
 where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone + 'static,
@@ -170,7 +170,7 @@ where
 pub(crate) fn execute_next_epoch_v2<S, V>(
     state: ExecutionState<S, CommandReceiptV2, V>,
     commands: Vec<Command>,
-) -> TransitionResultV2<S, V>
+) -> TransitionV2Result<S, V>
 where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone + 'static,

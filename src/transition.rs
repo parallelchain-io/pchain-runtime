@@ -80,7 +80,7 @@ impl Runtime {
         ws: WorldState<'a, S, V>,
         tx: TransactionV1,
         bd: BlockchainParams,
-    ) -> TransitionResultV1<'a, S, V>
+    ) -> TransitionV1Result<'a, S, V>
     where
         S: DB + Send + Sync + Clone + 'static,
         V: VersionProvider + Send + Sync + Clone + 'static,
@@ -110,7 +110,7 @@ impl Runtime {
         ws: WorldState<'a, S, V>,
         tx: TransactionV2,
         bd: BlockchainParams,
-    ) -> TransitionResultV2<'a, S, V>
+    ) -> TransitionV2Result<'a, S, V>
     where
         S: DB + Send + Sync + Clone + 'static,
         V: VersionProvider + Send + Sync + Clone + 'static,
@@ -198,19 +198,47 @@ impl Runtime {
         execute_view_v2(state, target, method, arguments)
     }
 
-    /// upgrade world state from v1 to v2
-    pub fn upgrade_ws_v1_to_v2<'a, S: DB + Send + Sync + Clone + 'static>(
+    /// upgrades world state from v1 to v2, expects a valid next epoch command
+    pub fn transition_v1_to_v2<'a, S: DB + Send + Sync + Clone + 'static>(
         &self,
         ws: WorldState<'a, S, V1>,
-    ) -> TransitionResultV1ToV2<'a, S> {
-        match WorldState::<S, V1>::upgrade(ws) {
-            Ok(ws) => TransitionResultV1ToV2 {
-                new_state: Some(ws),
+        tx: TransactionV1,
+        bd: BlockchainParams,
+    ) -> TransitionV1ToV2Result<'a, S> {
+        let base_tx = BaseTx::from(&tx);
+        let commands = tx.commands;
+
+        let mut ctx = TransitionContext::new(base_tx.version, ws, tx.gas_limit);
+        ctx.sc_context = self.sc_context.clone();
+        let state = ExecutionState::new(base_tx, bd, ctx);
+
+        // first execute next epoch
+        let TransitionV1Result {
+            new_state,
+            error,
+            receipt,
+            validator_changes,
+        } = execute_next_epoch_v1(state, commands);
+
+        // rollback if the command is invalid
+        if error.is_some() {
+            return TransitionV1ToV2Result {
+                new_state: None,
                 receipt: None,
-                error: None,
+                error,
                 validator_changes: None,
+            };
+        }
+
+        // on success, transform and return a World State V2
+        match WorldState::<S, V1>::upgrade(new_state) {
+            Ok(ws) => TransitionV1ToV2Result {
+                new_state: Some(ws),
+                receipt,
+                error: None,
+                validator_changes,
             },
-            Err(_) => TransitionResultV1ToV2 {
+            Err(_) => TransitionV1ToV2Result {
                 new_state: None,
                 receipt: None,
                 error: Some(TransitionError::FailedWorldStateUpgrade),
@@ -222,7 +250,7 @@ impl Runtime {
 
 /// Result of a world state upgrade from V1 to V2. It is the return type of `pchain_runtime::Runtime::upgrade_ws_v1_to_v2`.
 #[derive(Clone)]
-pub struct TransitionResultV1ToV2<'a, S>
+pub struct TransitionV1ToV2Result<'a, S>
 where
     S: DB + Send + Sync + Clone + 'static,
 {
@@ -238,7 +266,7 @@ where
 
 /// Result of state transition. It is the return type of `pchain_runtime::Runtime::transition`.
 #[derive(Clone)]
-pub struct TransitionResultV1<'a, S, V>
+pub struct TransitionV1Result<'a, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
@@ -256,9 +284,9 @@ where
 
 /// Result of state transition. It is the return type of `pchain_runtime::Runtime::transition`.
 ///
-/// [V1](TransitionResultV1) -> V2: contains ReceiptV2 instead of ReceiptV1
+/// [V1](TransitionV1Result) -> V2: contains ReceiptV2 instead of ReceiptV1
 #[derive(Clone)]
-pub struct TransitionResultV2<'a, S, V>
+pub struct TransitionV2Result<'a, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
@@ -276,7 +304,7 @@ where
 
 /// Defines changes to validator set. It is the transition result from
 /// executing Command [NextEpoch](pchain_types::blockchain::Command::NextEpoch).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidatorChanges {
     /// the new validator set in list of tuple of operator address and power
     pub new_validator_set: Vec<(PublicAddress, u64)>,

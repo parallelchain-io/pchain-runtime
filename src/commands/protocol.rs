@@ -20,6 +20,7 @@ use crate::{
 use crate::execution::{cache::WorldStateCache, state::ExecutionState};
 
 /// Execution of [pchain_types::blockchain::Command::NextEpoch]
+/// There is no Gas consumption as we use NetworkAccountWorldState for accessing the world state.
 pub(crate) fn next_epoch<'a, S, E, V>(
     mut state: ExecutionState<'a, S, E, V>,
 ) -> (ExecutionState<'a, S, E, V>, ValidatorChanges)
@@ -227,14 +228,10 @@ where
         }
     };
 
-    // There is no Gas consumption as we use NetworkAccountWorldState for accessing the world state
     (state, new_validator_set)
 }
 
-/// NetworkAccountWorldState is specific to accessing storage of an Account Storage State.
-/// It stores account storage state and use it for subsequent Read / Writes operations.
-/// Write opertions would store to read write set.
-
+/// NetworkAccountWorldState is used for accessing the world state of the Network Account.
 pub(crate) struct NetworkAccountWorldState<'a, 'b, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,

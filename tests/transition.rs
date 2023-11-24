@@ -1,10 +1,11 @@
 use core::panic;
+use std::collections::HashMap;
 
 use pchain_runtime::{
     formulas::{TOTAL_BASE_FEE, TREASURY_CUT_OF_BASE_FEE},
     gas::{tx_inclusion_cost_v1, tx_inclusion_cost_v2},
     types::CommandKind,
-    TransitionError,
+    BlockProposalStats, TransitionError, ValidatorPerformance,
 };
 use pchain_types::{
     blockchain::{Command, CommandReceiptV2, ExitCodeV1, ExitCodeV2, TransactionV1, TransactionV2},
@@ -2042,12 +2043,25 @@ fn test_upgrade_world_state() {
     let transfer_cost = receipt.last().unwrap().gas_used;
     assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
 
-    // upgrade world state
+    // upgrade world state by issuing a V1 next epoch command
     let ws_v1 = result.new_state.into();
 
-    let upgraded = pchain_runtime::Runtime::new().upgrade_ws_v1_to_v2(ws_v1);
+    let mut tx = TestData::transaction_v1();
+    tx.commands = vec![Command::NextEpoch];
+    tx.nonce = 1;
+
+    let mut bd = TestData::block_params();
+    let mut stats = HashMap::new();
+    stats.insert(from_address, BlockProposalStats::new(1));
+    bd.validator_performance = Some(ValidatorPerformance {
+        blocks_per_epoch: 1,
+        stats,
+    });
+
+    let upgraded = pchain_runtime::Runtime::new().transition_v1_to_v2(ws_v1, tx, bd);
     assert_eq!(upgraded.error, None);
 
+    // check that data from the earlier epoch is still persisted
     let ws_v2 = upgraded.new_state.unwrap();
     let v2_from_balance = ws_v2
         .account_trie()

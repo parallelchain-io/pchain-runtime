@@ -34,9 +34,9 @@ use crate::{
         phases::{self},
         state::{ExecutionState, FinalizeState},
     },
-    transition::TransitionResultV2,
+    transition::TransitionV2Result,
     types::{CommandKind, DeferredCommand},
-    TransitionError, TransitionResultV1,
+    TransitionError, TransitionV1Result,
 };
 fn execute_commands<'a, S, E, V, R, P>(
     mut state: ExecutionState<'a, S, E, V>,
@@ -120,7 +120,7 @@ where
 /// Strategy struct for V1 specific execution output
 struct ExecuteCommandsV1;
 
-impl<'a, S, V> UserCommandHandler<'a, S, CommandReceiptV1, TransitionResultV1<'a, S, V>, V>
+impl<'a, S, V> UserCommandHandler<'a, S, CommandReceiptV1, TransitionV1Result<'a, S, V>, V>
     for ExecuteCommandsV1
 where
     S: DB + Send + Sync + Clone,
@@ -129,9 +129,9 @@ where
     fn handle_precharge_error(
         state: ExecutionState<'a, S, CommandReceiptV1, V>,
         error: TransitionError,
-    ) -> TransitionResultV1<'a, S, V> {
+    ) -> TransitionV1Result<'a, S, V> {
         let (new_state, _): (_, ReceiptV1) = state.finalize();
-        TransitionResultV1 {
+        TransitionV1Result {
             new_state,
             receipt: None,
             error: Some(error),
@@ -155,9 +155,9 @@ where
     fn handle_abort(
         state: ExecutionState<'a, S, CommandReceiptV1, V>,
         error: TransitionError,
-    ) -> TransitionResultV1<'a, S, V> {
+    ) -> TransitionV1Result<'a, S, V> {
         let (new_state, receipt) = phases::charge(state).finalize();
-        TransitionResultV1 {
+        TransitionV1Result {
             new_state,
             error: Some(error),
             receipt: Some(receipt),
@@ -167,9 +167,9 @@ where
 
     fn handle_charge(
         state: ExecutionState<'a, S, CommandReceiptV1, V>,
-    ) -> TransitionResultV1<'a, S, V> {
+    ) -> TransitionV1Result<'a, S, V> {
         let (new_state, receipt) = phases::charge(state).finalize();
-        TransitionResultV1 {
+        TransitionV1Result {
             new_state,
             error: None,
             receipt: Some(receipt),
@@ -181,7 +181,7 @@ where
 /// Strategy struct for V2 specific execution output
 struct ExecuteCommandsV2;
 
-impl<'a, S, V> UserCommandHandler<'a, S, CommandReceiptV2, TransitionResultV2<'a, S, V>, V>
+impl<'a, S, V> UserCommandHandler<'a, S, CommandReceiptV2, TransitionV2Result<'a, S, V>, V>
     for ExecuteCommandsV2
 where
     S: DB + Send + Sync + Clone,
@@ -190,9 +190,9 @@ where
     fn handle_precharge_error(
         state: ExecutionState<'a, S, CommandReceiptV2, V>,
         error: TransitionError,
-    ) -> TransitionResultV2<'a, S, V> {
+    ) -> TransitionV2Result<'a, S, V> {
         let (new_state, _): (_, ReceiptV2) = state.finalize();
-        TransitionResultV2 {
+        TransitionV2Result {
             new_state,
             receipt: None,
             error: Some(error),
@@ -216,9 +216,9 @@ where
     fn handle_abort(
         state: ExecutionState<'a, S, CommandReceiptV2, V>,
         error: TransitionError,
-    ) -> TransitionResultV2<'a, S, V> {
+    ) -> TransitionV2Result<'a, S, V> {
         let (new_state, receipt) = phases::charge(state).finalize();
-        TransitionResultV2 {
+        TransitionV2Result {
             new_state,
             error: Some(error),
             receipt: Some(receipt),
@@ -228,9 +228,9 @@ where
 
     fn handle_charge(
         state: ExecutionState<'a, S, CommandReceiptV2, V>,
-    ) -> TransitionResultV2<'a, S, V> {
+    ) -> TransitionV2Result<'a, S, V> {
         let (new_state, receipt) = phases::charge(state).finalize();
-        TransitionResultV2 {
+        TransitionV2Result {
             new_state,
             error: None,
             receipt: Some(receipt),
@@ -320,13 +320,12 @@ impl ExecutableCommand {
 pub(crate) fn execute_commands_v1<'a, S, V>(
     state: ExecutionState<'a, S, CommandReceiptV1, V>,
     commands: Vec<Command>,
-) -> TransitionResultV1<'a, S, V>
+) -> TransitionV1Result<'a, S, V>
 where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone + 'static,
 {
     // TODO
-    // execute_commands::<_, _, _, TransitionResultV1<S, V>, ExecuteCommandsV1>(state, commands)
     execute_commands::<_, _, _, _, ExecuteCommandsV1>(state, commands)
 }
 
@@ -334,7 +333,7 @@ where
 pub(crate) fn execute_commands_v2<'a, S, V>(
     state: ExecutionState<'a, S, CommandReceiptV2, V>,
     commands: Vec<Command>,
-) -> TransitionResultV2<'a, S, V>
+) -> TransitionV2Result<'a, S, V>
 where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone + 'static,
