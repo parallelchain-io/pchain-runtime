@@ -67,7 +67,7 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    fn finalize(self) -> (WorldState<'a, S, V>, ReceiptV1) {
+    fn finalize_receipt(self) -> (WorldState<'a, S, V>, ReceiptV1) {
         let gas_used = self.ctx.gas_meter.total_gas_used_for_executed_commands();
         (
             self.ctx.into_ws_cache().commit_to_world_state(),
@@ -121,8 +121,7 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    // TODO 101 rename to finalize_receipt
-    fn finalize(self) -> (WorldState<'a, S, V>, ReceiptV2) {
+    fn finalize_receipt(self) -> (WorldState<'a, S, V>, ReceiptV2) {
         let gas_used = self.ctx.gas_meter.total_gas_used_for_executed_commands();
         (
             self.ctx.into_ws_cache().commit_to_world_state(),
@@ -190,5 +189,5 @@ where
         execution_result: &Result<Q, TransitionError>,
     ) -> Option<Vec<DeferredCommand>>;
 
-    fn finalize(self) -> (WorldState<'a, S, V>, R);
+    fn finalize_receipt(self) -> (WorldState<'a, S, V>, R);
 }

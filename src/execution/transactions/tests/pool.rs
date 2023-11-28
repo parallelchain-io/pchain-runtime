@@ -475,7 +475,6 @@ fn test_update_pool_epoch_change_validator() {
         ),
         (&None, &ExitCodeV1::Success)
     );
-    println!("{:?}", ret.receipt);
     assert_eq!(extract_gas_used(&ret), 357250);
 
     let mut state = create_state_v1(Some(ret.new_state));
@@ -514,12 +513,10 @@ fn test_update_pool_epoch_change_validator() {
     state.tx.nonce = 1;
 
     let ret = execute_commands_v2(state, vec![Command::DeletePool]);
-    println!("{:?}", ret.receipt);
-
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        560990,
-        428930,
+        579012,
+        446952,
         ExitCodeV2::Ok,
         0
     ));
@@ -535,11 +532,10 @@ fn test_update_pool_epoch_change_validator() {
         state,
         vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })],
     );
-
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        1405090,
-        1273030,
+        1409742,
+        1277682,
         ExitCodeV2::Ok,
         0
     ));

@@ -150,11 +150,10 @@ fn test_stake_deposit_delegated_stakes() {
     } else {
         panic!("Stake deposit command receipt expected");
     }
-
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        stake_deposit_inclusion_cost_v2 + 342740,
-        342740,
+        stake_deposit_inclusion_cost_v2 + 342370,
+        342370,
         ExitCodeV2::Ok,
         0
     ));
@@ -179,8 +178,8 @@ fn test_stake_deposit_delegated_stakes() {
     assert_eq!(ret.error, Some(TransitionError::DepositsNotExists));
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        135780,
-        1980,
+        136156,
+        2356,
         ExitCodeV2::Error,
         0
     ));
@@ -195,13 +194,13 @@ fn test_stake_deposit_delegated_stakes() {
     assert_eq!(ret.error, Some(TransitionError::InvalidStakeAmount));
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        146880,
-        13080,
+        149496,
+        15696,
         ExitCodeV2::Error,
         0
     ));
 
-    // // Delete Pool first
+    // Delete Pool first
     let mut state = create_state_v2(Some(ret.new_state));
     let commands = vec![Command::DeletePool];
     set_tx_v2(&mut state, ACCOUNT_A, 0, &commands);
@@ -225,8 +224,8 @@ fn test_stake_deposit_delegated_stakes() {
     let ret = execute_commands_v2(state, commands);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        139500,
-        5700,
+        140756,
+        6956,
         ExitCodeV2::Error,
         0
     ));
@@ -316,8 +315,8 @@ fn test_stake_deposit_delegated_stakes_nvp_change_key() {
     assert_eq!(ret.error, None);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        1289250,
-        1155450,
+        1291824,
+        1158024,
         ExitCodeV2::Ok,
         0
     ));
@@ -450,8 +449,8 @@ fn test_stake_deposit_delegated_stakes_nvp_insert() {
     assert_eq!(ret.error, None);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        1277870,
-        1144070,
+        1282928,
+        1149128,
         ExitCodeV2::Ok,
         0
     ));
@@ -594,8 +593,8 @@ fn test_stake_deposit_delegated_stakes_insert() {
     assert_eq!(ret.error, None);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        2675600,
-        2541800,
+        2626068,
+        2492268,
         ExitCodeV2::Ok,
         0
     ));
@@ -628,11 +627,10 @@ fn test_stake_deposit_delegated_stakes_insert() {
     set_tx_v2(&mut state, ACCOUNT_D, 0, &commands);
     let ret = execute_commands_v2(state, commands);
     assert_eq!(ret.error, None);
-    println!("{:?}", ret.receipt);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        205520,
-        71930,
+        198312,
+        64722,
         ExitCodeV2::Ok,
         0
     ));
@@ -647,8 +645,8 @@ fn test_stake_deposit_delegated_stakes_insert() {
     assert_eq!(ret.error, Some(TransitionError::InvalidStakeAmount));
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        148240,
-        14440,
+        151356,
+        17556,
         ExitCodeV2::Error,
         0
     ));
@@ -724,11 +722,10 @@ fn test_stake_deposit_delegated_stakes_change_key() {
     set_tx_v2(&mut state, ACCOUNT_B, 0, &commands);
     let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        613800,
-        480000,
+        610296,
+        476496,
         ExitCodeV2::Ok,
         0
     ));
@@ -836,8 +833,8 @@ fn test_stake_deposit_delegated_stakes_existing() {
     assert!(ret.error.is_none());
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        411660,
-        277860,
+        412020,
+        278220,
         ExitCodeV2::Ok,
         0
     ));
@@ -929,8 +926,8 @@ fn test_stake_deposit_same_owner() {
     assert!(ret.error.is_none());
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        426820,
-        294760,
+        430320,
+        298260,
         ExitCodeV2::Ok,
         0
     ));
@@ -1034,11 +1031,10 @@ fn test_stake_deposit_same_owner_nvp_change_key() {
     let ret = execute_commands_v2(state, commands);
 
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        503310,
-        369510,
+        507802,
+        374002,
         ExitCodeV2::Ok,
         0
     ));
@@ -1167,11 +1163,10 @@ fn test_stake_deposit_same_owner_nvp_insert() {
     set_tx_v2(&mut state, ACCOUNT_C, 0, &commands);
     let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        2199290,
-        2065490,
+        2211146,
+        2077346,
         ExitCodeV2::Ok,
         0
     ));
@@ -1283,11 +1278,10 @@ fn test_stake_deposit_same_owner_existing() {
         })],
     );
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        380820,
-        248760,
+        384320,
+        252260,
         ExitCodeV2::Ok,
         0
     ));
@@ -1462,11 +1456,10 @@ fn test_unstake_deposit_delegated_stakes() {
     set_tx_v2(&mut state, ACCOUNT_B, 0, &commands);
     let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        409280,
-        275480,
+        409264,
+        275464,
         ExitCodeV2::Ok,
         0
     ));
@@ -1498,8 +1491,8 @@ fn test_unstake_deposit_delegated_stakes() {
     assert_eq!(ret.error, Some(TransitionError::DepositsNotExists));
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        135780,
-        1980,
+        136156,
+        2356,
         ExitCodeV2::Error,
         0
     ));
@@ -1512,8 +1505,8 @@ fn test_unstake_deposit_delegated_stakes() {
     assert_eq!(ret.error, None);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        592620,
-        460230,
+        594832,
+        462442,
         ExitCodeV2::Ok,
         0
     ));
@@ -1525,12 +1518,11 @@ fn test_unstake_deposit_delegated_stakes() {
     })];
     set_tx_v2(&mut state, ACCOUNT_B, 2, &commands);
     let ret = execute_commands_v2(state, commands);
-    println!("{:?}", ret.receipt);
     assert_eq!(ret.error, None);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        205520,
-        71930,
+        198312,
+        64722,
         ExitCodeV2::Ok,
         0
     ));
@@ -1542,13 +1534,11 @@ fn test_unstake_deposit_delegated_stakes() {
     })];
     set_tx_v2(&mut state, ACCOUNT_B, 3, &commands);
     let ret = execute_commands_v2(state, commands);
-
-    println!("{:?}", ret.receipt);
     assert_eq!(ret.error, Some(TransitionError::PoolHasNoStakes));
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        140860,
-        7060,
+        142616,
+        8816,
         ExitCodeV2::Error,
         0
     ));
@@ -1556,7 +1546,6 @@ fn test_unstake_deposit_delegated_stakes() {
     // // delete pool first
     let state = create_state_v2(Some(ret.new_state));
     let ret = execute_commands_v2(state, vec![Command::DeletePool]);
-    println!("{:?}", ret.receipt);
     assert_eq!(ret.error, None);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
@@ -1573,12 +1562,11 @@ fn test_unstake_deposit_delegated_stakes() {
     })];
     set_tx_v2(&mut state, ACCOUNT_B, 4, &commands);
     let ret = execute_commands_v2(state, commands);
-    println!("{:?}", ret.receipt);
     assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        137120,
-        3320,
+        138000,
+        4200,
         ExitCodeV2::Error,
         0
     ));
@@ -1668,11 +1656,10 @@ fn test_unstake_deposit_delegated_stakes_remove() {
     set_tx_v2(&mut state, biggest, 0, &commands);
     let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        133800,
-        0,
+        148350,
+        14550,
         ExitCodeV2::Ok,
         0
     ));
@@ -1797,11 +1784,10 @@ fn test_unstake_deposit_delegated_stakes_nvp_change_key() {
     let ret = execute_commands_v2(state, commands);
 
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        198150,
-        64350,
+        252236,
+        118436,
         ExitCodeV2::Ok,
         0
     ));
@@ -1922,16 +1908,16 @@ fn test_unstake_deposit_delegated_stakes_nvp_remove() {
     })];
     set_tx_v2(&mut state, ACCOUNT_B, 0, &commands);
     let ret = execute_commands_v2(state, commands);
-
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
+
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        572740,
-        438940,
+        631034,
+        497234,
         ExitCodeV2::Ok,
         0
     ));
+
     if let Some(CommandReceiptV2::UnstakeDeposit(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -2045,7 +2031,6 @@ fn test_unstake_deposit_same_owner() {
         })],
     );
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
         132060,
@@ -2079,13 +2064,11 @@ fn test_unstake_deposit_same_owner() {
             max_amount: 50_000,
         })],
     );
-
-    println!("{:?}", ret.receipt);
     assert_eq!(ret.error, Some(TransitionError::PoolHasNoStakes));
     assert!(verify_receipt_content_v2(
         ret.receipt.as_ref().expect("Receipt expected"),
-        138510,
-        6450,
+        140398,
+        8338,
         ExitCodeV2::Error,
         0
     ));
@@ -2197,15 +2180,13 @@ fn test_unstake_deposit_same_owner_nvp_change_key() {
     let ret = execute_commands_v2(state, commands);
 
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        481206,
+        347406,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::UnstakeDeposit(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -2338,15 +2319,13 @@ fn test_unstake_deposit_same_owner_nvp_remove() {
     set_tx_v2(&mut state, ACCOUNT_T, 0, &commands);
     let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        760004,
+        626204,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::UnstakeDeposit(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -2597,15 +2576,13 @@ fn test_withdrawal_deposit_delegated_stakes() {
     set_tx_v2(&mut state, ACCOUNT_B, 0, &commands);
     let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        451480,
+        317680,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::WithdrawDeposit(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -2627,12 +2604,6 @@ fn test_withdrawal_deposit_delegated_stakes() {
         .get_by(&ACCOUNT_B)
         .unwrap();
     assert_eq!((stake.owner, stake.power), (ACCOUNT_B, 60_000));
-    assert_eq!(
-        NetworkAccount::pools(&mut state.ctx.gas_meter, ACCOUNT_A)
-            .power()
-            .unwrap(),
-        60_000
-    );
     let owner_balance_after = state
         .ctx
         .inner_ws_cache()
@@ -2641,11 +2612,8 @@ fn test_withdrawal_deposit_delegated_stakes() {
         .balance(&ACCOUNT_B)
         .unwrap();
 
-    // TODO 1001
-    // assert_eq!(
-    //     owner_balance_before,
-    //     owner_balance_after + gas_used - 40_000
-    // );
+    // tokens withdrawn increases owner's balance, gas usage reduces it
+    assert_eq!(owner_balance_before, owner_balance_after + 451480 - 40_000);
 
     ///// Exceptions: /////
 
@@ -2658,23 +2626,19 @@ fn test_withdrawal_deposit_delegated_stakes() {
         })],
     );
     assert_eq!(ret.error, Some(TransitionError::DepositsNotExists));
-    // TODO 1001
 
     // First proceed next epoch
     let mut state = create_state_v2(Some(ret.new_state));
     state.tx.nonce = 1;
     let ret = execute_next_epoch_v2(state, vec![Command::NextEpoch]);
-
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        0,
+        0,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::NextEpoch(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -2692,18 +2656,15 @@ fn test_withdrawal_deposit_delegated_stakes() {
         }), // 60_000 - 10_000
     ];
     set_tx_v2(&mut state, ACCOUNT_B, 1, &commands);
-
     let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        344118,
+        210318,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::UnstakeDeposit(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -2722,16 +2683,13 @@ fn test_withdrawal_deposit_delegated_stakes() {
     set_tx_v2(&mut state, ACCOUNT_B, 2, &commands);
     let ret = execute_commands_v2(state, commands);
     assert_eq!(ret.error, Some(TransitionError::InvalidStakeAmount));
-    // TODO 1001
-    // gas usage
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
-
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        151708,
+        17908,
+        ExitCodeV2::Error,
+        0
+    ));
     // // Proceed next epoch
     let mut state = create_state_v2(Some(ret.new_state));
     state.tx.nonce = 2;
@@ -2741,15 +2699,13 @@ fn test_withdrawal_deposit_delegated_stakes() {
     ));
     let ret = execute_next_epoch_v2(state, vec![Command::NextEpoch]);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        0,
+        0,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::NextEpoch(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -2769,15 +2725,13 @@ fn test_withdrawal_deposit_delegated_stakes() {
     set_tx_v2(&mut state, ACCOUNT_B, 3, &commands);
     let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        205168,
+        71368,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::WithdrawDeposit(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -2786,6 +2740,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
     } else {
         panic!("Withdraw deposit command receipt expected");
     }
+
     // pvp: 60_000, vp: 50_000, nvp: 50_000, deposit: 60_000, Try Withdraw
     let mut state = create_state_v2(Some(ret.new_state));
     let commands = vec![Command::WithdrawDeposit(WithdrawDepositInput {
@@ -2796,16 +2751,13 @@ fn test_withdrawal_deposit_delegated_stakes() {
     let ret = execute_commands_v2(state, commands);
     assert_eq!(ret.error, Some(TransitionError::InvalidStakeAmount));
 
-    // TODO 1001
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        160816,
+        27016,
+        ExitCodeV2::Error,
+        0
+    ));
 }
 
 // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with delegated stakes of account b
@@ -2953,15 +2905,13 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_change_key() {
     let tx_base_cost = set_tx_v2(&mut state, ACCOUNT_B, 0, &commands);
     let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        133800,
+        0,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::WithdrawDeposit(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -3158,18 +3108,16 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_remove() {
         operator: ACCOUNT_T,
         max_amount: 300_000,
     })];
-    let tx_base_cost = set_tx_v2(&mut state, ACCOUNT_B, 0, &commands);
+    set_tx_v2(&mut state, ACCOUNT_B, 0, &commands);
     let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        500356,
+        366556,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::WithdrawDeposit(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -3202,11 +3150,8 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_remove() {
         .balance(&ACCOUNT_B)
         .unwrap();
 
-    // TODO 1001
-    // assert_eq!(
-    //     owner_balance_before,
-    //     owner_balance_after + gas_used - 300_000
-    // );
+    // tokens withdrawn increases owner's balance, gas usage reduces it
+    assert_eq!(owner_balance_before, owner_balance_after + 500356 - 300_000);
     assert_eq!(
         NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
         TEST_MAX_VALIDATOR_SET_SIZE as u32 - 1
@@ -3339,15 +3284,13 @@ fn test_withdrawal_deposit_same_owner() {
     set_tx_v2(&mut state, ACCOUNT_A, 0, &commands);
     let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        425520,
+        291720,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::WithdrawDeposit(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -3383,11 +3326,7 @@ fn test_withdrawal_deposit_same_owner() {
         .account_trie()
         .balance(&ACCOUNT_A)
         .unwrap();
-    // TODO 1001
-    // assert_eq!(
-    //     owner_balance_before,
-    //     owner_balance_after + gas_used + tx_base_cost - 45_000
-    // );
+    assert_eq!(owner_balance_before, owner_balance_after + 425520 - 45_000);
 }
 
 // Prepare: set maximum number of pools in world state, pool (account t) has power > minimum, with non-zero value of Operator Stake
@@ -3534,15 +3473,13 @@ fn test_withdrawal_deposit_same_owner_nvp_change_key() {
     set_tx_v2(&mut state, ACCOUNT_T, 0, &commands);
     let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        250528,
+        116728,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::WithdrawDeposit(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -3575,11 +3512,7 @@ fn test_withdrawal_deposit_same_owner_nvp_change_key() {
         .account_trie()
         .balance(&ACCOUNT_T)
         .unwrap();
-    // TODO 1001
-    // assert_eq!(
-    //     owner_balance_before,
-    //     owner_balance_after + gas_used - 200_000
-    // );
+    assert_eq!(owner_balance_before, owner_balance_after + 250528 - 200_000);
     assert_eq!(
         NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
         TEST_MAX_VALIDATOR_SET_SIZE as u32
@@ -3739,15 +3672,13 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
     let ret = execute_commands_v2(state, commands);
 
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        629326,
+        495526,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::WithdrawDeposit(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -3775,11 +3706,7 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
         .balance(&ACCOUNT_T)
         .unwrap();
 
-    // TODO 1001
-    // assert_eq!(
-    //     owner_balance_before,
-    //     owner_balance_after + gas_used + tx_base_cost - 300_000
-    // );
+    assert_eq!(owner_balance_before, owner_balance_after + 629326 - 300_000);
     assert_eq!(
         NetworkAccount::nvp(&mut state.ctx.gas_meter).length(),
         TEST_MAX_VALIDATOR_SET_SIZE as u32 - 1
@@ -3976,15 +3903,13 @@ fn test_withdrawal_deposit_bounded_by_vp() {
     set_tx_v2(&mut state, ACCOUNT_B, 0, &commands);
     let ret = execute_commands_v2(state, commands);
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        469696,
+        335896,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::WithdrawDeposit(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -4021,11 +3946,7 @@ fn test_withdrawal_deposit_bounded_by_vp() {
         .account_trie()
         .balance(&ACCOUNT_B)
         .unwrap();
-    // TODO 1001
-    // assert_eq!(
-    //     owner_balance_before,
-    //     owner_balance_after + gas_used + tx_base_cost - 20_000
-    // );
+    assert_eq!(owner_balance_before, owner_balance_after + 469696 - 20_000);
 }
 
 // Prepare: pool (account a) in world state, with delegated stakes of account b
@@ -4206,15 +4127,13 @@ fn test_withdrawal_deposit_bounded_by_pvp() {
     let ret = execute_commands_v2(state, commands);
 
     assert!(ret.error.is_none());
-    println!("{:?}", ret.receipt);
-    // TODO 1001
-    // assert!(verify_receipt_content_v2(
-    //     ret.receipt.as_ref().expect("Receipt expected"),
-    //     198150,
-    //     64350,
-    //     ExitCodeV2::Ok,
-    //     0
-    // ));
+    assert!(verify_receipt_content_v2(
+        ret.receipt.as_ref().expect("Receipt expected"),
+        469696,
+        335896,
+        ExitCodeV2::Ok,
+        0
+    ));
     if let Some(CommandReceiptV2::WithdrawDeposit(cr)) =
         ret.receipt.as_ref().unwrap().command_receipts.last()
     {
@@ -4251,9 +4170,5 @@ fn test_withdrawal_deposit_bounded_by_pvp() {
         .balance(&ACCOUNT_B)
         .unwrap();
 
-    // // TODO 1001
-    // assert_eq!(
-    //     owner_balance_before,
-    //     owner_balance_after + gas_used - 10_000
-    // );
+    assert_eq!(owner_balance_before, owner_balance_after + 469696 - 10_000);
 }

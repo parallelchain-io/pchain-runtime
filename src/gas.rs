@@ -7,6 +7,7 @@
 //! execution. The constants and functions in module are documented in gas section of the
 //! [Parallelchain Mainnet Protocol](https://github.com/parallelchain-io/parallelchain-protocol).
 //!
+//!
 //! The mapping of equations or variables in the protocol to this module is as following:
 //!
 //! |Name       | Related Function / Constants      |
@@ -16,18 +17,18 @@
 //! |G_txdata   | [BLOCKCHAIN_WRITE_PER_BYTE_COST]  |
 //! |G_mincmdrcpsize| [minimum_receipt_size]        |
 //! |G_acckeylen    | [ACCOUNT_TRIE_KEY_LENGTH]    |
-//! |G_sget         | [get_cost], [get_code_cost]   |
-//! |G_sset         | [set_cost_read_key], [set_cost_delete_old_value], [set_cost_write_new_value], [set_cost_rehash] |
-//! |G_scontains    | [contains_cost]       |
-//! |G_swrite   | [MPT_WRITE_PER_BYTE_COST] |
-//! |G_sread    | [MPT_READ_PER_BYTE_COST]  |
-//! |G_straverse| [MPT_TRAVERSE_PER_BYTE_COST]      |
-//! |G_srehash  | [MPT_REHASH_PER_BYTE_COST]        |
-//! |G_srefund  | [MPT_WRITE_REFUND_PROPORTION]     |
-//! |G_sgetcontractdisc  | [MPT_GET_CODE_DISCOUNT_PROPORTION] |
+//! |G_mpt_get      | [get_cost], [get_code_cost]   |
+//! |G_mpt_set      | [set_cost_read_key], [set_cost_delete_old_value], [set_cost_write_new_value], [set_cost_rehash] |
+//! |G_mpt_write   | [MPT_WRITE_PER_BYTE_COST] |
+//! |G_mpt_read    | [MPT_READ_PER_BYTE_COST]  |
+//! |G_mpt_traverse| [MPT_TRAVERSE_PER_BYTE_COST]      |
+//! |G_mpt_rehash  | [MPT_REHASH_PER_BYTE_COST]        |
+//! |G_mpt_refund  | [MPT_WRITE_REFUND_PROPORTION]     |
+//! |G_at_getcontractdisc  | [MPT_GET_CODE_DISCOUNT_PROPORTION] |
 //! |G_wsha256  | [CRYPTO_SHA256_PER_BYTE]          |
 //! |G_wkeccak256   | [CRYPTO_KECCAK256_PER_BYTE]   |
 //! |G_wripemd160   | [CRYPTO_RIPEMD160_PER_BYTE]   |
+//! |G_keccek256len | [KECCAK256_LENGTH] |
 //! |G_wvrfy25519   | [crypto_verify_ed25519_signature_cost]  |
 //! |G_txincl       | [tx_inclusion_cost_v1] |
 //! |G_txinclv2     | [tx_inclusion_cost_v2] |
@@ -240,20 +241,18 @@ pub const MIN_CMDRECP_SIZE_V2_EXTENDED: u64 = 17;
 pub fn tx_inclusion_cost_v1(tx_size: usize, commands: &Vec<CommandKind>) -> u64 {
     // (1) Transaction storage size
     let tx_size = tx_size as u64;
-    println!("TODO v1 - tx_size: {}", tx_size);
     // (2) Minimum size of receipt
     let min_receipt_size = minimum_receipt_size_v1(commands);
-    println!("TODO v1 - min_receipt_size: {}", min_receipt_size);
     // (3) Cost for 5 read-write operations
     let rw_key_cost = (
         // Read cost
-        get_cost(ACCOUNT_TRIE_KEY_LENGTH, 8)
+        get_cost_traverse(ACCOUNT_TRIE_KEY_LENGTH)
+            .saturating_add(get_cost_read(8))
             // Write cost
             .saturating_add(set_cost_write_new_value(8))
             .saturating_add(set_cost_rehash(ACCOUNT_TRIE_KEY_LENGTH))
     )
     .saturating_mul(5);
-    println!("TODO v1 - rw_key_cost: {}", rw_key_cost);
 
     // Multiply by blockchain storage write cost and add the cost of 5 read-write operations.
     tx_size
@@ -268,21 +267,18 @@ pub fn tx_inclusion_cost_v1(tx_size: usize, commands: &Vec<CommandKind>) -> u64 
 pub fn tx_inclusion_cost_v2(tx_size: usize, commands: &Vec<CommandKind>) -> u64 {
     // (1) Transaction storage size
     let tx_size = tx_size as u64;
-    println!("TODO v2 - tx_size: {}", tx_size);
     // (2) Minimum size of receipt
     let min_receipt_size = minimum_receipt_size_v2(commands);
-    println!("TODO v2 - min_receipt_size: {}", min_receipt_size);
     // (3) Cost for 5 read-write operations
     let rw_key_cost = (
         // Read cost
-        get_cost(ACCOUNT_TRIE_KEY_LENGTH, 8)
+        get_cost_traverse(ACCOUNT_TRIE_KEY_LENGTH)
+            .saturating_add(get_cost_read(8))
             // Write cost
             .saturating_add(set_cost_write_new_value(8))
             .saturating_add(set_cost_rehash(ACCOUNT_TRIE_KEY_LENGTH))
     )
     .saturating_mul(5);
-    println!("TODO v2 - rw_key_cost: {}", rw_key_cost);
-
     // Multiply by blockchain storage write cost and add the cost of 5 read-write operations.
     tx_size
         .saturating_add(min_receipt_size)
@@ -339,9 +335,9 @@ pub const fn blockchain_log_cost(topic_len: usize, val_len: usize) -> u64 {
 
 /// The length of keys in the root world state MPT.
 pub const ACCOUNT_TRIE_KEY_LENGTH: usize = 33;
-/// Cost of writing a single byte into the world state.
+/// Cost of writing a single byte into the MPT's backing storage.
 pub const MPT_WRITE_PER_BYTE_COST: u64 = 2500;
-/// Cost of reading a single byte from the world state.
+/// Cost of reading a single byte from the MPT's backing storage.
 pub const MPT_READ_PER_BYTE_COST: u64 = 50;
 /// Cost of traversing 1 byte (2 nibbles) down an MPT.
 pub const MPT_TRAVERSE_PER_BYTE_COST: u64 = 20;
@@ -350,33 +346,34 @@ pub const MPT_TRAVERSE_PER_BYTE_COST: u64 = 20;
 pub const MPT_REHASH_PER_BYTE_COST: u64 = 130;
 /// Proportion of the cost of writing a tuple into an MPT that is refunded when that tuple is re-set or deleted.
 pub const MPT_WRITE_REFUND_PROPORTION: u64 = 50;
-/// Proportion of which is discounted if the tuple contains a contract.
+/// Proportion of get cost which is discounted if the tuple contains a contract.
 pub const MPT_GET_CODE_DISCOUNT_PROPORTION: u64 = 50;
+/// Length of a Keccak256 hash.
+pub const KECCAK256_LENGTH: u64 = 32;
 
-/// get_cost calculates the cost of reading data from the World State.
-pub const fn get_cost(key_len: usize, value_len: usize) -> u64 {
-    let get_cost_1 = (value_len as u64).saturating_mul(MPT_READ_PER_BYTE_COST);
-    let get_cost_2 = (key_len as u64).saturating_mul(MPT_TRAVERSE_PER_BYTE_COST);
-    get_cost_1.saturating_add(get_cost_2)
+pub const fn get_cost_traverse(key_len: usize) -> u64 {
+    (key_len as u64).saturating_mul(MPT_TRAVERSE_PER_BYTE_COST)
 }
 
-/// get_code_cost calculates the cost of reading contract code from the World State.
-pub const fn get_code_cost(code_len: usize) -> u64 {
-    // Get Cost
-    get_cost(ACCOUNT_TRIE_KEY_LENGTH, code_len)
-        // Code Discount
+pub const fn get_cost_read(value_len: usize) -> u64 {
+    (value_len as u64).saturating_mul(MPT_READ_PER_BYTE_COST)
+}
+
+/// discount_code_read applies a discount to the read cost if the value read is contract code
+pub fn discount_code_read(code_read_cost: u64) -> u64 {
+    code_read_cost
         .saturating_mul(MPT_GET_CODE_DISCOUNT_PROPORTION)
         .saturating_div(100)
 }
 
-/// Set Cost (1): Cost for getting the key.
-pub const fn set_cost_read_key(key_len: usize, value_len: usize) -> u64 {
-    get_cost(key_len, value_len)
-}
-
-/// Set Cost (2): Cost for deleting the old value for a refund.
+/// Set Cost (2): Cost for deleting the old value for a refund
+/// Note, Set Cost (1) is calculated under Get costs
 #[allow(clippy::double_comparisons)]
-pub fn set_cost_delete_old_value(key_len: usize, old_val_len: usize, new_val_len: usize) -> u64 {
+pub const fn set_cost_delete_old_value(
+    key_len: usize,
+    old_val_len: usize,
+    new_val_len: usize,
+) -> u64 {
     let old_val_len = old_val_len as u64; // (a)
     let new_val_len = new_val_len as u64; // (b)
     if (old_val_len > 0 || old_val_len == 0) && new_val_len > 0 {
@@ -395,21 +392,16 @@ pub fn set_cost_delete_old_value(key_len: usize, old_val_len: usize, new_val_len
     }
 }
 
-/// Set Cost (3): Cost for writing a new value.
+/// Set Cost (3): Cost for writing a new value
 pub const fn set_cost_write_new_value(new_val_len: usize) -> u64 {
     // b * C_write
     (new_val_len as u64).saturating_mul(MPT_WRITE_PER_BYTE_COST)
 }
 
-/// Set Cost (4): Cost for recomputing node hashes until the root.
+/// Set Cost (4): Cost for recomputing node hashes until the root
 pub const fn set_cost_rehash(key_len: usize) -> u64 {
     // k * C_rehash
     (key_len as u64).saturating_mul(MPT_REHASH_PER_BYTE_COST)
-}
-
-/// contains_cost calculates the cost of checking key existence in the World State.
-pub const fn contains_cost(key_len: usize) -> u64 {
-    (key_len as u64).saturating_mul(MPT_TRAVERSE_PER_BYTE_COST)
 }
 
 /* ↓↓↓ Gas Costs for crypto functions ↓↓↓ */

@@ -208,7 +208,8 @@ where
     }
 
     fn charge<T>(&self, op_receipt: OperationReceipt<T>) -> T {
-        self.wasmer_remaining_gas.subtract(op_receipt.1.values().0);
+        self.wasmer_remaining_gas
+            .subtract(op_receipt.1.net_cost().0);
         op_receipt.0
     }
 }

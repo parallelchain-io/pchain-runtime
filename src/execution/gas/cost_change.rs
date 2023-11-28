@@ -42,8 +42,7 @@ impl CostChange {
         }
     }
 
-    // TODO i don't like this, not obvious that it is post-reconcillation
-    pub fn values(&self) -> (u64, u64) {
+    pub fn net_cost(&self) -> (u64, u64) {
         (
             self.deduct.saturating_sub(self.reward),
             self.reward.saturating_sub(self.deduct),
@@ -91,8 +90,8 @@ fn test_cost_change() {
     let mut change = CostChange::default(); // = 0
     change += CostChange::reward(1); // = 1
     change += CostChange::deduct(2); // = -1
-    assert_eq!(change.values(), (1, 0));
+    assert_eq!(change.net_cost(), (1, 0));
     change -= CostChange::deduct(3); // = 2
     change -= CostChange::reward(0); // = 2
-    assert_eq!(change.values(), (0, 2));
+    assert_eq!(change.net_cost(), (0, 2));
 }

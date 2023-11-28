@@ -481,7 +481,6 @@ pub(crate) fn verify_receipt_content_v2(
     receipt: &ReceiptV2,
     total_gas_used: u64,
     commands_gas_used: u64,
-    // TODO assert individual command sucesss
     receipt_exit_code: ExitCodeV2,
     non_executed_count: usize,
 ) -> bool {

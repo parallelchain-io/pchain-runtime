@@ -8,7 +8,6 @@ pub mod abort;
 pub mod execute_commands;
 
 pub mod phases;
-mod test;
 
 #[cfg(test)]
 mod tests {

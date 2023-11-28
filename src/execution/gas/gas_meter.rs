@@ -148,8 +148,6 @@ where
             TxnVersion::V1 => gas::tx_inclusion_cost_v1(tx_size, tx_command_kinds),
             TxnVersion::V2 => gas::tx_inclusion_cost_v2(tx_size, tx_command_kinds),
         };
-        println!("version {:?}", version);
-        println!("required_cost {:?}", required_cost);
 
         if required_cost > self.gas_limit {
             return Err(TransitionError::PreExecutionGasExhausted);
@@ -299,24 +297,19 @@ where
 
 #[derive(Clone, Default)]
 pub(crate) struct GasUsed {
-    cost_change: RefCell<CostChange>,
+    total: RefCell<CostChange>,
 }
 
 impl GasUsed {
     pub fn chargeable_cost(&self) -> u64 {
-        println!(
-            "CHARGEABLE---------------- cost_change {:?}",
-            self.cost_change.borrow()
-        );
-        self.cost_change.borrow().values().0
+        self.total.borrow().net_cost().0
     }
 
     pub fn charge(&self, cost_change: CostChange) {
-        println!("------------------- cost_change {:?}", cost_change);
-        *self.cost_change.borrow_mut() += cost_change;
+        *self.total.borrow_mut() += cost_change;
     }
 
     pub fn reset(&mut self) {
-        *self.cost_change.borrow_mut() = CostChange::default();
+        *self.total.borrow_mut() = CostChange::default();
     }
 }

@@ -10,9 +10,8 @@ use crate::commands::protocol;
 
 use super::test_utils::*;
 
-// TODO better phrase this
-// Note, the tests here use ctx.gas_meter merely as a shorthand to prepare testing state
-// important to recall that the next_epoch operations are non-chargeable.
+// Note: The next epoch functions tested here are non-chargeable
+// ctx.gas_meter is used only to prepare testing state
 
 // Prepare: no pool in world state
 // Prepare: empty pvp and vp.

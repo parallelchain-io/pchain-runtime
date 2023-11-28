@@ -62,8 +62,6 @@ where
 
         // Execute command
         let cmd_kind = executable_cmd.command_kind();
-        // println!("executing command: {:?}", executable_cmd);
-        println!("cmd idx: {:?}", command_index);
         let execution_result = executable_cmd.consume_and_execute(&mut state, command_index);
 
         let deferred_cmds_from_execution = P::handle_command_execution_result(
@@ -130,7 +128,7 @@ where
         state: ExecutionState<'a, S, CommandReceiptV1, V>,
         error: TransitionError,
     ) -> TransitionV1Result<'a, S, V> {
-        let (new_state, _): (_, ReceiptV1) = state.finalize();
+        let (new_state, _): (_, ReceiptV1) = state.finalize_receipt();
         TransitionV1Result {
             new_state,
             receipt: None,
@@ -156,7 +154,7 @@ where
         state: ExecutionState<'a, S, CommandReceiptV1, V>,
         error: TransitionError,
     ) -> TransitionV1Result<'a, S, V> {
-        let (new_state, receipt) = phases::charge(state).finalize();
+        let (new_state, receipt) = phases::charge(state).finalize_receipt();
         TransitionV1Result {
             new_state,
             error: Some(error),
@@ -168,7 +166,7 @@ where
     fn handle_charge(
         state: ExecutionState<'a, S, CommandReceiptV1, V>,
     ) -> TransitionV1Result<'a, S, V> {
-        let (new_state, receipt) = phases::charge(state).finalize();
+        let (new_state, receipt) = phases::charge(state).finalize_receipt();
         TransitionV1Result {
             new_state,
             error: None,
@@ -191,7 +189,7 @@ where
         state: ExecutionState<'a, S, CommandReceiptV2, V>,
         error: TransitionError,
     ) -> TransitionV2Result<'a, S, V> {
-        let (new_state, _): (_, ReceiptV2) = state.finalize();
+        let (new_state, _): (_, ReceiptV2) = state.finalize_receipt();
         TransitionV2Result {
             new_state,
             receipt: None,
@@ -217,7 +215,7 @@ where
         state: ExecutionState<'a, S, CommandReceiptV2, V>,
         error: TransitionError,
     ) -> TransitionV2Result<'a, S, V> {
-        let (new_state, receipt) = phases::charge(state).finalize();
+        let (new_state, receipt) = phases::charge(state).finalize_receipt();
         TransitionV2Result {
             new_state,
             error: Some(error),
@@ -229,7 +227,7 @@ where
     fn handle_charge(
         state: ExecutionState<'a, S, CommandReceiptV2, V>,
     ) -> TransitionV2Result<'a, S, V> {
-        let (new_state, receipt) = phases::charge(state).finalize();
+        let (new_state, receipt) = phases::charge(state).finalize_receipt();
         TransitionV2Result {
             new_state,
             error: None,

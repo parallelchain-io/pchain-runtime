@@ -7,17 +7,17 @@
 //!
 //!
 //! The caches are split into different categories representing the types of data that
-//! are stored in an Account
-//! // TODO excluding nonce?
+//! are stored in an Account (excluding the nonce which is not deteremined by users).
 //!
 //! Within each data category, there are two sets of caches
-//! - `reads` (data read first-hand from world state)
-//! - `writes` (data pending to be written to world state)
+//! - `reads` (data read first-hand from World State)
+//! - `writes` (data pending to be written to World State)
 //!
 //! Procedure of a Read operation: First, `writes` is checked. If data is not found, search in `reads`.
 //! If data is still not found, access the World State. The result, if retrieved, will then be cached to `reads`.
 //!
 //! Procedure of a Write operation: The `writes` cache is updated with the latest data.
+//! Writing to the actual World State happens in a separate, consolidated step.
 //!
 //! At the end of a successful state transition, the data in `writes` will be written to World State. Otherwise,
 //! `writes` is discarded without any changes to World State.
@@ -26,8 +26,6 @@ use std::{cell::RefCell, collections::HashMap};
 
 use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{VersionProvider, WorldState, DB};
-
-// TODO - change to 'static
 
 /// ReadWriteSet defines data cache for Read-Write opertaions during state transition.
 #[derive(Clone)]

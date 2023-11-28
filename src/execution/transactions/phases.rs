@@ -72,7 +72,6 @@ where
         .checked_sub(pre_charge)
         .ok_or(TransitionError::NotEnoughBalanceForGasLimit)?; // pre_charge > origin_balance
 
-    // TODO remove unwrap
     ws_cache
         .ws
         .account_trie_mut()
