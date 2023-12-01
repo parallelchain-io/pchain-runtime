@@ -3,6 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+//! Defines a struct that serves as temporary store for Command Receipts.
 use pchain_types::blockchain::{
     CommandReceiptV1, CommandReceiptV2, ExitCodeV2, ReceiptV1, ReceiptV2,
 };

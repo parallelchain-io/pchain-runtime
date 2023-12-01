@@ -7,20 +7,18 @@
 
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
-/// A Gas counter for calculating gas consumption.
+/// A struct for storing intermediate gas cost changes.
 ///
-/// Gas cost can be increased or reduced during transition. In some situations, the total
-/// increase amount must be bounded regardless of how large is the reduce amount. Hence, there are
-/// two counters keep track on the both positive and negative side of the value, named `deduct` and `reward`.
-/// The counter `deduct` is to be checked if it exceeds certain limit at some point, while the counter `reward`
-/// is used at the end of the process to calculate the final gas cost by compensating it.
+/// Gas is deducted for most chargeable operations.
+/// In some cases, e.g. the removal of stored data, gas can be refunded as a reward.
+/// The net gas cost is computed by offsetting these values.
 ///
 /// ### Example:
 /// ```no_run
 /// let mut change = CostChange::default(); // = 0
 /// change += CostChange::reward(1); // = 1
 /// change += CostChange::deduct(2); // = -1
-/// assert_eq!(change.values().0, 1);
+/// assert_eq!(change.net_cost().0, 1);
 /// ```
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct CostChange {

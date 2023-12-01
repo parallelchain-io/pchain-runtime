@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! ### Executing Next Epoch Command
+//! Execution of Next Epoch Command
 //!
 //! Next Epoch is a special command that does not go through Pre-Charge Phase or Charge Phase, but
 //! will modify the state and update signer's nonce. Its goal is to compute the resulting state of
@@ -11,7 +11,6 @@
 
 use pchain_types::blockchain::{Command, CommandReceiptV1, CommandReceiptV2};
 use pchain_world_state::{VersionProvider, DB};
-// use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{
     commands::protocol, transition::TransitionV2Result, types::CommandKind, TransitionError,

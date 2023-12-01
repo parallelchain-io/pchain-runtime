@@ -5,7 +5,6 @@
 
 //! Defines a struct that serves as a cache layer on top of World State.
 //!
-//!
 //! The caches are split into different categories representing the types of data that
 //! are stored in an Account (excluding the nonce which is not deteremined by users).
 //!
@@ -27,7 +26,7 @@ use std::{cell::RefCell, collections::HashMap};
 use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{VersionProvider, WorldState, DB};
 
-/// ReadWriteSet defines data cache for Read-Write opertaions during state transition.
+/// WorldStateCache defines data cache for Read-Write opertaions during state transition.
 #[derive(Clone)]
 pub(crate) struct WorldStateCache<'a, S, V>
 where

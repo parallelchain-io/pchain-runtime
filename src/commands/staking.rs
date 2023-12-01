@@ -19,6 +19,10 @@ use crate::{
     TransitionError,
 };
 
+/// CreatePool
+///
+///
+///
 /// Execution of [pchain_types::blockchain::Command::CreatePool]
 pub(crate) fn create_pool<S, E, V>(
     operator: PublicAddress,
@@ -50,6 +54,10 @@ where
     abort_if_gas_exhausted(state)
 }
 
+/// SetPoolSettings
+///
+///
+///
 /// Execution of [pchain_types::blockchain::Command::SetPoolSettings]
 pub(crate) fn set_pool_settings<S, E, V>(
     operator: PublicAddress,
@@ -79,6 +87,10 @@ where
     abort_if_gas_exhausted(state)
 }
 
+/// DeletePool
+///
+///
+///
 /// Execution of [pchain_types::blockchain::Command::DeletePool]
 pub(crate) fn delete_pool<S, E, V>(
     operator: PublicAddress,
@@ -100,6 +112,10 @@ where
     abort_if_gas_exhausted(state)
 }
 
+/// CreateDeposit
+///
+///
+///
 /// Execution of [pchain_types::blockchain::Command::CreateDeposit]
 pub(crate) fn create_deposit<S, E, V>(
     owner: PublicAddress,
@@ -137,6 +153,10 @@ where
     abort_if_gas_exhausted(state)
 }
 
+/// SetDepositSettings
+///
+///
+///
 /// Execution of [pchain_types::blockchain::Command::SetDepositSettings]
 pub(crate) fn set_deposit_settings<S, E, V>(
     owner: PublicAddress,
@@ -162,6 +182,10 @@ where
     abort_if_gas_exhausted(state)
 }
 
+/// TopUpDeposit
+///
+///
+///
 /// Execution of [pchain_types::blockchain::Command::TopUpDeposit]
 pub(crate) fn topup_deposit<S, E, V>(
     owner: PublicAddress,
@@ -194,6 +218,10 @@ where
     abort_if_gas_exhausted(state)
 }
 
+/// WithdrawDeposit
+///
+///
+///
 /// Execution of [pchain_types::blockchain::Command::WithdrawDeposit]
 pub(crate) fn withdraw_deposit<S, E, V>(
     owner: PublicAddress,
@@ -299,6 +327,10 @@ where
     abort_if_gas_exhausted(state)
 }
 
+/// StakeDeposit
+///
+///
+///
 /// Execution of [pchain_types::blockchain::Command::StakeDeposit]
 pub(crate) fn stake_deposit<S, E, V>(
     owner: PublicAddress,
@@ -369,6 +401,10 @@ where
     abort_if_gas_exhausted(state)
 }
 
+/// UnstakeDeposit
+///
+///
+///
 /// Execution of [pchain_types::blockchain::Command::UnstakeDeposit]
 pub(crate) fn unstake_deposit<S, E, V>(
     owner: PublicAddress,
@@ -427,6 +463,10 @@ where
     abort_if_gas_exhausted(state)
 }
 
+/// Helpers
+///
+///
+///
 /// return owner's stake from operator's pool (NVS)
 pub(crate) fn stake_of_pool<T>(
     state: &mut T,

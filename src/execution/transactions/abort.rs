@@ -6,7 +6,7 @@
 use crate::{execution::state::ExecutionState, TransitionError};
 use pchain_world_state::{VersionProvider, DB};
 
-/// Abort is operation that causes all World State sets in the Commands Phase to be reverted.
+/// Causes all World State changes in the Commands Phase to be reverted.
 macro_rules! abort {
     ($state:ident, $err_var:path ) => {
         return {
@@ -18,7 +18,7 @@ macro_rules! abort {
 
 pub(crate) use abort;
 
-/// Return Error GasExhaust if gas has already been exhausted
+/// Returns relevant error on gas exhaustion.
 pub(crate) fn abort_if_gas_exhausted<S, E, V>(
     state: &mut ExecutionState<S, E, V>,
 ) -> Result<(), TransitionError>

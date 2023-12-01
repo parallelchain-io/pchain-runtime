@@ -22,6 +22,10 @@ use crate::{
 
 use crate::execution::state::ExecutionState;
 
+/// Transfer
+///
+///
+///
 /// Execution of [pchain_types::blockchain::Command::Transfer]
 pub(crate) fn transfer<S, E, V>(
     state: &mut ExecutionState<'_, S, E, V>,
@@ -55,6 +59,10 @@ where
     abort_if_gas_exhausted(state)
 }
 
+/// Call
+///
+///
+///
 /// Execution of [pchain_types::blockchain::Command::Call]
 pub(crate) fn call<S, E, V>(
     state: &mut ExecutionState<S, E, V>,
@@ -201,6 +209,10 @@ where
     }
 }
 
+/// Deploy
+///
+///
+///
 /// Execution of [pchain_types::blockchain::Command::Deploy]
 pub(crate) fn deploy<'a, 'b, S, E, V>(
     state: &'b mut ExecutionState<'a, S, E, V>,

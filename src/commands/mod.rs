@@ -5,8 +5,6 @@
 
 pub mod account;
 
-pub mod executable;
-
 pub mod protocol;
 
 pub mod staking;

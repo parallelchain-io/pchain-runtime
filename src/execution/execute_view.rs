@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! ### Executing a [View call](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
+//! Execution of a [View call](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
 //!
 //! A View Call refers to the execution of view-only methods in a contract without actual gas charging.
 //! These methods are not allowed to modify the state of blockchain.
@@ -15,7 +15,6 @@ use pchain_types::{
     cryptography::PublicAddress,
 };
 use pchain_world_state::{VersionProvider, DB};
-// use pchain_world_state::storage::WorldStateStorage;
 
 use crate::{commands::account, TransitionError};
 
@@ -37,7 +36,7 @@ where
             Ok(()) => (ExitCodeV1::Success, None),
             Err(error) => (ExitCodeV1::from(&error), Some(error)),
         };
-    let (gas_used, command_output, _) = state.ctx.extract();
+    let (gas_used, command_output, _) = state.ctx.complete_cmd_execution();
 
     (
         CommandReceiptV1 {
@@ -66,7 +65,7 @@ where
             Ok(()) => (ExitCodeV2::Ok, None),
             Err(error) => (ExitCodeV2::from(&error), Some(error)),
         };
-    let (gas_used, command_output, _) = state.ctx.extract();
+    let (gas_used, command_output, _) = state.ctx.complete_cmd_execution();
 
     (
         CommandReceiptV2::Call(CallReceipt {

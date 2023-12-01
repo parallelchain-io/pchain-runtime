@@ -49,8 +49,9 @@ pub const fn cbi_version() -> u32 {
     crate::contract::CBI_VERSION
 }
 
-/// A Runtime for state transition. Instants of runtime share the same execution logic, but
-/// differ in configurations such as data cache for smart contract and memory limit to WASM execution.
+/// A Runtime for state transition.
+/// Instances of runtime share the same execution logic,
+/// but offer tunable configurations such as data cache for smart contract and memory limit allowed for Wasm contract code execution.
 #[derive(Default)]
 pub struct Runtime {
     sc_context: SmartContractContext,
@@ -365,7 +366,7 @@ where
         &mut self.gas_meter.ws_cache
     }
 
-    /// Consume itself to get the World State Cache. It can be used when the transition context is
+    /// Consumes self to output the World State Cache. It can be used when the transition context is
     /// no longer needed (e.g. at the end of transition).
     pub fn into_ws_cache(self) -> WorldStateCache<'a, S, V> {
         self.gas_meter.ws_cache
@@ -376,11 +377,10 @@ where
         self.gas_meter.ws_cache.revert();
     }
 
+    /// Outputs the CommandReceipt and clears the intermediate context for next command execution.
     // IMPORTANT: This function must be called after each command execution, whether success or fail
     // as all the tallying and state changes happen here.
-    //
-    /// Output the CommandReceipt and clear the intermediate context for next command execution.
-    pub fn extract(&mut self) -> (u64, CommandOutput, Option<Vec<DeferredCommand>>) {
+    pub fn complete_cmd_execution(&mut self) -> (u64, CommandOutput, Option<Vec<DeferredCommand>>) {
         // 1. Take the fields from output cache and update to gas meter at this checkpoint
         let (gas_used, command_output) = self.gas_meter.take_current_command_result();
 

@@ -3,9 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-use pchain_types::blockchain::Log;
-
+//! Defines a struct that serves as a cache layer for values returned from Command execution.
 use crate::types::CommandOutput;
+use pchain_types::blockchain::Log;
 
 #[derive(Clone, Default)]
 pub(crate) struct CommandOutputCache {

@@ -16,7 +16,7 @@ blake2 = "0.10"
 ed25519-dalek = "2.0.0"
 keccak-hasher = "0.15.3"
 loupe = "0.1"
-pchain-types = { git = "https://github.com/parallelchain-io/pchain-types-rust", branch = "protocol_v0.5" }
+pchain-types = { git = "https://github.com/parallelchain-io/pchain-types-rust.git" }
 pchain-world-state = { git = "https://github.com/parallelchain-io/pchain-world-state", branch = "protocol_v0.5" }
 ripemd = "0.1.1"
 sha2 = "0.10.0"

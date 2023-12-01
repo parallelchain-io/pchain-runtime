@@ -29,8 +29,8 @@ use pchain_types::blockchain::{Command, CommandReceiptV1, CommandReceiptV2, Rece
 use pchain_world_state::{VersionProvider, DB};
 
 use crate::{
-    commands::executable::Executable,
     execution::{
+        execute::Execute,
         phases::{self},
         state::{ExecutionState, FinalizeState},
     },

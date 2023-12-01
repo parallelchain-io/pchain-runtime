@@ -1,3 +1,9 @@
+/*
+    Copyright © 2023, ParallelChain Lab
+    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+*/
+
+//! Defines structs for tracking gas usage during contract calls.
 use core::panic;
 use std::mem::MaybeUninit;
 
@@ -16,8 +22,8 @@ use super::{
     GasMeter,
 };
 
-/// Keeps track of total gas used when executing contract calls.
-/// References the Wasmer global var tracking gas usage from Wasm opcode execution
+/// Source of truth for total gas used when executing contract calls.
+/// References the Wasmer global variable tracking gas usage from Wasm opcode execution
 /// and exposes method for deducting gas usage by host functions.
 pub(crate) struct WasmerGasGlobal {
     /// global vaiable of wasmer_middlewares::metering remaining points.

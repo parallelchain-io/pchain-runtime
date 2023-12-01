@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! The Executable Trait specifies the execution behaviour of Commands and DeferredCommands.
+//! The Execute Trait specifies the execution behaviour of Commands and DeferredCommands.
 
 use pchain_types::{
     blockchain::Command,
@@ -17,12 +17,13 @@ use pchain_types::{
 use pchain_world_state::{VersionProvider, DB};
 
 use crate::{
-    commands::account, execution::state::ExecutionState, types::DeferredCommand, TransitionError,
+    commands::{account, staking},
+    execution::state::ExecutionState,
+    types::DeferredCommand,
+    TransitionError,
 };
 
-use super::staking;
-
-pub(crate) trait Executable<S, E, V>
+pub(crate) trait Execute<S, E, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
@@ -34,7 +35,7 @@ where
     ) -> Result<(), TransitionError>;
 }
 
-impl<S, E, V> Executable<S, E, V> for Command
+impl<S, E, V> Execute<S, E, V> for Command
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone + 'static,
@@ -49,7 +50,7 @@ where
     }
 }
 
-impl<S, E, V> Executable<S, E, V> for DeferredCommand
+impl<S, E, V> Execute<S, E, V> for DeferredCommand
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone + 'static,

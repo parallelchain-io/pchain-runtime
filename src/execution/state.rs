@@ -23,27 +23,23 @@ use crate::{
 
 use super::cache::{receipt_cache, CommandReceiptCache};
 
-/// ExecutionState is a collection of all useful information required to transit an state through Phases.
-/// Methods defined in ExecutionState do not directly update data to world state, but associate with the
-/// [crate::read_write_set::ReadWriteSet] in [TransitionContext] which serves as a data cache in between runtime and world state.
+/// ExecutionState is the base struct that contains all information needed for state transition.
+/// It implements logic for the different phases of state transition.
 pub(crate) struct ExecutionState<'a, S, E, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    /*** Transaction ***/
     /// Base Transaction as a transition input
     pub tx: BaseTx,
 
-    /*** Blockchain ***/
     /// Blockchain data as a transition input
     pub bd: BlockchainParams,
 
-    /*** World State ***/
-    /// Transition Context which also contains world state as input
+    /// Transition Context which also contains World State as input
     pub ctx: TransitionContext<'a, S, V>,
 
-    /*** Command Receipts ***/
+    /// Output cache for Command Receipts
     pub receipt: CommandReceiptCache<E>,
 }
 
@@ -85,7 +81,8 @@ where
         };
 
         // extract receipt from current execution result
-        let (gas_used, command_output, deferred_commands_from_call) = self.ctx.extract();
+        let (gas_used, command_output, deferred_commands_from_call) =
+            self.ctx.complete_cmd_execution();
         self.receipt.push_command_receipt(CommandReceiptV1 {
             exit_code,
             gas_used,
@@ -106,7 +103,7 @@ where
         };
 
         // extract receipt from current execution result
-        let (gas_used, command_output, _) = self.ctx.extract();
+        let (gas_used, command_output, _) = self.ctx.complete_cmd_execution();
         self.receipt
             .push_deferred_command_receipt(CommandReceiptV1 {
                 exit_code,
@@ -139,7 +136,8 @@ where
         };
 
         // extract receipt from current execution result
-        let (gas_used, command_output, deferred_commands_from_call) = self.ctx.extract();
+        let (gas_used, command_output, deferred_commands_from_call) =
+            self.ctx.complete_cmd_execution();
         self.receipt
             .push_command_receipt(types::create_executed_cmd_rcp_v2(
                 &command_kind,
@@ -161,7 +159,7 @@ where
         };
 
         // extract receipt from current execution result
-        let (gas_used, command_output, _) = self.ctx.extract();
+        let (gas_used, command_output, _) = self.ctx.complete_cmd_execution();
         self.receipt
             .push_deferred_command_receipt(types::create_executed_cmd_rcp_v2(
                 &command_kind,

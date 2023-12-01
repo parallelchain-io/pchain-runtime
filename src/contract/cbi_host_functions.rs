@@ -3,9 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Definition of host functions that are imported by ParallelChain Smart Contracts.
+//! Defines the signature of host functions that are imported by ParallelChain Smart Contracts.
 //!
-//! The definitions follows the specification in [ParallelChain protocol](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md).
+//! The definitions follow the specification in [ParallelChain protocol](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md).
 
 use wasmer::{imports, Function, ImportObject, Store};
 

@@ -1,3 +1,10 @@
+/*
+    Copyright © 2023, ParallelChain Lab
+    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+*/
+
+//! Defines the logic of gas counting for each operation.
+
 use ed25519_dalek::Verifier;
 use pchain_types::{blockchain::Log, cryptography::PublicAddress};
 use pchain_world_state::{VersionProvider, DB};

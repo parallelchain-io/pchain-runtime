@@ -3,6 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+//! Defines a global [GasMeter] that keeps track of gas used outside of contract call execution.
 use std::cell::RefCell;
 
 use pchain_types::cryptography::PublicAddress;
@@ -22,8 +23,7 @@ use super::{
 
 use crate::execution::cache::{CommandOutputCache, WorldStateCache};
 
-/// GasMeter is a global struct that keeps track of gas used outside of contract call execution.
-/// It implements a facade for all chargeable methods.
+/// GasMeter implements a facade for all gas-chargeable methods.
 #[derive(Clone)]
 pub(crate) struct GasMeter<'a, S, V>
 where
