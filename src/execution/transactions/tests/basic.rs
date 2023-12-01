@@ -20,7 +20,7 @@ fn test_empty_commands() {
 
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_A)
@@ -37,7 +37,7 @@ fn test_empty_commands() {
     let state = create_state_v1(Some(ret.new_state));
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_A)
@@ -53,7 +53,7 @@ fn test_empty_commands() {
     let mut state = create_state_v2(Some(fixture.ws()));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_A)
@@ -75,7 +75,7 @@ fn test_empty_commands() {
     let state = create_state_v2(Some(ret.new_state));
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_A)

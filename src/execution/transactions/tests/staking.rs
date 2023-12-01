@@ -2099,7 +2099,7 @@ fn test_unstake_deposit_same_owner_nvp_change_key() {
 
     state
         .ctx
-        .inner_ws_cache_mut()
+        .gas_free_ws_cache_mut()
         .ws
         .account_trie_mut()
         .set_balance(&ACCOUNT_T, 500_000_000)
@@ -2164,7 +2164,7 @@ fn test_unstake_deposit_same_owner_nvp_change_key() {
 
     state
         .ctx
-        .inner_ws_cache_mut()
+        .gas_free_ws_cache_mut()
         .ws
         .account_trie_mut()
         .set_balance(&ACCOUNT_T, 500_000_000)
@@ -2244,7 +2244,7 @@ fn test_unstake_deposit_same_owner_nvp_remove() {
 
     state
         .ctx
-        .inner_ws_cache_mut()
+        .gas_free_ws_cache_mut()
         .ws
         .account_trie_mut()
         .set_balance(&ACCOUNT_T, 500_000_000)
@@ -2304,7 +2304,7 @@ fn test_unstake_deposit_same_owner_nvp_remove() {
 
     state
         .ctx
-        .inner_ws_cache_mut()
+        .gas_free_ws_cache_mut()
         .ws
         .account_trie_mut()
         .set_balance(&ACCOUNT_T, 500_000_000)
@@ -2385,7 +2385,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
     let mut state = create_state_v1(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -2430,7 +2430,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
     );
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -2564,7 +2564,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
     let mut state = create_state_v2(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -2606,7 +2606,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
     assert_eq!((stake.owner, stake.power), (ACCOUNT_B, 60_000));
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -2791,7 +2791,7 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_change_key() {
     let mut state = create_state_v1(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -2841,7 +2841,7 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_change_key() {
     );
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -2892,7 +2892,7 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_change_key() {
     let mut state = create_state_v2(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -2939,7 +2939,7 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_change_key() {
     );
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -2999,7 +2999,7 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_remove() {
     let mut state = create_state_v1(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_A)
@@ -3048,7 +3048,7 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_remove() {
     );
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -3099,7 +3099,7 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_remove() {
     let mut state = create_state_v2(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_A)
@@ -3144,7 +3144,7 @@ fn test_withdrawal_deposit_delegated_stakes_nvp_remove() {
     );
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -3196,7 +3196,7 @@ fn test_withdrawal_deposit_same_owner() {
     let mut state = create_state_v1(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_A)
@@ -3242,7 +3242,7 @@ fn test_withdrawal_deposit_same_owner() {
     );
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_A)
@@ -3272,7 +3272,7 @@ fn test_withdrawal_deposit_same_owner() {
     let mut state = create_state_v2(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_A)
@@ -3321,7 +3321,7 @@ fn test_withdrawal_deposit_same_owner() {
     );
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_A)
@@ -3354,7 +3354,7 @@ fn test_withdrawal_deposit_same_owner_nvp_change_key() {
 
     state
         .ctx
-        .inner_ws_cache_mut()
+        .gas_free_ws_cache_mut()
         .ws
         .account_trie_mut()
         .set_balance(&ACCOUNT_T, 500_000_000)
@@ -3364,7 +3364,7 @@ fn test_withdrawal_deposit_same_owner_nvp_change_key() {
     let mut state = create_state_v1(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_T)
@@ -3407,7 +3407,7 @@ fn test_withdrawal_deposit_same_owner_nvp_change_key() {
     );
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_T)
@@ -3451,7 +3451,7 @@ fn test_withdrawal_deposit_same_owner_nvp_change_key() {
 
     state
         .ctx
-        .inner_ws_cache_mut()
+        .gas_free_ws_cache_mut()
         .ws
         .account_trie_mut()
         .set_balance(&ACCOUNT_T, 500_000_000)
@@ -3461,7 +3461,7 @@ fn test_withdrawal_deposit_same_owner_nvp_change_key() {
     let mut state = create_state_v2(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_T)
@@ -3507,7 +3507,7 @@ fn test_withdrawal_deposit_same_owner_nvp_change_key() {
     );
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_T)
@@ -3557,7 +3557,7 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
 
     state
         .ctx
-        .inner_ws_cache_mut()
+        .gas_free_ws_cache_mut()
         .ws
         .account_trie_mut()
         .set_balance(&ACCOUNT_T, 500_000_000)
@@ -3567,7 +3567,7 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
     let mut state = create_state_v1(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_A)
@@ -3604,7 +3604,7 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
         .is_none());
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_T)
@@ -3649,7 +3649,7 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
 
     state
         .ctx
-        .inner_ws_cache_mut()
+        .gas_free_ws_cache_mut()
         .ws
         .account_trie_mut()
         .set_balance(&ACCOUNT_T, 500_000_000)
@@ -3659,7 +3659,7 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
     let mut state = create_state_v2(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_A)
@@ -3700,7 +3700,7 @@ fn test_withdrawal_deposit_same_owner_nvp_remove() {
         .is_none());
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_T)
@@ -3783,7 +3783,7 @@ fn test_withdrawal_deposit_bounded_by_vp() {
     let mut state = create_state_v1(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -3830,7 +3830,7 @@ fn test_withdrawal_deposit_bounded_by_vp() {
 
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -3891,7 +3891,7 @@ fn test_withdrawal_deposit_bounded_by_vp() {
     let mut state = create_state_v2(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -3941,7 +3941,7 @@ fn test_withdrawal_deposit_bounded_by_vp() {
 
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -4005,7 +4005,7 @@ fn test_withdrawal_deposit_bounded_by_pvp() {
     let mut state = create_state_v1(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -4052,7 +4052,7 @@ fn test_withdrawal_deposit_bounded_by_pvp() {
     );
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -4113,7 +4113,7 @@ fn test_withdrawal_deposit_bounded_by_pvp() {
     let mut state = create_state_v2(Some(ws));
     let owner_balance_before = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)
@@ -4164,7 +4164,7 @@ fn test_withdrawal_deposit_bounded_by_pvp() {
     );
     let owner_balance_after = state
         .ctx
-        .inner_ws_cache()
+        .gas_free_ws_cache()
         .ws
         .account_trie()
         .balance(&ACCOUNT_B)

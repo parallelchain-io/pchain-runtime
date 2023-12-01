@@ -173,7 +173,11 @@ where
 
         let instance = contract_module
             .instantiate(
-                Arc::new(Mutex::new(state.ctx.clone())), // TODO 95 don't clone the Transition context. on entry, intstead remove it from the ARC
+                // Before contract execution, we need to clone to the TransitionContext and embed it an Arc<Mutex>
+                // to fulfil the trait requirements for WasmerEnv (Send + Sync + Clone).
+                // Because this function does not own ExecutionState, it cannot pass an owned instance of TransitionContext.
+                // This might be refactored in future with a change to Wasmer's API
+                Arc::new(Mutex::new(state.ctx.clone())),
                 0,
                 is_view,
                 call_tx,

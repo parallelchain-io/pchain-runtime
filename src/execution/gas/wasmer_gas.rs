@@ -16,15 +16,16 @@ use super::{
     GasMeter,
 };
 
-/// Tracks the WebAssembly global instance which represents the remaining gas
-/// during Wasmer execution.
-pub(crate) struct WasmerRemainingGas {
+/// Keeps track of total gas used when executing contract calls.
+/// References the Wasmer global var tracking gas usage from Wasm opcode execution
+/// and exposes method for deducting gas usage by host functions.
+pub(crate) struct WasmerGasGlobal {
     /// global vaiable of wasmer_middlewares::metering remaining points.
     wasmer_gas: MaybeUninit<Global>,
     is_initialized: bool,
 }
 
-impl WasmerRemainingGas {
+impl WasmerGasGlobal {
     pub fn new() -> Self {
         Self {
             wasmer_gas: MaybeUninit::uninit(),
@@ -73,45 +74,55 @@ impl WasmerRemainingGas {
     }
 }
 
-pub(crate) struct WasmerGasMeter<'a, 'b, S, M, V>
+/// Implements a facade for all chargeable Wasm host functions,
+/// and deducts the cost of each operation from WasmerGasGlobal.
+pub(crate) struct HostFuncGasMeter<'a, 'b, S, M, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     M: MemoryContext,
     V: VersionProvider + Send + Sync + Clone,
 {
+    /// version of the transaction
     version: TxnVersion,
+    /// reference to the outer Env struct, for memory operations
     memory_ctx: &'b M,
-    wasmer_remaining_gas: &'b WasmerRemainingGas,
+    /// mutable reference to the WasmerGasGlobal which lives for entire duration of Env (contract call)
+    /// though not strictly needed, its mutability reflects the fact that it is modified by host functions
+    wasmer_gas_global: &'b mut WasmerGasGlobal,
+    /// mutable reference to CommandOutputCache from the global gas meter
     command_output_cache: &'b mut CommandOutputCache,
+    /// mutable reference to WorldStateCache from the global gas meter
     ws_cache: &'b mut WorldStateCache<'a, S, V>,
 }
 
-impl<'a, 'b, S, M, V> WasmerGasMeter<'a, 'b, S, M, V>
+impl<'a, 'b, S, M, V> HostFuncGasMeter<'a, 'b, S, M, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     M: MemoryContext,
     V: VersionProvider + Send + Sync + Clone,
 {
     pub fn new(
-        memory_ctx: &'b M,
-        wasmer_remaining_gas: &'b WasmerRemainingGas,
         gas_meter: &'b mut GasMeter<'a, S, V>,
+        wasmer_remaining_gas: &'b mut WasmerGasGlobal,
+        memory_ctx: &'b M,
     ) -> Self {
         Self {
             version: gas_meter.version,
             memory_ctx,
-            wasmer_remaining_gas,
+            wasmer_gas_global: wasmer_remaining_gas,
             ws_cache: &mut gas_meter.ws_cache,
             command_output_cache: &mut gas_meter.output_cache_of_current_command,
         }
     }
 
+    /// returns the remaining gas from WasmerRemainingGas global
     pub fn remaining_gas(&self) -> u64 {
-        self.wasmer_remaining_gas.gas()
+        self.wasmer_gas_global.gas()
     }
 
-    pub fn reduce_gas(&self, amount: u64) -> u64 {
-        self.wasmer_remaining_gas.subtract(amount)
+    /// method for manual gas deduction from WasmerRemainingGas
+    pub fn deduct_gas(&mut self, amount: u64) -> u64 {
+        self.wasmer_gas_global.subtract(amount)
     }
 
     pub fn command_output_cache(&mut self) -> &mut CommandOutputCache {
@@ -208,8 +219,7 @@ where
     }
 
     fn charge<T>(&self, op_receipt: OperationReceipt<T>) -> T {
-        self.wasmer_remaining_gas
-            .subtract(op_receipt.1.net_cost().0);
+        self.wasmer_gas_global.subtract(op_receipt.1.net_cost().0);
         op_receipt.0
     }
 }

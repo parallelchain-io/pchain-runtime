@@ -237,7 +237,7 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    ws_cache: &'b mut WorldStateCache<'a, S, V>,
+    gas_free_ws_cache: &'b mut WorldStateCache<'a, S, V>,
 }
 
 impl<'a, 'b, S, V> NetworkAccountWorldState<'a, 'b, S, V>
@@ -245,14 +245,9 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone + 'static,
 {
-    pub(crate) fn new<E>(
-        state: &'b mut ExecutionState<'a, S, E, V>,
-        // account_storage_state: AccountStorageState<S>,
-    ) -> Self {
+    pub(crate) fn new<E>(state: &'b mut ExecutionState<'a, S, E, V>) -> Self {
         Self {
-            // account_storage_state,
-            // TODO check this cache_mut thing
-            ws_cache: state.ctx.inner_ws_cache_mut(),
+            gas_free_ws_cache: state.ctx.gas_free_ws_cache_mut(),
         }
     }
 }
@@ -264,19 +259,22 @@ where
     V: VersionProvider + Send + Sync + Clone,
 {
     fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
-        self.ws_cache.get_storage_data(NETWORK_ADDRESS, key)
+        self.gas_free_ws_cache
+            .get_storage_data(NETWORK_ADDRESS, key)
     }
 
     fn contains(&mut self, key: &[u8]) -> bool {
-        self.ws_cache.contains_storage_data(NETWORK_ADDRESS, key)
+        self.gas_free_ws_cache
+            .contains_storage_data(NETWORK_ADDRESS, key)
     }
 
     fn set(&mut self, key: &[u8], value: Vec<u8>) {
-        self.ws_cache.set_storage_data(NETWORK_ADDRESS, key, value);
+        self.gas_free_ws_cache
+            .set_storage_data(NETWORK_ADDRESS, key, value);
     }
 
     fn delete(&mut self, key: &[u8]) {
-        self.ws_cache
+        self.gas_free_ws_cache
             .set_storage_data(NETWORK_ADDRESS, key, Vec::new());
     }
 }

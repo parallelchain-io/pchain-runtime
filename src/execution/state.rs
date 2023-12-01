@@ -141,7 +141,7 @@ where
         // extract receipt from current execution result
         let (gas_used, command_output, deferred_commands_from_call) = self.ctx.extract();
         self.receipt
-            .push_command_receipt(types::create_executed_receipt_v2(
+            .push_command_receipt(types::create_executed_cmd_rcp_v2(
                 &command_kind,
                 exit_code,
                 gas_used,
@@ -163,7 +163,7 @@ where
         // extract receipt from current execution result
         let (gas_used, command_output, _) = self.ctx.extract();
         self.receipt
-            .push_deferred_command_receipt(types::create_executed_receipt_v2(
+            .push_deferred_command_receipt(types::create_executed_cmd_rcp_v2(
                 &command_kind,
                 exit_code,
                 gas_used,

@@ -344,13 +344,24 @@ where
         }
     }
 
+    /// Add a deferred command to the context.
+    pub fn append_deferred_command(&mut self, cmd: DeferredCommand) {
+        println!("append_deferred_command------------V2");
+        self.deferred_commands.push(cmd);
+    }
+
+    /// Clones smart contract context for nested contract calls
+    pub fn clone_smart_contract_context(&self) -> SmartContractContext {
+        self.sc_context.clone()
+    }
+
     /// Get the World State Cache which allows read-write without gas metering.
-    pub fn inner_ws_cache(&self) -> &WorldStateCache<'a, S, V> {
+    pub fn gas_free_ws_cache(&self) -> &WorldStateCache<'a, S, V> {
         &self.gas_meter.ws_cache
     }
 
     /// Get the mutable World State Cache which allows read-write without gas metering.
-    pub fn inner_ws_cache_mut(&mut self) -> &mut WorldStateCache<'a, S, V> {
+    pub fn gas_free_ws_cache_mut(&mut self) -> &mut WorldStateCache<'a, S, V> {
         &mut self.gas_meter.ws_cache
     }
 
@@ -365,8 +376,6 @@ where
         self.gas_meter.ws_cache.revert();
     }
 
-    // - TODO 8 - Potentially part of command lifecycle refactor
-    //
     // IMPORTANT: This function must be called after each command execution, whether success or fail
     // as all the tallying and state changes happen here.
     //

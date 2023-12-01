@@ -209,7 +209,7 @@ pub(crate) struct CommandOutput {
     pub amount_unstaked: u64,
 }
 
-pub(crate) fn create_executed_receipt_v2(
+pub(crate) fn create_executed_cmd_rcp_v2(
     command: &CommandKind,
     exit_code: ExitCodeV2,
     gas_used: u64,
@@ -278,7 +278,7 @@ pub(crate) fn create_executed_receipt_v2(
     }
 }
 
-pub(crate) fn create_not_executed_receipt_v2(command: &CommandKind) -> CommandReceiptV2 {
+pub(crate) fn create_not_executed_cmd_rcp_v2(command: &CommandKind) -> CommandReceiptV2 {
     match command {
         CommandKind::Transfer => CommandReceiptV2::Transfer(TransferReceipt {
             gas_used: 0,

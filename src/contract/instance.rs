@@ -32,15 +32,15 @@ where
     V: VersionProvider + Send + Sync + Clone,
 {
     pub(crate) fn call(self) -> (TransitionContext<'a, S, V>, u64, Option<MethodCallError>) {
-        // initialize the variable of wasmer remaining gas
+        // initialize the variable with the Wasmer global var exposed after contract instantiation
         self.environment
-            .init_wasmer_remaining_points(self.instance.remaining_points());
+            .init_wasmer_gas_global(self.instance.remaining_points());
 
         // Invoke Wasm Execution
         let call_result = unsafe { self.instance.call_method() };
 
         // drop the variable of wasmer remaining gas
-        self.environment.drop_wasmer_remaining_points();
+        self.environment.clear_wasmer_gas_global();
 
         let (remaining_gas, call_error) = match call_result {
             Ok(remaining_gas) => (remaining_gas, None),
@@ -53,11 +53,13 @@ where
             .gas_limit
             .saturating_sub(remaining_gas);
 
-        // Get the updated TransitionContext
+        // After contract execution, retrieve a clone of the updated TransitionContext
+        // Note that we cannot take ownership of the Mutex<TransitionContext> within the Arc
+        // because this function invoked from both External and Internal contract calls.
+        // In the second scenario, prior calls still hold counted refs to the Mutex
+        // also, the Wasmer importable also holds refs to the Mutex.
+        // This might be refactored in future with a change to Wasmer's API
 
-        // TODO 95
-        // premise, we don't want to clone this on exit
-        // how, though, was it initially passed in?
         let ctx = self.environment.context.lock().unwrap().clone();
         (ctx, total_gas, call_error)
     }

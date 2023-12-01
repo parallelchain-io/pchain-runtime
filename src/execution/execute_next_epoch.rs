@@ -49,7 +49,7 @@ where
     // - Block performance is required for execution of next epoch transaction.
     // - Transaction nonce matches with the nonce in state
 
-    let ws_cache = state.ctx.inner_ws_cache();
+    let ws_cache = state.ctx.gas_free_ws_cache();
     let nonce = ws_cache
         .ws
         .account_trie()
@@ -69,7 +69,7 @@ where
 
     // Update Nonce for the transaction. This step ensures future epoch transaction produced
     // by the signer will have different transaction hash.
-    let ws_cache = state.ctx.inner_ws_cache_mut();
+    let ws_cache = state.ctx.gas_free_ws_cache_mut();
     let nonce = nonce.saturating_add(1);
     ws_cache
         .ws

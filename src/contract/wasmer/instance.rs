@@ -40,6 +40,7 @@ impl Instance {
         // method call
         let execution_result = method.call();
 
+        // use the Wasmer provided method to access the gas global variable
         let remaining_gas = match wasmer_middlewares::metering::get_remaining_points(&self.0) {
             wasmer_middlewares::metering::MeteringPoints::Exhausted => 0,
             wasmer_middlewares::metering::MeteringPoints::Remaining(gas_left_after_execution) => {

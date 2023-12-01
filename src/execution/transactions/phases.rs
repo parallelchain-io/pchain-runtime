@@ -41,7 +41,7 @@ where
     // because they are internal housekeeping and not part of the txn execution
 
     let signer = state.tx.signer;
-    let ws_cache = state.ctx.inner_ws_cache_mut();
+    let ws_cache = state.ctx.gas_free_ws_cache_mut();
 
     let origin_nonce = ws_cache.ws.account_trie().nonce(&signer).expect(&format!(
         "Account trie should get CBI version for {:?}",
@@ -97,7 +97,7 @@ where
     );
     let gas_unused = state.tx.gas_limit.saturating_sub(gas_used); // Safety for avoiding underflow
 
-    let ws_cache = state.ctx.inner_ws_cache_mut();
+    let ws_cache = state.ctx.gas_free_ws_cache_mut();
 
     // Finalize signer's balance
     let signer_balance = ws_cache.purge_balance(signer);

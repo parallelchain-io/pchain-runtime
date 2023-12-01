@@ -22,7 +22,7 @@ use super::{
 
 use crate::execution::cache::{CommandOutputCache, WorldStateCache};
 
-/// GasMeter is a global struct that keeps track of gas used from operations OUTSIDE of a Wasmer guest instance (compute and memory access).
+/// GasMeter is a global struct that keeps track of gas used outside of contract call execution.
 /// It implements a facade for all chargeable methods.
 #[derive(Clone)]
 pub(crate) struct GasMeter<'a, S, V>

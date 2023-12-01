@@ -111,7 +111,6 @@ impl ContractModule {
         // Now `env_static` can be used with `create_importable_view` or other functions
         // expecting a `'static` lifetime. It is the programmer's responsibility to ensure
         // that `env_static` does not outlive `env`.
-
         let importable = if is_view {
             contract::create_importable_view::<env::Env<'static, S, V>, HostFunctions>(
                 &self.store,
@@ -124,6 +123,7 @@ impl ContractModule {
             )
         };
 
+        // cast it back to the original lifetime after use
         let environment: env::Env<'a, S, V> = unsafe { transmute(environment) };
 
         let instance = self

@@ -317,7 +317,6 @@ fn test_ctoc_use_contract() {
         .is_some());
 
     /* Version 2 */
-    // TODO optimise
     // note here we build in WorldState V1 because the "all_features" contract test fixture Wasm
     // includes a hardcoded contract V1 address from the "use_contract" macro
     let storage = SimulateWorldStateStorage::default();

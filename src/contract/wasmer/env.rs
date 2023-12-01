@@ -10,15 +10,11 @@
 //! context related to cross-contract calls.
 
 use pchain_world_state::{VersionProvider, DB};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use wasmer::{Global, LazyInit, Memory, NativeFunc};
 
 use crate::{
-    contract::SmartContractContext,
-    execution::gas::{WasmerGasMeter, WasmerRemainingGas},
-    transition::TransitionContext,
-    types::{CallTx, DeferredCommand},
-    BlockchainParams,
+    execution::gas::WasmerGasGlobal, transition::TransitionContext, types::CallTx, BlockchainParams,
 };
 
 use super::memory::MemoryContext;
@@ -36,8 +32,8 @@ where
     /// Transition Context
     pub context: Arc<Mutex<TransitionContext<'a, S, V>>>,
 
-    /// gas meter for wasm execution.
-    gas_meter: Arc<Mutex<WasmerRemainingGas>>,
+    /// Thread safe Wasm gas global initialized by Wasmer for every new contract call
+    pub wasmer_gas_global: Arc<Mutex<WasmerGasGlobal>>,
 
     /// Counter of calls, starting with zero and increases for every Internal Call
     pub call_counter: u32,
@@ -76,7 +72,7 @@ where
         Env {
             context,
             call_counter,
-            gas_meter: Arc::new(Mutex::new(WasmerRemainingGas::new())),
+            wasmer_gas_global: Arc::new(Mutex::new(WasmerGasGlobal::new())),
             memory: LazyInit::default(),
             alloc: LazyInit::default(),
             call_tx,
@@ -85,38 +81,14 @@ where
         }
     }
 
-    /// initialize the variable wasmer_remaining_points
-    pub fn init_wasmer_remaining_points(&self, global: Global) {
-        self.gas_meter.lock().unwrap().write(global);
+    /// initialize the variable with a global exposed by Wasmer
+    pub fn init_wasmer_gas_global(&self, global: Global) {
+        self.wasmer_gas_global.lock().unwrap().write(global);
     }
 
     /// drop the variable wasmer_remaining_points
-    pub fn drop_wasmer_remaining_points(&self) {
-        self.gas_meter.lock().unwrap().clear();
-    }
-
-    /* TODO 96, I still find this a little confusing
-    why is there a gas_meter() and .gas_meter, which points to wasmer_remaining_gas
-    .gas_meter() returns a new instance of WasmGasMeter,
-    which wraps Env itself (through self, WTF mind blown)
-
-    how can something (WamserGasMeter), which we concieve to be a hierachcal child of Env,
-    itself wrap a ref to Env?
-
-    the black magic used to achieve this
-    lock() returns a subset struct of Env, which is a LockWasmerTransitionContext
-    LockWasmerTransitionContext has a gas_meter() method returning WasmGasMeter, conceptually something like "into"
-    that turns arounds and wraps the parent Env in a WasmGasMeter
-
-    i smell a cyclic reference
-    */
-
-    pub fn lock(&self) -> LockedWasmerTransitionContext<'a, '_, S, V> {
-        LockedWasmerTransitionContext {
-            env: self,
-            context: self.context.lock().unwrap(),
-            wasmer_remaining_gas: self.gas_meter.lock().unwrap(),
-        }
+    pub fn clear_wasmer_gas_global(&self) {
+        self.wasmer_gas_global.lock().unwrap().clear();
     }
 }
 
@@ -131,41 +103,5 @@ where
 
     fn get_alloc(&self) -> &NativeFunc<u32, wasmer::WasmPtr<u8, wasmer::Array>> {
         self.alloc_ref().unwrap()
-    }
-}
-
-pub(crate) struct LockedWasmerTransitionContext<'a, 'b, S, V>
-where
-    S: DB + Send + Sync + Clone + 'static,
-    V: VersionProvider + Send + Sync + Clone,
-{
-    env: &'b Env<'a, S, V>,
-    context: MutexGuard<'b, TransitionContext<'a, S, V>>,
-    wasmer_remaining_gas: MutexGuard<'b, WasmerRemainingGas>,
-}
-
-// 'a is the lifetime of the DB ref within TransitionContext
-// 'b is the lifetime of the Env ref inside LockedWasmerTransitionContext
-// 'c is the lifetime of the LockedWasmerTransitionContext ref inside WasmGasMeter, passed to the gas_meter
-
-impl<'a, 'b, S, V> LockedWasmerTransitionContext<'a, 'b, S, V>
-where
-    S: DB + Send + Sync + Clone + 'static,
-    V: VersionProvider + Send + Sync + Clone,
-{
-    pub fn gas_meter(&mut self) -> WasmerGasMeter<'a, '_, S, Env<'a, S, V>, V> {
-        WasmerGasMeter::new(
-            self.env,
-            &self.wasmer_remaining_gas,
-            &mut self.context.gas_meter,
-        )
-    }
-
-    pub fn smart_contract_context(&self) -> SmartContractContext {
-        self.context.sc_context.clone()
-    }
-
-    pub fn append_deferred_command(&mut self, deferred_command: DeferredCommand) {
-        self.context.deferred_commands.push(deferred_command);
     }
 }

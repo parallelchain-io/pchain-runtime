@@ -174,21 +174,20 @@ where
                 ));
         }
 
-        // TODO probably can't improve much here
-        // transform data in memory to use StorageTrie .batch_set()
-        // as calling .set() individually will incur a muuch heavier performance cost
-        let mut transformed_data = HashMap::with_capacity(self.storage_data.writes.len());
+        // optimisation: aggregate Storage writes in memory by address, to use StorageTrie .batch_set()
+        // as calling .set() individually will be slower
+        let mut aggregated_storage_writes = HashMap::with_capacity(self.storage_data.writes.len());
         for ((address, key), value) in self.storage_data.writes.into_iter() {
-            transformed_data
+            aggregated_storage_writes
                 .entry(address)
                 .or_insert_with(HashMap::new)
                 .insert(key, value);
         }
-        for (address, data) in transformed_data {
+        for (address, kv_data) in aggregated_storage_writes {
             let trie = ws
                 .storage_trie_mut(&address)
                 .expect(&format!("Storage trie should exist for {:?}", address));
-            trie.batch_set(&data)
+            trie.batch_set(&kv_data)
                 .expect(&format!("Storage trie should set data for {:?}", address));
         }
 
@@ -225,9 +224,9 @@ impl CacheValue for Vec<u8> {
 
 #[derive(Clone, Default)]
 pub(crate) struct CacheData<K, V> {
-    /// writes stores key-value pairs for Write operations. It stores the data that is pending to store into world state
+    /// writes caches key-value pairs for Write operations before committing to World State.
     pub writes: HashMap<K, V>,
-    /// reads stores key-value pairs from Read operations. It is de facto the original data read from world state.
+    /// reads caches key-value pairs from Read operations.
     pub reads: RefCell<HashMap<K, Option<V>>>,
 }
 
@@ -261,7 +260,6 @@ where
         self.writes.insert(key, value);
     }
 
-    // Low Level Operations
     /// Check if this key is set before.
     pub fn contains<WS: FnOnce(&K) -> bool>(&self, key: &K, ws_contains: WS) -> bool {
         // Check if readwrite set contains this key.

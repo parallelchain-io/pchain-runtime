@@ -12,13 +12,13 @@ use crate::types::{self, CommandKind};
 /// Store the results of execution of a Command
 #[derive(Default)]
 pub(crate) struct CommandReceiptCache<E> {
-    receipts: Vec<E>,
+    cmd_rcps: Vec<E>,
 }
 
 impl<E> CommandReceiptCache<E> {
     pub fn new() -> Self {
         Self {
-            receipts: Vec::new(),
+            cmd_rcps: Vec::new(),
         }
     }
 }
@@ -33,13 +33,13 @@ pub(crate) trait ReceiptCacher<E, R> {
 
 impl ReceiptCacher<CommandReceiptV1, ReceiptV1> for CommandReceiptCache<CommandReceiptV1> {
     fn push_command_receipt(&mut self, command_receipt: CommandReceiptV1) {
-        self.receipts.push(command_receipt)
+        self.cmd_rcps.push(command_receipt)
     }
 
     /// Combine the information from next Command Receipt.
     /// Assumption: execution of a deferred command will not spawn non-deferred command.
     fn push_deferred_command_receipt(&mut self, command_receipt: CommandReceiptV1) {
-        if let Some(last_command_receipt) = self.receipts.last_mut() {
+        if let Some(last_command_receipt) = self.cmd_rcps.last_mut() {
             last_command_receipt.gas_used = last_command_receipt
                 .gas_used
                 .saturating_add(command_receipt.gas_used);
@@ -49,19 +49,19 @@ impl ReceiptCacher<CommandReceiptV1, ReceiptV1> for CommandReceiptCache<CommandR
     }
 
     fn into_receipt(self, _gas_used: u64, _commands: &[CommandKind]) -> ReceiptV1 {
-        self.receipts
+        self.cmd_rcps
     }
 }
 
 impl ReceiptCacher<CommandReceiptV2, ReceiptV2> for CommandReceiptCache<CommandReceiptV2> {
     fn push_command_receipt(&mut self, command_receipt: CommandReceiptV2) {
-        self.receipts.push(command_receipt);
+        self.cmd_rcps.push(command_receipt);
     }
 
     /// Combine the information from next Command Receipt.
     /// Assumption: execution of a deferred command will not spawn non-deferred command.
     fn push_deferred_command_receipt(&mut self, command_receipt: CommandReceiptV2) {
-        if let Some(last_command_receipt) = self.receipts.last_mut() {
+        if let Some(last_command_receipt) = self.cmd_rcps.last_mut() {
             let (last_command_receipt_gas_used, _) =
                 types::gas_used_and_exit_code_v2(last_command_receipt);
             let (gas_used, exit_code) = types::gas_used_and_exit_code_v2(&command_receipt);
@@ -97,29 +97,33 @@ impl ReceiptCacher<CommandReceiptV2, ReceiptV2> for CommandReceiptCache<CommandR
     }
 
     fn into_receipt(mut self, gas_used: u64, command_kinds: &[CommandKind]) -> ReceiptV2 {
-        // Get the exit code from the receipt of last command that was executed
-        let exit_code = if self.receipts.is_empty() {
-            if command_kinds.is_empty() {
-                ExitCodeV2::Ok // Nothing to execute.
-            } else {
-                ExitCodeV2::NotExecuted // Some commands need to be executed but none is executed.
-            }
-        } else {
-            let (_, exit_code) = types::gas_used_and_exit_code_v2(self.receipts.last().unwrap());
-            exit_code
-        };
+        let num_executed = self.cmd_rcps.len();
+        let num_cmds = command_kinds.len();
 
-        // TODO 97: It is to fill-up the NotExecuted command in the receipt. It can be moved into command execution cycle
-        let num_executed = self.receipts.len();
-        for command_kind in command_kinds.iter().skip(num_executed) {
-            self.receipts
-                .push(types::create_not_executed_receipt_v2(command_kind));
+        if num_cmds == 0 && num_executed == 0 {
+            return ReceiptV2 {
+                gas_used,
+                exit_code: ExitCodeV2::Ok,
+                command_receipts: self.cmd_rcps,
+            };
+        }
+
+        // receipt's exit code is the exit code of last executed command receipt
+        let (_, exit_code) = types::gas_used_and_exit_code_v2(self.cmd_rcps.last().unwrap());
+
+        if num_executed < num_cmds {
+            // fill in missing command receipts with a NotExecuted exit code
+            self.cmd_rcps.extend(
+                command_kinds[num_executed..]
+                    .iter()
+                    .map(|command_kind| types::create_not_executed_cmd_rcp_v2(command_kind)),
+            );
         }
 
         ReceiptV2 {
             gas_used,
             exit_code,
-            command_receipts: self.receipts,
+            command_receipts: self.cmd_rcps,
         }
     }
 }

@@ -764,12 +764,23 @@ fn test_etoc_multiple_insufficient_gas() {
     let receipt = result.receipt.unwrap();
     assert_eq!(receipt.command_receipts.len(), 3);
     assert_eq!(receipt.exit_code, ExitCodeV2::GasExhausted);
-
     if let CommandReceiptV2::Call(call) = &receipt.command_receipts[0] {
         assert_eq!(call.exit_code, ExitCodeV2::GasExhausted);
         assert_eq!(call.gas_used, 0);
     } else {
         panic!("Expected CallReceiptV2::Call");
+    }
+    if let CommandReceiptV2::Call(call) = &receipt.command_receipts[1] {
+        assert_eq!(call.exit_code, ExitCodeV2::NotExecuted);
+        assert_eq!(call.gas_used, 0);
+    } else {
+        panic!("Expected CallReceiptV2::Call on third command receipt");
+    }
+    if let CommandReceiptV2::Call(call) = &receipt.command_receipts[2] {
+        assert_eq!(call.exit_code, ExitCodeV2::NotExecuted);
+        assert_eq!(call.gas_used, 0);
+    } else {
+        panic!("Expected CallReceiptV2::Call on third command receipt");
     }
 
     let sws_1: SimulateWorldState<'_, V2> = result.new_state.into();
@@ -809,7 +820,13 @@ fn test_etoc_multiple_insufficient_gas() {
         assert_eq!(call.exit_code, ExitCodeV2::GasExhausted);
         assert_eq!(call.gas_used, 0);
     } else {
-        panic!("Expected CallReceiptV2::Call");
+        panic!("Expected CallReceiptV2::Call on second command receipt");
+    }
+    if let CommandReceiptV2::Call(call) = &receipt.command_receipts[2] {
+        assert_eq!(call.exit_code, ExitCodeV2::NotExecuted);
+        assert_eq!(call.gas_used, 0);
+    } else {
+        panic!("Expected CallReceiptV2::Call on third command receipt");
     }
 
     let sws_2: SimulateWorldState<'_, V2> = result.new_state.into();

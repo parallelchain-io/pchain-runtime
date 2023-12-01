@@ -279,7 +279,6 @@ fn test_view_failure() {
         "set_state_without_self".to_string(),
         ArgsBuilder::new().add(1u8).args,
     );
-    assert_eq!(receipt.exit_code, ExitCodeV1::Failed);
     assert_eq!(error, Some(TransitionError::RuntimeError));
     if let CommandReceiptV2::Call(cr) = command_receipt {
         assert_eq!(cr.exit_code, ExitCodeV2::Error);

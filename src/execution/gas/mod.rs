@@ -8,8 +8,8 @@ pub(crate) use cost_change::*;
 
 pub mod operation;
 
-pub mod wasmer_gas_meter;
-pub(crate) use wasmer_gas_meter::*;
+pub mod wasmer_gas;
+pub(crate) use wasmer_gas::*;
 
 pub mod gas_meter;
 pub(crate) use gas_meter::*;

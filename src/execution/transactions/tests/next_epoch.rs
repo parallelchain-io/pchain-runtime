@@ -750,7 +750,7 @@ fn test_next_epoch_multiple_pools_and_stakes() {
     let fixture = TestFixture::new();
     let mut state = create_state_v1(Some(fixture.ws()));
 
-    prepare_accounts_balance(&mut state.ctx.inner_ws_cache_mut().ws);
+    prepare_accounts_balance(&mut state.ctx.gas_free_ws_cache_mut().ws);
 
     create_full_nvp_pool_stakes_deposits(&mut state, false, false, false);
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
@@ -923,7 +923,7 @@ fn test_next_epoch_multiple_pools_and_stakes() {
     let fixture = TestFixture::new();
     let mut state = create_state_v2(Some(fixture.ws()));
 
-    prepare_accounts_balance(&mut state.ctx.inner_ws_cache_mut().ws);
+    prepare_accounts_balance(&mut state.ctx.gas_free_ws_cache_mut().ws);
 
     create_full_nvp_pool_stakes_deposits(&mut state, false, false, false);
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
@@ -1103,7 +1103,7 @@ fn test_next_epoch_multiple_pools_and_stakes_auto_stake() {
     let fixture = TestFixture::new();
     let mut state = create_state_v1(Some(fixture.ws()));
 
-    prepare_accounts_balance(&mut state.ctx.inner_ws_cache_mut().ws);
+    prepare_accounts_balance(&mut state.ctx.gas_free_ws_cache_mut().ws);
 
     create_full_nvp_pool_stakes_deposits(&mut state, true, true, true);
     let ws = state.ctx.into_ws_cache().commit_to_world_state();
@@ -1275,7 +1275,7 @@ fn test_next_epoch_multiple_pools_and_stakes_auto_stake() {
     let fixture = TestFixture::new();
     let mut state = create_state_v2(Some(fixture.ws()));
 
-    prepare_accounts_balance(&mut state.ctx.inner_ws_cache_mut().ws);
+    prepare_accounts_balance(&mut state.ctx.gas_free_ws_cache_mut().ws);
 
     create_full_nvp_pool_stakes_deposits(&mut state, true, true, true);
     let ws = state.ctx.into_ws_cache().commit_to_world_state();

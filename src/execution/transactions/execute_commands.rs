@@ -323,7 +323,6 @@ where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone + 'static,
 {
-    // TODO
     execute_commands::<_, _, _, _, ExecuteCommandsV1>(state, commands)
 }
 
