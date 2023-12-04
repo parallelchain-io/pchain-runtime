@@ -16,7 +16,7 @@ use super::custom_tunables::CustomTunables;
 use super::non_determinism_filter::NonDeterminismFilter;
 use crate::gas::wasm_opcode_gas_schedule;
 
-/// Instantiate a Store that represents the states that can be manipulated by WASM program.
+/// Instantiate a Store that represents the states that can be manipulated by Wasm program.
 pub fn instantiate_store(gas_limit: u64, memory_limit: Option<usize>) -> Store {
     // call non_determinism_filter.rs to disallow non-deterministic types
     let nd_filter = Arc::new(NonDeterminismFilter::default());

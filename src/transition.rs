@@ -27,7 +27,6 @@ use pchain_types::{
     cryptography::PublicAddress,
 };
 use pchain_world_state::{VersionProvider, WorldState, DB, V1, V2};
-// use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
 
 use crate::{
     contract::SmartContractContext,
@@ -347,7 +346,6 @@ where
 
     /// Add a deferred command to the context.
     pub fn append_deferred_command(&mut self, cmd: DeferredCommand) {
-        println!("append_deferred_command------------V2");
         self.deferred_commands.push(cmd);
     }
 

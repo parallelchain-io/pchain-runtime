@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines structs for contract instantiation and contract call which are used in executing Commands Phase.
+//! Defines struct that abstracts the Wasm module compiled from contract bytecode.
 
 use std::{
     mem::transmute,
@@ -12,7 +12,6 @@ use std::{
 
 use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{VersionProvider, DB};
-// use pchain_world_state::storage::WorldStateStorage;
 use wasmer::Store;
 
 use crate::{
@@ -30,7 +29,7 @@ use crate::{
 
 use super::{instance::ContractInstance, SmartContractContext};
 
-/// ContractModule stores the intermediate data related to Contract in Commands Phase.
+/// ContractModule holds the Wasm module and related metadata.
 pub(crate) struct ContractModule {
     store: Store,
     module: Module,
@@ -103,14 +102,15 @@ impl ContractModule {
         let environment = env::Env::new(ctx, call_counter, is_view, tx, bd);
 
         // SAFETY: The following unsafe block assumes that the Env AWLAYS outlives the Wasm instance.
-        // This invariant is maintained because a new Wasm instance is created on each call.
-        // Any code change that violates this assumption could lead to undefined behavior.
+        // This invariant is guaranteed because a new Wasm instance is created on each call,
+        // hence `env` is essentially "static" for the lifetime of the Wasm instance.
+        // It is required because Wasmer expects Env to respect a static lifetime annotation.
+        // IMPORTANT: Any code change that violates the assumption could lead to undefined behavior, take care!
         let env_static: &env::Env<'static, S, V> =
             unsafe { transmute::<&env::Env<'a, S, V>, &env::Env<'static, S, V>>(&environment) };
 
         // Now `env_static` can be used with `create_importable_view` or other functions
-        // expecting a `'static` lifetime. It is the programmer's responsibility to ensure
-        // that `env_static` does not outlive `env`.
+        // expecting a `'static` lifetime.
         let importable = if is_view {
             contract::create_importable_view::<env::Env<'static, S, V>, HostFunctions>(
                 &self.store,
@@ -123,7 +123,7 @@ impl ContractModule {
             )
         };
 
-        // cast it back to the original lifetime after use
+        // cast Env back to the original lifetime after use
         let environment: env::Env<'a, S, V> = unsafe { transmute(environment) };
 
         let instance = self
