@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct that encaspulates [wasmer::Module] to represent compiled contract bytecode in Parallelchain Mainnet.
+//! Defines a struct that encaspulates [wasmer::Module] to represent a compiled smart contract in Parallelchain Mainnet.
 
 use pchain_types::cryptography::PublicAddress;
 
@@ -13,11 +13,11 @@ use crate::contract::{blank, Importable};
 use super::instance::{ContractValidateError, Instance, CONTRACT_METHOD};
 
 /// Module is a structure representing a WebAssembly executable that has been compiled down to architecture-specific
-/// machine code in preparation for execution.
+/// machine code in preparation for execution, tagged with metadata.
 pub(in crate::contract) struct Module(pub wasmer::Module, pub ModuleMetadata);
 
 impl Module {
-    /// from_cache returns the contract Module cached in smart contract cache.
+    /// returns the contract module cached in smart contract cache
     pub fn from_cache(
         address: PublicAddress,
         cache: &SmartContractCache,
@@ -29,27 +29,25 @@ impl Module {
             .map(|(m, d)| Module(m, d))
     }
 
-    /// cache_to caches contract module to smart contract cache.
+    /// caches the contract module
     pub fn cache_to(&self, address: PublicAddress, cache: &SmartContractCache) {
         let _ = cache.store(address, &self.0, self.1.bytes_length);
     }
 
-    /// from_wasm_bytecode returns the contract Module produced by compiling the wasm bytecode provided as an argument.
+    /// returns the contract Module produced by compiling the wasm bytecode provided as an argumen
     /// The bytecode will be validated and the process is slow. Err `ModuleBuildError::DisallowedOpcodePresent` could be returned.
     pub fn from_wasm_bytecode(
         cbi_version: u32,
         bytecode: &Vec<u8>,
         wasmer_store: &wasmer::Store,
     ) -> Result<Module, ModuleBuildError> {
-        let wasmer_module = match wasmer::Module::from_binary(wasmer_store, bytecode) {
-            Ok(m) => m,
-            Err(e) => {
-                if e.to_string().contains("OpcodeError") {
-                    return Err(ModuleBuildError::DisallowedOpcodePresent);
-                }
-                return Err(ModuleBuildError::Else);
+        let wasmer_module = wasmer::Module::from_binary(wasmer_store, bytecode).map_err(|e| {
+            if e.to_string().contains("OpcodeError") {
+                ModuleBuildError::DisallowedOpcodePresent
+            } else {
+                ModuleBuildError::Else
             }
-        };
+        })?;
 
         Ok(Module(
             wasmer_module,
@@ -60,7 +58,7 @@ impl Module {
         ))
     }
 
-    /// from_wasm_bytecode_unchecked returns the contract Module produced by compiling the wasm bytecode provided as an argument.
+    /// returns the contract Module produced by compiling the Wasm bytecode provided as an argument.
     /// The bytecode will NOT be validated. Use method `from_wasm_bytecode` if the bytecode should be validated. Err
     /// `ModuleBuildError::DisallowedOpcodePresent` could be returned.
     pub fn from_wasm_bytecode_unchecked(
@@ -69,15 +67,15 @@ impl Module {
         wasmer_store: &wasmer::Store,
     ) -> Result<Module, ModuleBuildError> {
         let wasmer_module =
-            match unsafe { wasmer::Module::from_binary_unchecked(wasmer_store, bytecode) } {
-                Ok(m) => m,
-                Err(e) => {
+            unsafe { wasmer::Module::from_binary_unchecked(wasmer_store, bytecode) }.map_err(
+                |e| {
                     if e.to_string().contains("OpcodeError") {
-                        return Err(ModuleBuildError::DisallowedOpcodePresent);
+                        ModuleBuildError::DisallowedOpcodePresent
+                    } else {
+                        ModuleBuildError::Else
                     }
-                    return Err(ModuleBuildError::Else);
-                }
-            };
+                },
+            )?;
 
         Ok(Module(
             wasmer_module,
@@ -88,7 +86,7 @@ impl Module {
         ))
     }
 
-    /// size of the wasm bytecode
+    /// returns size of the wasm bytecode as recorded in the Module's metadata
     pub fn bytes_length(&self) -> usize {
         self.1.bytes_length
     }
@@ -107,8 +105,8 @@ impl Module {
         Ok(Instance(wasmer_instance))
     }
 
-    /// validate_contract returns whether this contract Module exports a function with the name METHOD_ACTIONS
-    /// and can be instantiated with calls() function.
+    /// returns whether this contract Module
+    /// exports a correctly named entry point method which can be invoked by the call() function.
     pub fn validate_contract(
         &self,
         wasmer_store: &wasmer::Store,
@@ -135,7 +133,7 @@ impl Module {
     }
 }
 
-/// ModuleBuildError enumerates the possible reasons why arbitrary bytecode might fail to be interpreted as WASM and compiled
+/// ModuleBuildError enumerates the possible reasons why arbitrary bytecode might fail to be interpreted as Wasm and compiled
 /// down to machine code in preparation for execution.
 #[derive(Debug)]
 pub(crate) enum ModuleBuildError {

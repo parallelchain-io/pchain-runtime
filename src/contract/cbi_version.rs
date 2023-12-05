@@ -3,13 +3,11 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines versioning of Contract Binary Interface.
-
-/// Contract Binary Interface is a specification that a smart contract should follow,
-/// in terms of implementing strictly same function signature of the host functions.
+//! Defines versioning of the ParallelChain Mainnet Contract Binary Interface (CBI).
+//! Each version references specification that smart contracts need to follow.
 pub const CBI_VERSION: u32 = CBIVER_ADAM;
 
-/// CBI versions defined in Protocol Adam.
+/// CBI version defined in protocol v0.4 and v0.5.
 const CBIVER_ADAM: u32 = 0;
 
 /// Check if version is compatible to runtime. Current CBI version = [CBI_VERSION].

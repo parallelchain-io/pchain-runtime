@@ -3,8 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines formulas in calculation of gas which is a measurement unit for transaction
-//! execution. The constants and functions in module are documented in gas section of the
+//! Defines formulas for calculating gas, which is a measurement unit for transaction
+//! execution cost. The constants and functions in module are documented in gas section of the
 //! [Parallelchain Mainnet Protocol](https://github.com/parallelchain-io/parallelchain-protocol).
 //!
 //!
@@ -190,7 +190,7 @@ pub const WASM_MEMORY_READ_PER64_BITS_COST: u64 = 3;
 /// WASM_BYTE_CODE_PER_BYTE_COST (C_I64Store) is the cost of checking whether input byte code satisfy CBI.
 pub const WASM_BYTE_CODE_PER_BYTE_COST: u64 = 3;
 
-/// Cost of reading `len` bytes from the guest's memory.
+/// Cost of reading `len` bytes from Wasm linear memory.
 pub const fn wasm_memory_read_cost(len: usize) -> u64 {
     let cost = ceil_div_8(len as u64).saturating_mul(WASM_MEMORY_READ_PER64_BITS_COST);
     if cost == 0 {
@@ -199,7 +199,7 @@ pub const fn wasm_memory_read_cost(len: usize) -> u64 {
     cost
 }
 
-///Cost of writing `len` bytes into the guest's memory.
+/// Cost of writing `len` bytes into Wasm linear memory.
 pub const fn wasm_memory_write_cost(len: usize) -> u64 {
     let cost = ceil_div_8(len as u64).saturating_mul(WASM_MEMORY_WRITE_PER64_BITS_COST);
     if cost == 0 {
@@ -228,7 +228,7 @@ pub const MIN_CMDRECP_SIZE_V2_BASIC: u64 = 9;
 /// Serialized size of a CommandReceiptV2 with custom fields for certain commands.
 pub const MIN_CMDRECP_SIZE_V2_EXTENDED: u64 = 17;
 
-/// tx_inclusion_cost is the minimum cost for a transaction to be included in the blockchain.
+///  minimum cost for a V1 transaction to be included in the blockchain.
 ///
 /// It consists of:
 /// 1. cost for storing transaction in a block
@@ -261,9 +261,17 @@ pub fn tx_inclusion_cost_v1(tx_size: usize, commands: &Vec<CommandKind>) -> u64 
         .saturating_add(rw_key_cost)
 }
 
-/// tx_inclusion_cost is the minimum cost for a transaction to be included in the blockchain.
+/// minimum cost for a V2 transaction to be included in the blockchain.
 ///
-/// [V1](tx_inclusion_cost_v1) -> V2:
+/// It consists of:
+/// 1. cost for storing transaction in a block
+/// 2. cost for storing minimum-sized receipt(s) in a block
+/// 3. cost for 5 read-write operations for
+///     - signer's nonce
+///     - signer's balance during two phases
+///     - proposer's balance
+///     - treasury's balance
+/// supersedes [V1](tx_inclusion_cost_v1) -> V2:
 pub fn tx_inclusion_cost_v2(tx_size: usize, commands: &Vec<CommandKind>) -> u64 {
     // (1) Transaction storage size
     let tx_size = tx_size as u64;
@@ -287,7 +295,6 @@ pub fn tx_inclusion_cost_v2(tx_size: usize, commands: &Vec<CommandKind>) -> u64 
 }
 
 /// Serialized size of a ReceiptV1 for Vec<CommandKind> containing minimum-sized command receipts.
-///
 pub fn minimum_receipt_size_v1(commands: &Vec<CommandKind>) -> u64 {
     MIN_RECP_SIZE_V1.saturating_add(MIN_CMDRECP_SIZE_V1.saturating_mul(commands.len() as u64))
 }
@@ -351,10 +358,13 @@ pub const MPT_GET_CODE_DISCOUNT_PROPORTION: u64 = 50;
 /// Length of a Keccak256 hash.
 pub const KECCAK256_LENGTH: u64 = 32;
 
+/// calculates the cost of traversing between nodes in the MPT data structure,
+/// based on the length of the key. The cost is proportional to the number of nodes traversed.
 pub const fn get_cost_traverse(key_len: usize) -> u64 {
     (key_len as u64).saturating_mul(MPT_TRAVERSE_PER_BYTE_COST)
 }
 
+/// calculates the cost of reading the value stored at a particular MPT node
 pub const fn get_cost_read(value_len: usize) -> u64 {
     (value_len as u64).saturating_mul(MPT_READ_PER_BYTE_COST)
 }

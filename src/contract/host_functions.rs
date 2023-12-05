@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation for host functions used for contract methods according to [crate::contract::cbi].
+//! Implementation of host functions defined in [crate::contract::cbi_host_functions].
 
 use pchain_types::{
     blockchain::{Command, Log},
@@ -21,8 +21,8 @@ use crate::{
 
 use super::wasmer::env::Env;
 
-/// [HostFunctions] implements trait [CBIHostFunctions].
-/// ### CBI version: 0
+/// [HostFunctions] implements trait [CBIHostFunctions] according to CBI version 0.
+/// Env is available by reference in every method to retrieve the current execution context.
 pub(crate) struct HostFunctions {}
 impl<'a, 'b, S, V> CBIHostFunctions<Env<'a, S, V>> for HostFunctions
 where

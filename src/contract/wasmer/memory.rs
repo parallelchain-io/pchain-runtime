@@ -8,7 +8,8 @@
 use anyhow::{anyhow, Result};
 use wasmer::{Array, Memory, NativeFunc, WasmPtr};
 
-/// Memory context is used by [Wasmer Environment](super::wasmer_env) for read-write access to WASM linear memory.
+/// Provides read-write access to Wasm linear memory through the [Wasmer Environment](super::wasmer_env).
+/// This Memory context interfaces with Wasmer's exports to facilitate memory operations.
 pub trait MemoryContext {
     fn get_memory(&self) -> &Memory;
     fn get_alloc(&self) -> &NativeFunc<u32, WasmPtr<u8, Array>>;

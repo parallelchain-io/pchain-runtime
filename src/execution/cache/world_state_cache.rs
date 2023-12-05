@@ -3,30 +3,28 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct that serves as a cache layer on top of World State.
-//!
-//! The caches are split into different categories representing the types of data that
-//! are stored in an Account (excluding the nonce which is not deteremined by users).
-//!
-//! Within each data category, there are two sets of caches
-//! - `reads` (data read first-hand from World State)
-//! - `writes` (data pending to be written to World State)
-//!
-//! Procedure of a Read operation: First, `writes` is checked. If data is not found, search in `reads`.
-//! If data is still not found, access the World State. The result, if retrieved, will then be cached to `reads`.
-//!
-//! Procedure of a Write operation: The `writes` cache is updated with the latest data.
-//! Writing to the actual World State happens in a separate, consolidated step.
-//!
-//! At the end of a successful state transition, the data in `writes` will be written to World State. Otherwise,
-//! `writes` is discarded without any changes to World State.
+//! Defines a cache layer that abstracts operations on the World State.
 
 use std::{cell::RefCell, collections::HashMap};
 
 use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{VersionProvider, WorldState, DB};
 
-/// WorldStateCache defines data cache for Read-Write opertaions during state transition.
+/// The WorldStateCache contains different cache categories representing the types of data that
+/// are stored for an Account (excluding the nonce which is not determined by users).
+///
+/// Within each data category, there are two sets of caches
+/// - `reads` (data read first-hand from World State)
+/// - `writes` (data pending to be written to World State)
+///
+/// Procedure of a Read operation: First, `writes` is checked. If data is not found, search in `reads`.
+/// If data is still not found, access the World State. The result, if retrieved, will then be cached to `reads`.
+///
+/// Procedure of a Write operation: The `writes` cache is updated with the latest data.
+/// Writing to the actual World State happens in a separate, consolidated step.
+///
+/// At the end of a successful state transition, the data in `writes` will be written to World State. Otherwise,
+/// `writes` is discarded without any changes to World State.
 #[derive(Clone)]
 pub(crate) struct WorldStateCache<'a, S, V>
 where
@@ -46,6 +44,7 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
+    /// initialize a new WorldStateCache, at the start of a new transaction
     pub fn new(ws: WorldState<'a, S, V>) -> Self {
         Self {
             ws,
@@ -67,7 +66,7 @@ where
         balance
     }
 
-    /// reverts changes to read-write set
+    /// reverts changes to all read-write caches
     pub fn revert(&mut self) {
         self.balances.revert();
         self.cbi_versions.revert();
@@ -75,6 +74,9 @@ where
         self.storage_data.revert();
     }
 
+    /// retrieve the balance of native tokens for a particular account
+    /// ### panics
+    /// panics on unexpected errors with the account trie, which might reflect an invalid World State
     pub fn get_balance(&self, address: &PublicAddress) -> u64 {
         self.balances
             .get(address, |key| self.ws.account_trie().balance(key).ok())
@@ -84,10 +86,14 @@ where
             ))
     }
 
+    /// sets account balance to the balance cache, needs to be committed separately
     pub fn set_balance(&mut self, address: PublicAddress, balance: u64) {
         self.balances.set(address, balance);
     }
 
+    /// retrieve cbi version for a particular contract account
+    /// ### panics
+    /// panics on unexpected errors with the account trie, which might reflect an invalid World State
     pub fn get_cbi_version(&self, address: &PublicAddress) -> Option<u32> {
         self.cbi_versions.get(address, |key| {
             self.ws.account_trie().cbi_version(key).expect(&format!(
@@ -101,6 +107,9 @@ where
         self.cbi_versions.set(address, cbi_version);
     }
 
+    /// retrieve contract code for a particular contract account
+    /// ### panics
+    /// panics on unexpected errors with the account trie, which might reflect an invalid World State
     pub fn get_contract_code(&self, address: &PublicAddress) -> Option<Vec<u8>> {
         self.contract_codes.get(address, |key| {
             self.ws.account_trie().code(key).expect(&format!(
@@ -110,10 +119,14 @@ where
         })
     }
 
+    /// stores contract code to the contract cache, needs to be committed separately
     pub fn set_contract_code(&mut self, address: PublicAddress, code: Vec<u8>) {
         self.contract_codes.set(address, code);
     }
 
+    /// check for existence of a value in the storage trie for a particular address
+    /// ### panics
+    /// panics on unexpected errors with the storage trie, which might reflect an invalid World State
     pub fn contains_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> bool {
         self.storage_data
             .contains(&(address, key.to_vec()), |(addr, key)| -> bool {
@@ -128,6 +141,9 @@ where
             })
     }
 
+    /// retrieves data from account storage
+    /// ### panics
+    /// panics on unexpected errors with the storage trie, which might reflect an invalid World State
     pub fn get_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
         self.storage_data
             .get(&(address, key.to_vec()), |(addr, k)| {
@@ -139,11 +155,15 @@ where
             })
     }
 
-    /// set key-value to storage for a particular address
+    /// sets key-value to account storage cache, needs to be committed separately
     pub fn set_storage_data(&mut self, address: PublicAddress, key: &[u8], value: Vec<u8>) {
         self.storage_data.set((address, key.to_vec()), value);
     }
 
+    /// writes the actual values to the relevant data structures in the World State.
+    /// this method is typically invoked at the end of every commmand's execution to persist the changes.
+    /// ### Panics
+    /// panics if any of the writes fail.
     pub fn commit_to_world_state(self) -> WorldState<'a, S, V> {
         let mut ws = self.ws;
         for (address, balance) in self.balances.writes.into_iter() {
@@ -273,7 +293,7 @@ where
         || ws_contains(key)
     }
 
-    /// reverts changes to read-write set
+    /// reverts changes to both read and write caches
     pub fn revert(&mut self) {
         self.reads.borrow_mut().clear();
         self.writes.clear();

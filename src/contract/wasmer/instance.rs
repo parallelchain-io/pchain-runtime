@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct containing [wasmer::Instance] to execute a method call according to ParallelChain Smart Contract Defintions.
+//! Defines a struct containing a [wasmer::Instance] to execute a method call according to ParallelChain Smart Contract Defintions.
 
 use anyhow::Result;
 
@@ -14,12 +14,12 @@ pub(in crate::contract) struct Instance(pub(crate) wasmer::Instance);
 impl Instance {
     /// call_method executes the named method of the Instance
     ///
-    /// If the call completes successfully, it returns the remaining gas after the execution. If the call terminated early,
-    /// it returns a two-tuple comprising the remaining gas after the execution, and a MethodCallError describing the
-    /// cause of the early termination.
+    /// If the call completes successfully, it returns the remaining gas after the execution.
+    /// If the call terminates early, it returns a two-tuple comprising the remaining gas after the execution,
+    /// and a MethodCallError describing the cause of the early termination.
     ///
-    /// # Panics
-    /// call_method assumes that the Instance does export the name method, and panics otherwise.
+    /// ### Panics
+    /// call_method assumes that the Instance does export the correctly named entry point method, and panics otherwise.
     pub(crate) unsafe fn call_method(&self) -> Result<u64, (u64, MethodCallError)> {
         let remaining_gas = match wasmer_middlewares::metering::get_remaining_points(&self.0) {
             wasmer_middlewares::metering::MeteringPoints::Exhausted => 0,

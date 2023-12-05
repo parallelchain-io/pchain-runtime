@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of Store instantiation from special configuration, including middleware [filter](super::non_determinism_filter::NonDeterminismFilter).
+//! Creates a Wasmer Store which is a collection of all the runtime state that can be manipulated by a WebAssembly program.
 
 use std::convert::TryFrom;
 use std::sync::Arc;
@@ -16,7 +16,7 @@ use super::custom_tunables::CustomTunables;
 use super::non_determinism_filter::NonDeterminismFilter;
 use crate::gas::wasm_opcode_gas_schedule;
 
-/// Instantiate a Store that represents the states that can be manipulated by Wasm program.
+/// Instantiate a Store which includes customised middleware e.g. [filter](super::non_determinism_filter::NonDeterminismFilter).
 pub fn instantiate_store(gas_limit: u64, memory_limit: Option<usize>) -> Store {
     // call non_determinism_filter.rs to disallow non-deterministic types
     let nd_filter = Arc::new(NonDeterminismFilter::default());
@@ -42,8 +42,8 @@ pub fn instantiate_store(gas_limit: u64, memory_limit: Option<usize>) -> Store {
     }
 }
 
-/// `limit_pages` caps the total WASM linear memory (measured in page size) for runtime.
-/// Linear memory in WASM can have at most 65536 pages, each page being equal to 2^16 or 65536 bytes.
+/// `limit_pages` caps the total Wasm linear memory (measured in page size) for runtime.
+/// Linear memory in Wasm can have at most 65536 pages, each page being equal to 2^16 or 65536 bytes.
 /// The limit supplied has to be less than the maximum value from WebAssembly v1.0 spec.
 /// In case of an error, a total of 2^32 bytes (4 gigabytes) will be allocated.
 /// See <https://github.com/WebAssembly/memory64/blob/master/proposals/memory64/Overview.md>

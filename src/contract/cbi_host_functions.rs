@@ -12,18 +12,13 @@ use wasmer::{imports, Function, ImportObject, Store};
 use super::wasmer::instance::MethodCallError;
 
 /// CBIHostFunctions defines the interface of host functions used in [wasmer::WasmerEnv].
-/// The Importable resource that is provided to the Wasm module during instantiation needs to expose these functions.
+/// The Import object that is provided to the Wasm module during instantiation must implement these functions.
 ///
 /// Function arguments suffixed with `_ptr_ptr` are pointer-to-pointer variables that
 /// reference a memory location for storing output values.
-/// The `wasmer_memory::MemoryContext::set_return_values_to_memory` method
-/// can be used to store the output value to the memory location.
 ///
-/// Host functions arguments with suffix `_ptr` are pointer-to variables that
+/// Host functions arguments suffixed with `_ptr` are pointer-to variables that
 /// store the memory location holding input values.
-/// The `wasmer_memory::MemoryContext::read_bytes`, method
-/// can be used to read the values from the specified location.
-///
 pub trait CBIHostFunctions<T>
 where
     T: wasmer::WasmerEnv,

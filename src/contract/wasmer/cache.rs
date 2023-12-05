@@ -3,11 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct that caches the Wasm module compiled from smart contract bytecode.
-//!
-//! The cache uses [FileSystemCache] from wasmer to cache compiled smart contract module.
-//! It also stores metadata about the smart contract module, such as the CBI version and
-//! the size of the Wasm bytecode which is used on module compilation, into a seperate file system.
+//! Defines a cache for Wasm modules compiled from smart contract bytecode.
+//! The cache also stores metadata about the smart contract, such as the CBI version and
+//! the size of the Wasm bytecode before compilation.
 
 use anyhow::Result;
 use pchain_types::cryptography::PublicAddress;
@@ -21,8 +19,7 @@ use wasmer_cache::{Cache as WasmerCache, FileSystemCache};
 
 use crate::contract;
 
-/// Smart Contract Cache provides atomic access to smart contract data.
-/// File system cache will then be created with it is instantiated.
+/// The Cache struct uses [FileSystemCache] from Wasmer as the backing cache storage.
 #[derive(Clone)]
 pub struct Cache {
     inner: Arc<RwLock<FileStorage>>,
@@ -124,10 +121,9 @@ impl FileStorage {
             .open(path)
             .map_err(|e| {
                 println!("{:?}", e);
-            })
-            .unwrap();
+            })?;
         let bytes: Vec<u8> = metadata.into();
-        file.write_all(&bytes).map_err(|_| ()).unwrap();
+        file.write_all(&bytes).map_err(|_| ())?;
         Ok(())
     }
 }

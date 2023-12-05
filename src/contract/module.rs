@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines struct that abstracts the Wasm module compiled from contract bytecode.
+//! Defines struct that abstracts the smart contract module compiled from Wasm bytecode and exposes high level APIs to interact with it.
 
 use std::{
     mem::transmute,
@@ -29,7 +29,7 @@ use crate::{
 
 use super::{instance::ContractInstance, SmartContractContext};
 
-/// ContractModule holds the Wasm module and related metadata.
+/// ContractModule contains the necessary components needed to build Wasm modules and instantiate them.
 pub(crate) struct ContractModule {
     store: Store,
     module: Module,

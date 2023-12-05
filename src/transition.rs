@@ -334,6 +334,7 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
+    /// initialize a new Transition Context, at the beginning of a new Transaction
     pub fn new(version: TxnVersion, ws: WorldState<'a, S, V>, gas_limit: u64) -> Self {
         let host_gm = GasMeter::new(version, WorldStateCache::new(ws), gas_limit);
 

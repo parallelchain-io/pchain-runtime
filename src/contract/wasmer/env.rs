@@ -3,10 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines environment used for constructing the Wasm (specifically Wasmer) instance.
-//!
-//! The environment (Env) keeps track on the data changes happening inside a contract call.
-//! Data changes include read-write operation on world state, gas consumed and
+//! Defines the environment provided when instantiating a Wasm module (specifically using Wasmer).
+//! The environment tracks state changes happening inside a contract call.
+//! These changes include read-write operations on World State, gas consumed and
 //! context related to cross-contract calls.
 
 use pchain_world_state::{VersionProvider, DB};
@@ -19,27 +18,25 @@ use crate::{
 
 use super::memory::MemoryContext;
 
-/// Env provides the functions in `exports` (which are in turn 'imported' by WASM smart contracts)
-/// access to complex functionality that typically cannot cross the host-WASM barrier.
-///
-/// Wasmer handles everything for us.
+/// The Environment is implemented as an Env struct tracking relevant state variables.
+/// WasmerEnv implements the necessary trait for the Env struct to create a Wasm import object.
 #[derive(wasmer::WasmerEnv, Clone)]
 pub(crate) struct Env<'a, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    /// Transition Context
+    /// Singleton Transition Context
     pub context: Arc<Mutex<TransitionContext<'a, S, V>>>,
 
-    /// Thread safe Wasm gas global initialized by Wasmer for every new contract call
+    /// Thread safe Wasm gas global. With every new contract call, we initialize a new Wasmer instance and gas global.
     pub wasmer_gas_global: Arc<Mutex<WasmerGasGlobal>>,
 
-    /// Counter of calls, starting with zero and increases for every Internal Call
+    /// Counter of calls, starting with zero and increasing with every Internal Call
     pub call_counter: u32,
 
-    /// Call Transaction consists of information such as target_address, gas limit, and data which is parameters provided to contract.
-    /// In Internal Call, target address of the contract being called could be child contract.
+    /// Call Transaction consists of information such as target_address, gas limit, and data which are parameters provided to contract.
+    /// In an Internal Call, target address of the contract will be the child contract.
     pub call_tx: CallTx,
 
     /// Blockchain data as an input to state transition
@@ -48,9 +45,11 @@ where
     /// Indicator of whether this environment is created for a view call.
     pub is_view: bool,
 
+    /// Link to the linear memory instance boostrapped by Wasmer
     #[wasmer(export)]
     pub memory: LazyInit<Memory>,
 
+    /// Link to the Wasmer function to allocate linear memory
     #[wasmer(export(name = "alloc"))]
     pub alloc: LazyInit<NativeFunc<u32, wasmer::WasmPtr<u8, wasmer::Array>>>,
 }
@@ -60,8 +59,7 @@ where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone,
 {
-    /// env is a helper function to create an Env, which is an object used in functions exported to smart
-    /// contract modules.
+    /// bootstrap a new instance of Env
     pub fn new(
         context: Arc<Mutex<TransitionContext<'a, S, V>>>,
         call_counter: u32,
@@ -92,15 +90,20 @@ where
     }
 }
 
+/// Impl MemoryContext for Env to expose linear memory access to the host functions
 impl<'a, 'b, S, V> MemoryContext for Env<'a, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
+    /// ### Panics
+    /// panics if the linear memory instance is not initialized
     fn get_memory(&self) -> &Memory {
         self.memory_ref().unwrap()
     }
 
+    /// ### Panics
+    /// panics if unable if the native function to allocate linear memory is not found
     fn get_alloc(&self) -> &NativeFunc<u32, wasmer::WasmPtr<u8, wasmer::Array>> {
         self.alloc_ref().unwrap()
     }
