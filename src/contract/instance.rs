@@ -55,9 +55,9 @@ where
 
         // After contract execution, retrieve a clone of the updated TransitionContext
         // Note that we cannot take ownership of the Mutex<TransitionContext> within the Arc
-        // because this function invoked from both External and Internal contract calls.
-        // In the second scenario, prior calls still hold counted refs to the Mutex
-        // also, the Wasmer importable also holds refs to the Mutex.
+        // because this function is invoked from both External and Internal contract calls.
+        // In the second scenario, prior calls still hold counted refs to the Mutex.
+        // Also, the Wasmer importable also holds refs to the Mutex.
         // This might be refactored in future with a change to Wasmer's API
 
         let ctx = self.environment.context.lock().unwrap().clone();

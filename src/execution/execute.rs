@@ -3,7 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! The Execute Trait specifies the execution behaviour of Commands and DeferredCommands.
+//! Specifies the execution behaviour of Commands (and resulting DeferredCommands)
+//! that are sent by users to the blockchain.
+//! Note that the NextEpoch Command is handled separately in [execute_next_epoch_command](crate::execution::execute_next_epoch).
 
 use pchain_types::{
     blockchain::Command,
@@ -23,6 +25,7 @@ use crate::{
     TransitionError,
 };
 
+/// The Execute trait must be implemented by Commands and DeferredCommands.
 pub(crate) trait Execute<S, E, V>
 where
     S: DB + Send + Sync + Clone + 'static,

@@ -17,10 +17,7 @@ pub struct SimulateWorldStateStorage {
 
 impl DB for SimulateWorldStateStorage {
     fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        match self.inner.get(key) {
-            Some(value) => Some(value.clone()),
-            None => None,
-        }
+        self.inner.get(key).cloned()
     }
 }
 

@@ -3,7 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a global [GasMeter] that keeps track of gas used outside of contract call execution.
+//! Defines a global [GasMeter] that is the single source for truth for total gas used in a transaction.
+//! It is responsible for the actual gas deduction,
+//! and presents a facade for all charegeable operations (e.g. World State operations),
+//! except operations during contract execution that are called via the (Wasm Host Function Gas Meter)[crate::execution::gas::wasmer_gas::HostFuncGasMeter].
+//! The GasMeter lives for the entire duration of a Transaction.
+
 use std::cell::RefCell;
 
 use pchain_types::cryptography::PublicAddress;
@@ -23,13 +28,14 @@ use super::{
 
 use crate::execution::cache::{CommandOutputCache, WorldStateCache};
 
-/// GasMeter implements a facade for all gas-chargeable methods.
+/// GasMeter contains both gas-accounting variables and data structures which involve chargeable operations.
 #[derive(Clone)]
 pub(crate) struct GasMeter<'a, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
+    /// version of the transaction being processed
     pub version: TxnVersion,
 
     /// gas limit of the entire txn
@@ -45,9 +51,11 @@ where
     /// finalized and reset at the end of each command
     gas_used_for_current_command: GasUsed,
 
-    /*** Mutation on the below Data should be charged. ***/
+    /*** Operations involving the following data structures are chargeable ***/
+    /// stores all resulting outputs from executing the current command
     pub output_cache_of_current_command: CommandOutputCache,
 
+    /// handles all operations involving World State
     pub ws_cache: WorldStateCache<'a, S, V>,
 }
 
@@ -214,29 +222,29 @@ where
     // GET methods
     //
     /// Gets app data from the read-write set.
-    pub fn ws_get_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
-        let result = operation::ws_get_storage_data(self.version, &mut self.ws_cache, address, key);
+    pub fn ws_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
+        let result = operation::ws_storage_data(self.version, &mut self.ws_cache, address, key);
         let value = self.charge(result)?;
         (!value.is_empty()).then_some(value)
     }
 
     /// Get the balance from read-write set. It balance is not found, gets from WS and caches it.
-    pub fn ws_get_balance(&self, address: PublicAddress) -> u64 {
-        let result = operation::ws_get_balance(&self.ws_cache, &address);
+    pub fn ws_balance(&self, address: PublicAddress) -> u64 {
+        let result = operation::ws_balance(&self.ws_cache, &address);
         self.charge(result)
     }
 
-    pub fn ws_get_cbi_version(&self, address: PublicAddress) -> Option<u32> {
-        let result = operation::ws_get_cbi_version(&self.ws_cache, &address);
+    pub fn ws_cbi_version(&self, address: PublicAddress) -> Option<u32> {
+        let result = operation::ws_cbi_version(&self.ws_cache, &address);
         self.charge(result)
     }
 
-    pub fn ws_get_cached_contract(
+    pub fn ws_cached_contract(
         &self,
         address: PublicAddress,
         sc_context: &SmartContractContext,
     ) -> Option<ContractModule> {
-        self.charge(operation::ws_get_cached_contract(
+        self.charge(operation::ws_cached_contract(
             &self.ws_cache,
             sc_context,
             address,
@@ -279,7 +287,7 @@ where
     V: VersionProvider + Send + Sync + Clone,
 {
     fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
-        self.ws_get_storage_data(NETWORK_ADDRESS, key)
+        self.ws_storage_data(NETWORK_ADDRESS, key)
     }
 
     fn contains(&mut self, key: &[u8]) -> bool {

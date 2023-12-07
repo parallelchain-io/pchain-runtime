@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Execution implementation of [Account Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#account-commands).
+//! Implements execution of [Account Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#account-commands).
 
 use pchain_types::cryptography::{contract_address_v1, contract_address_v2, PublicAddress};
 use pchain_world_state::{VersionProvider, DB};
@@ -37,7 +37,7 @@ where
     V: VersionProvider + Send + Sync + Clone,
 {
     let signer = state.tx.signer;
-    let origin_balance = state.ctx.gas_meter.ws_get_balance(signer);
+    let origin_balance = state.ctx.gas_meter.ws_balance(signer);
 
     if origin_balance < amount {
         abort!(state, TransitionError::NotEnoughBalanceForTransfer)
@@ -48,7 +48,7 @@ where
         .ctx
         .gas_meter
         .ws_set_balance(signer, origin_balance - amount);
-    let recipient_balance = state.ctx.gas_meter.ws_get_balance(recipient);
+    let recipient_balance = state.ctx.gas_meter.ws_balance(recipient);
 
     // Ceiling to MAX for safety. Overflow should not happen in real situation.
     state
@@ -80,7 +80,7 @@ where
         let signer = state.tx.signer;
 
         // check balance
-        let origin_balance = state.ctx.gas_meter.ws_get_balance(signer);
+        let origin_balance = state.ctx.gas_meter.ws_balance(signer);
         if origin_balance < amount {
             abort!(state, TransitionError::NotEnoughBalanceForTransfer);
         }
@@ -90,7 +90,7 @@ where
             .ctx
             .gas_meter
             .ws_set_balance(signer, origin_balance - amount);
-        let target_balance = state.ctx.gas_meter.ws_get_balance(target);
+        let target_balance = state.ctx.gas_meter.ws_balance(target);
 
         // Ceiling to MAX for safety. Overflow should not happen in real situation.
 
@@ -148,7 +148,7 @@ where
         state
             .ctx
             .gas_meter
-            .ws_get_cbi_version(target)
+            .ws_cbi_version(target)
             .filter(|version| contract::is_cbi_compatible(*version))
             .ok_or(TransitionError::InvalidCBI)?;
 
@@ -157,7 +157,7 @@ where
         let contract_module = state
             .ctx
             .gas_meter
-            .ws_get_cached_contract(target, &state.ctx.sc_context)
+            .ws_cached_contract(target, &state.ctx.sc_context)
             .ok_or(TransitionError::NoContractcode)?;
 
         // Check that storage related operations for execution setup have not exceeded gas limit at this point
@@ -271,7 +271,7 @@ where
         if !is_cbi_compatible(cbi_version) {
             return Err(TransitionError::OtherDeployError);
         }
-        let exist_cbi_version = state.ctx.gas_meter.ws_get_cbi_version(contract_address);
+        let exist_cbi_version = state.ctx.gas_meter.ws_cbi_version(contract_address);
         if exist_cbi_version.is_some() {
             return Err(TransitionError::ContractAlreadyExists);
         }

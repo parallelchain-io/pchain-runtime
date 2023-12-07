@@ -3,7 +3,10 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines structs for tracking gas usage during contract calls.
+//! Define constructs used for gas accounting during a contract call due to them being executed in a isolated Wasm environment.
+//! They operate independently of the global (GasMeter)[crate::execution::gas::gas_meter::GasMeter]],
+//! and only live for the duration of the contract call.
+
 use core::panic;
 use std::mem::MaybeUninit;
 
@@ -136,13 +139,13 @@ where
     }
 
     pub fn ws_get_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
-        let result = operation::ws_get_storage_data(self.version, self.ws_cache, address, key);
+        let result = operation::ws_storage_data(self.version, self.ws_cache, address, key);
         self.charge(result).filter(|v| !v.is_empty())
     }
 
     /// Get the balance from read-write set. It balance is not found, gets from WS and caches it.
     pub fn ws_get_balance(&self, address: PublicAddress) -> u64 {
-        let result = operation::ws_get_balance(self.ws_cache, &address);
+        let result = operation::ws_balance(self.ws_cache, &address);
         self.charge(result)
     }
 
@@ -158,12 +161,12 @@ where
         self.charge(result);
     }
 
-    pub fn ws_get_cached_contract(
+    pub fn ws_cached_contract(
         &self,
         address: PublicAddress,
         sc_context: &SmartContractContext,
     ) -> Option<ContractModule> {
-        let result = operation::ws_get_cached_contract(self.ws_cache, sc_context, address);
+        let result = operation::ws_cached_contract(self.ws_cache, sc_context, address);
         self.charge(result)
     }
 

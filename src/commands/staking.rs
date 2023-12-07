@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Execution implementation of [Staking Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#staking-commands).
+//! Implements execution of [Staking Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#staking-commands).
 
 use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{
@@ -137,7 +137,7 @@ where
         abort!(state, TransitionError::DepositsAlreadyExists)
     }
 
-    let owner_balance = state.ctx.gas_meter.ws_get_balance(owner);
+    let owner_balance = state.ctx.gas_meter.ws_balance(owner);
     if owner_balance < balance {
         abort!(state, TransitionError::NotEnoughBalanceForTransfer)
     }
@@ -201,7 +201,7 @@ where
         abort!(state, TransitionError::DepositsNotExists)
     }
 
-    let owner_balance = state.ctx.gas_meter.ws_get_balance(owner);
+    let owner_balance = state.ctx.gas_meter.ws_balance(owner);
     if owner_balance < amount {
         abort!(state, TransitionError::NotEnoughBalanceForTransfer)
     }
@@ -283,7 +283,7 @@ where
             .set_balance(new_deposit_balance);
     }
 
-    let owner_balance = state.ctx.gas_meter.ws_get_balance(owner);
+    let owner_balance = state.ctx.gas_meter.ws_balance(owner);
     state.ctx.gas_meter.ws_set_balance(
         owner,
         owner_balance.saturating_add(deposit_balance - new_deposit_balance),

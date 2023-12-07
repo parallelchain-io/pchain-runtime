@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines the logic of gas counting for each operation.
+//! Defines the business logic of gas incurred for each operation.
 
 use ed25519_dalek::Verifier;
 use pchain_types::{blockchain::Log, cryptography::PublicAddress};
@@ -35,7 +35,7 @@ where
     V: VersionProvider + Send + Sync + Clone,
 {
     let new_val_len = CacheValue::len(&value);
-    let (old_val_len, get_cost) = ws_get_storage_data(txn_version, ws_cache, address, key);
+    let (old_val_len, get_cost) = ws_storage_data(txn_version, ws_cache, address, key);
     let old_val_len = old_val_len.as_ref().map_or(0, CacheValue::len);
     
     ws_cache.set_storage_data(address, key, value);
@@ -68,7 +68,7 @@ where
 {
     let key_len = gas::ACCOUNT_TRIE_KEY_LENGTH;
     let new_val_len = balance.len();
-    let (old_val_len, get_cost) = ws_get_balance(ws_cache, &address);
+    let (old_val_len, get_cost) = ws_balance(ws_cache, &address);
     let old_val_len = old_val_len.len();
 
     // old_val_len is obtained from Get so the cost of reading the key is already charged
@@ -95,7 +95,7 @@ where
 {
     let key_len = gas::ACCOUNT_TRIE_KEY_LENGTH;
     let new_val_len = version.len();
-    let (old_val_len, get_cost) = ws_get_cbi_version(ws_cache, &address);
+    let (old_val_len, get_cost) = ws_cbi_version(ws_cache, &address);
     let old_val_len = old_val_len.as_ref().map_or(0, CacheValue::len);
 
     // old_val_len is obtained from Get so the cost of reading the key is already charged
@@ -122,7 +122,7 @@ where
 {
     let key_len = gas::ACCOUNT_TRIE_KEY_LENGTH;
     let new_val_len = CacheValue::len(&code);
-    let (old_val_len, get_cost) = ws_get_contract_code(ws_cache, &address);
+    let (old_val_len, get_cost) = ws_cached_contract_code(ws_cache, &address);
     let old_val_len = old_val_len.as_ref().map_or(0, CacheValue::len);
 
     // old_val_len is obtained from Get so the cost of reading the key is already charged
@@ -138,7 +138,7 @@ where
     ((), get_cost + set_cost)
 }
 
-pub(crate) fn ws_get_storage_data<S, V>(
+pub(crate) fn ws_storage_data<S, V>(
     txn_version: TxnVersion,
     ws_cache: &mut WorldStateCache<S, V>,
     address: PublicAddress,
@@ -148,7 +148,7 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    let value = ws_cache.get_storage_data(address, key);
+    let value = ws_cache.storage_data(address, key);
     let traversed_key_len = storage_trie_traversed_key_len(txn_version, &address, key);
     let get_cost = CostChange::deduct(
         // step 1
@@ -162,7 +162,7 @@ where
     (value, get_cost)
 }
 
-pub(crate) fn ws_get_balance<S, V>(
+pub(crate) fn ws_balance<S, V>(
     ws_cache: &WorldStateCache<S, V>,
     address: &PublicAddress,
 ) -> OperationReceipt<u64>
@@ -170,7 +170,7 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    let value = ws_cache.get_balance(address);
+    let value = ws_cache.balance(address);
     let get_cost = CostChange::deduct(
         // step 1
         get_cost_traverse(gas::ACCOUNT_TRIE_KEY_LENGTH).saturating_add
@@ -180,7 +180,7 @@ where
     (value, get_cost)
 }
 
-pub(crate) fn ws_get_cbi_version<S, V>(
+pub(crate) fn ws_cbi_version<S, V>(
     ws_cache: &WorldStateCache<S, V>,
     address: &PublicAddress,
 ) -> OperationReceipt<Option<u32>>
@@ -188,7 +188,7 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    let value = ws_cache.get_cbi_version(address);
+    let value = ws_cache.cbi_version(address);
     let get_cost = CostChange::deduct(
         // step 1
         get_cost_traverse(gas::ACCOUNT_TRIE_KEY_LENGTH)
@@ -198,7 +198,7 @@ where
     (value, get_cost)
 }
 
-pub(crate) fn ws_get_contract_code<S, V>(
+pub(crate) fn ws_cached_contract_code<S, V>(
     ws_cache: &WorldStateCache<S, V>,
     address: &PublicAddress,
 ) -> OperationReceipt<Option<Vec<u8>>>
@@ -206,7 +206,7 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    let value = ws_cache.get_contract_code(address);
+    let value = ws_cache.contract_code(address);
     let get_cost = CostChange::deduct(gas::discount_code_read(
         // step 1
         get_cost_traverse(gas::ACCOUNT_TRIE_KEY_LENGTH)
@@ -238,7 +238,7 @@ where
     (ret, cost_change)
 }
 
-pub(crate) fn ws_get_cached_contract<S, V>(
+pub(crate) fn ws_cached_contract<S, V>(
     ws_cache: &WorldStateCache<S, V>,
     sc_context: &SmartContractContext,
     address: PublicAddress,
@@ -260,7 +260,7 @@ where
     }
 
     // else check ws and charge
-    let (value, contract_get_cost) = ws_get_contract_code(ws_cache, &address);
+    let (value, contract_get_cost) = ws_cached_contract_code(ws_cache, &address);
     let contract_code = match value {
         Some(value) => value,
         None => return (None, contract_get_cost),
@@ -402,6 +402,7 @@ pub (crate) fn storage_trie_traversed_key_len(
     }
 }
 
+/// Helper function to calculate the cost of hashing storage trie keys if needed.
 pub (crate) fn storage_trie_key_hash_cost(txn_version: TxnVersion, key: &[u8]) -> u64 {
     // protocol v0.4.0 (using TransactionV1) did not hash the key
     // protocol v0.5.0 (using TransactionV2) hashes the key if longer than or equal to 32 bytes

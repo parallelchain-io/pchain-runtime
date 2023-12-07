@@ -61,7 +61,7 @@ where
     /// remove cached writes and return the value,
     /// gas free operation, only used for accounting during charge phase
     pub fn purge_balance(&mut self, address: PublicAddress) -> u64 {
-        let balance = self.get_balance(&address);
+        let balance = self.balance(&address);
         self.balances.writes.remove(&address);
         balance
     }
@@ -77,7 +77,7 @@ where
     /// retrieve the balance of native tokens for a particular account
     /// ### panics
     /// panics on unexpected errors with the account trie, which might reflect an invalid World State
-    pub fn get_balance(&self, address: &PublicAddress) -> u64 {
+    pub fn balance(&self, address: &PublicAddress) -> u64 {
         self.balances
             .get(address, |key| self.ws.account_trie().balance(key).ok())
             .expect(&format!(
@@ -94,7 +94,7 @@ where
     /// retrieve cbi version for a particular contract account
     /// ### panics
     /// panics on unexpected errors with the account trie, which might reflect an invalid World State
-    pub fn get_cbi_version(&self, address: &PublicAddress) -> Option<u32> {
+    pub fn cbi_version(&self, address: &PublicAddress) -> Option<u32> {
         self.cbi_versions.get(address, |key| {
             self.ws.account_trie().cbi_version(key).expect(&format!(
                 "Account trie should get CBI version for {:?}",
@@ -110,7 +110,7 @@ where
     /// retrieve contract code for a particular contract account
     /// ### panics
     /// panics on unexpected errors with the account trie, which might reflect an invalid World State
-    pub fn get_contract_code(&self, address: &PublicAddress) -> Option<Vec<u8>> {
+    pub fn contract_code(&self, address: &PublicAddress) -> Option<Vec<u8>> {
         self.contract_codes.get(address, |key| {
             self.ws.account_trie().code(key).expect(&format!(
                 "Account trie should get contract code for {:?}",
@@ -142,9 +142,9 @@ where
     }
 
     /// retrieves data from account storage
-    /// ### panics
+    /// ### Panics
     /// panics on unexpected errors with the storage trie, which might reflect an invalid World State
-    pub fn get_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
+    pub fn storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
         self.storage_data
             .get(&(address, key.to_vec()), |(addr, k)| {
                 self.ws

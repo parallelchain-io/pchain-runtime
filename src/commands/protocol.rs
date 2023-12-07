@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Execution implementation of [Protocol Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#protocol-commands).
+//! Implements execution of [Protocol Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#protocol-commands).
 
 use std::collections::HashMap;
 
@@ -263,8 +263,7 @@ where
     V: VersionProvider + Send + Sync + Clone,
 {
     fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
-        self.gas_free_ws_cache
-            .get_storage_data(NETWORK_ADDRESS, key)
+        self.gas_free_ws_cache.storage_data(NETWORK_ADDRESS, key)
     }
 
     fn contains(&mut self, key: &[u8]) -> bool {

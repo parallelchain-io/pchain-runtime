@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of host functions defined in [crate::contract::cbi_host_functions].
+//! Implements host functions defined in [crate::contract::cbi_host_functions].
 
 use pchain_types::{
     blockchain::{Command, Log},
@@ -22,7 +22,9 @@ use crate::{
 use super::wasmer::env::Env;
 
 /// [HostFunctions] implements trait [CBIHostFunctions] according to CBI version 0.
-/// Env is available by reference in every method to retrieve the current execution context.
+/// The Env struct is available by reference in every method to retrieve the current execution context.
+/// Inside every method, we instantitate a new [HostFuncGasMeter] which holds the latest gas consumption state and
+/// through it, call methods that require gas consumption.
 pub(crate) struct HostFunctions {}
 impl<'a, 'b, S, V> CBIHostFunctions<Env<'a, S, V>> for HostFunctions
 where
@@ -254,7 +256,7 @@ where
 
         // Get the Contract Code and create the contract module
         let contract_module = fn_gas_meter
-            .ws_get_cached_contract(target, &sc_context)
+            .ws_cached_contract(target, &sc_context)
             .ok_or(FuncError::ContractNotFound)?;
 
         // by default, fields would be inherited from parent transaction
