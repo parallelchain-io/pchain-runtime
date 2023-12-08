@@ -5,7 +5,7 @@
 
 //! Execution of a [View call](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
 //!
-//! A View Call refers to the execution of view-only methods in a contract without actual gas charging.
+//! A View Call refers to the invocation of view-only methods in a contract without actual gas charging.
 //! These methods are not allowed to modify the state of blockchain.
 //! Unlike the execution of actual Transaction commands, there is neither a Pre-charge nor Charge phase.
 //! The gas used in the resulting command receipt is purely for reference.

@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines struct that abstracts the smart contract module compiled from Wasm bytecode and exposes high level APIs to interact with it.
+//! An abstraction of the smart contract module compiled from Wasm bytecode that exposes high-level management APIs.
 
 use std::{
     mem::transmute,
@@ -15,6 +15,7 @@ use pchain_world_state::{VersionProvider, DB};
 use wasmer::Store;
 
 use crate::{
+    context::TransitionContext,
     contract::{
         self,
         wasmer::module::ModuleBuildError,
@@ -22,7 +23,6 @@ use crate::{
         wasmer::{instance::ContractValidateError, module::Module},
         HostFunctions,
     },
-    transition::TransitionContext,
     types::CallTx,
     BlockchainParams,
 };

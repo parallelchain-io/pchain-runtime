@@ -2094,3 +2094,75 @@ fn test_upgrade_world_state() {
     );
     assert_eq!(v2_to_balance, transfer_value);
 }
+
+#[test]
+fn test_failed_world_state_upgrade_improper_command() {
+    let transfer_value = 99u64;
+    let target = [2u8; 32];
+    let mut tx = TestData::transaction_v1();
+    tx.commands = vec![Command::Transfer(TransferInput {
+        recipient: target,
+        amount: transfer_value,
+    })];
+
+    let bd = TestData::block_params();
+
+    // init a transfer to mutate world state
+    let storage = SimulateWorldStateStorage::default();
+    let mut ws: WorldState<SimulateWorldStateStorage, V1> =
+        WorldState::<SimulateWorldStateStorage, V1>::new(&storage);
+    let from_address = tx.signer;
+    let init_from_balance = 100_000_000;
+    ws.account_trie_mut()
+        .set_balance(&from_address, init_from_balance)
+        .unwrap();
+
+    let result = pchain_runtime::Runtime::new().transition_v1(ws, tx, bd);
+    let receipt = result.receipt.unwrap();
+    assert_eq!(receipt.last().unwrap().exit_code, ExitCodeV1::Success);
+
+    let ws_v1: WorldState<'_, SimulateWorldStateStorage, V1> = result.new_state.into();
+
+    // exception 1 - empty command sent
+    let mut tx = TestData::transaction_v1();
+    tx.commands = vec![];
+    tx.nonce = 1;
+
+    let mut bd = TestData::block_params();
+    let mut stats = HashMap::new();
+    stats.insert(from_address, BlockProposalStats::new(1));
+    bd.validator_performance = Some(ValidatorPerformance {
+        blocks_per_epoch: 1,
+        stats,
+    });
+
+    let upgraded = pchain_runtime::Runtime::new().transition_v1_to_v2(ws_v1.clone(), tx, bd);
+    assert_eq!(
+        upgraded.error,
+        Some(TransitionError::InvalidNextEpochCommand)
+    );
+    assert_eq!(upgraded.receipt, None);
+
+    // exception 2 - incorrect command sent
+    let mut tx = TestData::transaction_v1();
+    tx.commands = vec![Command::Transfer(TransferInput {
+        recipient: target,
+        amount: transfer_value,
+    })];
+    tx.nonce = 1;
+
+    let mut bd = TestData::block_params();
+    let mut stats = HashMap::new();
+    stats.insert(from_address, BlockProposalStats::new(1));
+    bd.validator_performance = Some(ValidatorPerformance {
+        blocks_per_epoch: 1,
+        stats,
+    });
+
+    let upgraded = pchain_runtime::Runtime::new().transition_v1_to_v2(ws_v1.clone(), tx, bd);
+    assert_eq!(
+        upgraded.error,
+        Some(TransitionError::InvalidNextEpochCommand)
+    );
+    assert_eq!(upgraded.receipt, None);
+}

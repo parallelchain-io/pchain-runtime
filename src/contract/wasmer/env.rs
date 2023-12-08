@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use wasmer::{Global, LazyInit, Memory, NativeFunc};
 
 use crate::{
-    execution::gas::WasmerGasGlobal, transition::TransitionContext, types::CallTx, BlockchainParams,
+    context::TransitionContext, execution::gas::WasmerGasGlobal, types::CallTx, BlockchainParams,
 };
 
 use super::memory::MemoryContext;
@@ -98,13 +98,13 @@ where
 {
     /// ### Panics
     /// panics if the linear memory instance is not initialized
-    fn get_memory(&self) -> &Memory {
+    fn memory(&self) -> &Memory {
         self.memory_ref().unwrap()
     }
 
     /// ### Panics
     /// panics if unable if the native function to allocate linear memory is not found
-    fn get_alloc(&self) -> &NativeFunc<u32, wasmer::WasmPtr<u8, wasmer::Array>> {
+    fn alloc(&self) -> &NativeFunc<u32, wasmer::WasmPtr<u8, wasmer::Array>> {
         self.alloc_ref().unwrap()
     }
 }

@@ -9,11 +9,11 @@
 use pchain_world_state::{VersionProvider, DB};
 
 use crate::{
+    context::TransitionContext,
     contract::wasmer::{
         env,
         instance::{Instance, MethodCallError},
     },
-    transition::TransitionContext,
 };
 
 /// ContractInstance contains contract instance which is prepared to be called in Commands Phase.

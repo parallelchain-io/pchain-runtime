@@ -11,13 +11,13 @@ use wasmer::{Array, Memory, NativeFunc, WasmPtr};
 /// Provides read-write access to Wasm linear memory through the [Wasmer Environment](super::wasmer_env).
 /// This Memory context interfaces with Wasmer's exports to facilitate memory operations.
 pub trait MemoryContext {
-    fn get_memory(&self) -> &Memory;
-    fn get_alloc(&self) -> &NativeFunc<u32, WasmPtr<u8, Array>>;
+    fn memory(&self) -> &Memory;
+    fn alloc(&self) -> &NativeFunc<u32, WasmPtr<u8, Array>>;
 
     /// set the return values to memory and return the length
     fn write_bytes_to_memory(&self, value: Vec<u8>, val_ptr_ptr: u32) -> Result<u32> {
-        let memory = self.get_memory();
-        let alloc = self.get_alloc();
+        let memory = self.memory();
+        let alloc = self.alloc();
 
         // Allocate segment.
         let segment_ptr = alloc
@@ -46,7 +46,7 @@ pub trait MemoryContext {
 
     /// read bytes from memory given the offset and len of the memory location
     fn read_bytes_from_memory(&self, offset: u32, len: u32) -> Result<Vec<u8>> {
-        let memory = self.get_memory();
+        let memory = self.memory();
         let bytes_ptr: WasmPtr<u8, Array> = WasmPtr::new(offset);
 
         let bytes = bytes_ptr

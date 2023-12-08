@@ -3,17 +3,18 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct that serves as a cache layer for values returned from Command execution.
+//! Defines a cache for values returned by executed Commands.
 use crate::types::CommandOutput;
 use pchain_types::blockchain::Log;
 
+/// CommandOutputCache is compatible with the fields of both CommandReceiptV1 and CommandReceiptV2.
 #[derive(Clone, Default)]
 pub(crate) struct CommandOutputCache {
-    /// stores the list of events from exeuting a command, ordered by the sequence of emission
+    /// stores the list of event logs from exeuting a command, ordered by the sequence of emission
     pub(in crate::execution) logs: MaybeUnused<Vec<Log>>,
 
     /// value returned by a call transaction using the `return_value` SDK function.
-    /// It is None if the execution has not/did not return anything.
+    /// It is None if the execution did not return anything.
     pub(in crate::execution) return_value: MaybeUnused<Vec<u8>>,
 
     /// value returned from result of WithdrawDeposit command.
@@ -27,6 +28,7 @@ pub(crate) struct CommandOutputCache {
 }
 
 impl CommandOutputCache {
+    /// retrieves all the values from the cache, emptying the cache.
     pub fn take(&mut self) -> CommandOutput {
         CommandOutput {
             logs: self.logs.take_or_default(),
@@ -37,7 +39,7 @@ impl CommandOutputCache {
         }
     }
 
-    // Used in cross-contract call
+    // used to retrieve the return value from child contracts during a cross-contract call
     pub fn take_return_value(&mut self) -> Option<Vec<u8>> {
         self.return_value.take()
     }

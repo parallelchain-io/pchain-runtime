@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct that encaspulates [wasmer::Module] to represent a compiled smart contract in Parallelchain Mainnet.
+//! A wrapper over [wasmer::Module] to represent a compiled smart contract instance Parallelchain Mainnet.
 
 use pchain_types::cryptography::PublicAddress;
 
@@ -12,7 +12,7 @@ use crate::contract::{blank, Importable};
 
 use super::instance::{ContractValidateError, Instance, CONTRACT_METHOD};
 
-/// Module is a structure representing a WebAssembly executable that has been compiled down to architecture-specific
+/// Module is a struct representing a WebAssembly executable that has been compiled down to architecture-specific
 /// machine code in preparation for execution, tagged with metadata.
 pub(in crate::contract) struct Module(pub wasmer::Module, pub ModuleMetadata);
 

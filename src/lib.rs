@@ -32,6 +32,8 @@
 
 pub mod commands;
 
+pub mod context;
+
 pub mod contract;
 pub use contract::wasmer::cache::Cache;
 

@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
 use crate::{
+    context::TransitionContext,
     execution::{
         execute_next_epoch::{execute_next_epoch_v1, execute_next_epoch_v2},
         state::ExecutionState,
     },
     gas,
-    transition::TransitionContext,
     types::{self, BaseTx, TxnVersion},
     BlockProposalStats, BlockchainParams, TransitionV1Result, ValidatorPerformance,
 };
