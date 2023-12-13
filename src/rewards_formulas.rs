@@ -3,45 +3,56 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines constants and formulas which are used in `pchain_runtime`.
+//! Formulas and constants used to compute values related to rewards for pool operators and stakers.
 //!
-//! For example, they are
-//! - the portion of gas fee burning into Tresury account ([TREASURY_CUT_OF_BASE_FEE])
-//! - the calculation of issuance to reward the network ([issuance_reward])
-//! - issuance rate ([ISSUANCE_RATE_FACTORS])
-//! - calculation of pool reward and stake reward
+//! For example:
+//! - The proportion of a transaction's base fee that will be transferred to the Treasury account ([`TREASURY_CUT_OF_BASE_FEE_NUM`]).
+//! - The calculation of total issuance to be rewarded to a single pool at the end of an epoch ([issuance]).
+//! - The Issuance Rate Reduction Factor ([ISSUANCE_REDUCTION_FACTOR]).
+//! - Calculation of pool reward and stake reward.
 
-/// Send 20% of gas to Treasury
-pub const TREASURY_CUT_OF_BASE_FEE: u64 = 20;
-/// denominator of Treasury cut of Base fee
-pub const TOTAL_BASE_FEE: u64 = 100;
+/// Numerator of the Treasury's cut of a transaction's base fee.
+pub const TREASURY_CUT_OF_BASE_FEE_NUM: u64 = 20;
 
-/// Calculate issuance reward at particular epoch.
-///
-/// Equations:
+/// Denominator of the Treasury's cut of a transaction's base fee.
+pub const TREASURY_CUT_OF_BASE_FEE_DENOM: u64 = 100;
+
+/// Calculate the total issuance granted at the end of a particular epoch for a single pool, with the specified total
+/// power `pool_power`.
+/// 
+/// ## Formulae
 /// - Issuance_n = (0.0835 * 0.85^(n/365)) / 365 if epoch number < [ISSUANCE_STABLE_EPOCH].
 /// - Issuance_n = 0.0150 / 365 otherwise.
-///
-/// Returns the value as tuple of (numerator, denominator). i.e. value = numerator / denominator 
-/// where denominator is a non-zero value.
 /// 
-/// The return value is represented by two u128 numbers, instead of floating point number, for 
-/// preserving the information of frational part which could be lost in floating point representation. 
-/// It is up to the method caller to perform division or other numeric calculations.
-pub const fn issuance_reward(epoch_number: u64, amount: u64) -> (u128, u128) {
-    if epoch_number as usize >= ISSUANCE_STABLE_EPOCH {
+/// ## Return value
+///
+/// Returns the number of grays issued as tuple of (numerator, denominator). i.e. issuance = numerator / denominator.
+/// The denominator will always be non-zero.
+/// 
+/// The return value is represented by two u128 numbers instead of a single floating point number, for 
+/// preserving the information of fractional part which could be lost in floating point representation. 
+/// 
+/// The issuance is presented as two `u128` integers instead of a single floating-point number to preserve as much
+/// information as possible. The method caller is responsible to perform division to get the issuance as a single value.
+pub const fn issuance(epoch_number: u64, pool_power: u64) -> (u128, u128) {
+    if epoch_number as usize >= CONSTANT_ISSUANCE_EPOCH {
         // 15 = 0.015 mutliplied by 1_000
-        return (amount as u128 * 15, 365 * 1_000);
+        return (pool_power as u128 * 15, 365 * 1_000);
     }
-    // 835 = 0.0835 mutliplied by 10_000 x value in ISSURANCE_RATE_FACTORS multiplied by 10_000
-    let rate = 835 * ISSUANCE_RATE_FACTORS[epoch_number as usize];
-    (amount as u128 * rate as u128, 365 * 100_000_000)
+    // 835 = 0.0835 mutliplied by 10_000 x value in ISSUANCE_REDUCTION_FACTOR multiplied by 10_000
+    let rate = 835 * ISSUANCE_RATE_REDUCTION_FACTOR[epoch_number as usize];
+    (pool_power as u128 * rate as u128, 365 * 100_000_000)
 }
 
-/// Number of epoch to reach for applying a constant issurance rate in reward calculation
-pub const ISSUANCE_STABLE_EPOCH: usize = 3650;
-/// 0.85 ^ (n / 365) (and then multply by 10000 to make it integer)
-pub const ISSUANCE_RATE_FACTORS: [u64; ISSUANCE_STABLE_EPOCH] =
+/// After this epoch (and including this epoch), the issuance rate will stop decreasing and become a constant (as computed by the
+/// special case in [`issuance`].)
+pub const CONSTANT_ISSUANCE_EPOCH: usize = 3650;
+
+/// The result of computing `0.85^(n/365) * 10000` for `n = 0, 1, ..., 3649`. That is, `ISSUANCE_RATE_FACTORS[k] 
+/// == 0.85^(k/365) * 10000`.
+/// 
+/// This corresponds to the symbol "E_ireduct" in the ParallelChain Protocol specification.
+pub const ISSUANCE_RATE_REDUCTION_FACTOR: [u64; CONSTANT_ISSUANCE_EPOCH] =
 [
     10000,9996,9991,9987,9982,9978,9973,9969,9964,9960,9956,9951,9947,9942,9938,9933,9929,9925,9920,9916,9911,9907,9903,9898,9894,
     9889,9885,9881,9876,9872,9867,9863,9859,9854,9850,9845,9841,9837,9832,9828,9823,9819,9815,9810,9806,9802,9797,9793,9789,9784,
@@ -191,42 +202,51 @@ pub const ISSUANCE_RATE_FACTORS: [u64; ISSUANCE_STABLE_EPOCH] =
     1991,1990,1989,1988,1987,1986,1985,1985,1984,1983,1982,1981,1980,1979,1978,1978,1977,1976,1975,1974,1973,1972,1971,1970,1970
 ];
 
-
-/// Calculate reward of a pool. It is fraction of the pool power to network power, and
-/// block performance. Baseline is calculated by: number of blocks per term / number of validators.
+/// Calculate the total number of grays rewarded to the pool at the end of an epoch. 
 ///
+/// ## Formula
+/// 
 /// ```text
-/// Issuance * PoolStake * min(NumBlocksProposed/Baseline , 1)
+/// Issuance * PoolStake * min(NumBlocksProposed/ExpectedNumOfBlocksProposed , 1)
 /// ```
 /// 
 /// ## Safety
+/// 
 /// `num_of_proposed_blocks` should be reasonable amount to avoid overflow. It should be at maximum 8640 blocks per term in the protocol.
 pub const fn pool_reward(
     current_epoch: u64,
     pool_power: u64,
-    num_of_proposed_blocks: u32,
-    baseline: u32,
+    actual_num_of_blocks_proposed: u32,
+    expected_num_of_blocks_proposed: u32,
 ) -> u64 {
     // no reward if it is not expected to propose block
-    if baseline == 0 {
+    if expected_num_of_blocks_proposed == 0 {
         return 0;
     }
     // should not over reward
-    if num_of_proposed_blocks > baseline {
+    if actual_num_of_blocks_proposed > expected_num_of_blocks_proposed {
         // Issuance * PoolStake * 1
-        let (numerator, denominator) = issuance_reward(current_epoch, pool_power);
+        let (numerator, denominator) = issuance(current_epoch, pool_power);
         return (numerator / denominator) as u64;
     }
     // Issuance * PoolStake * NumBlocksProposed / Baseline
-    let (numerator, denominator) = issuance_reward(current_epoch, pool_power);
-    ((numerator * num_of_proposed_blocks as u128) / (denominator * baseline as u128)) as u64
+    let (numerator, denominator) = issuance(current_epoch, pool_power);
+    ((numerator * actual_num_of_blocks_proposed as u128) / (denominator * expected_num_of_blocks_proposed as u128)) as u64
 }
 
-/// Return reward to the stakes and commission_fee. 
+/// Calculate the number of grays rewarded to a single stake in a pool at the end of an epoch, as well as the commission
+/// fee to-be-paid by the stake to the pool operator.
+/// 
+/// ## Return value
+/// 
+/// A pair comprising:
+/// 1. The number of grays rewarded to the stake.
+/// 2. The commission fee to be paid to the pool operator.
 /// 
 /// ## Safety
-/// - `commission_rate` is in percentage (i.e. <= 100).
-/// - `stake_power` should be less than `total_stakes`
+/// 
+/// - `commission_rate` must be a percentage (i.e. <= 100).
+/// - `stake_power` must be less than `total_stakes`.
 pub const fn stake_reward(
     pool_reward: u64,
     commission_rate: u8,
@@ -246,8 +266,14 @@ pub const fn stake_reward(
     )
 }
 
-/// This test is mainly for checking whether the methods `pool_reward` and `stake_reward` panics on boundary inputs.
-/// It is expected to pass without panic.
+/// Test whether the methods `pool_reward` and `stake_reward` computes the correct result when given some boundary inputs. The
+/// boundary inputs specifically tested are:
+/// 1. `actual_num_of_blocks_proposed == 0`: pool reward should be zero.
+/// 2. `actual_num_of_blocks_proposed == 8640` (i.e., every block).
+/// 3. `stake_power == 0`. Stake reward and commission fee are zero.
+/// 4. `commission_rate == 100`. Stake reward is zero.
+/// 
+/// This test is expected to pass without panic.
 #[test]
 fn test_boundary_inputs() {
     // Return zero if num_of_proposed_blocks is zero.

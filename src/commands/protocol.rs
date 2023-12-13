@@ -13,7 +13,7 @@ use pchain_world_state::{
 };
 
 use crate::{
-    formulas::{pool_reward, stake_reward},
+    rewards_formulas::{pool_reward, stake_reward},
     BlockProposalStats, ValidatorChanges,
 };
 

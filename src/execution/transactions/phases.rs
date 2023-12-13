@@ -18,7 +18,7 @@ use pchain_world_state::{VersionProvider, DB};
 
 use crate::{
     execution::state::ExecutionState,
-    formulas::{TOTAL_BASE_FEE, TREASURY_CUT_OF_BASE_FEE},
+    rewards_formulas::{TREASURY_CUT_OF_BASE_FEE_DENOM, TREASURY_CUT_OF_BASE_FEE_NUM},
     TransitionError,
 };
 
@@ -124,7 +124,7 @@ where
         treasury_balance = new_proposer_balance;
     }
     let new_treasury_balance = treasury_balance
-        .saturating_add((gas_used * base_fee * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE);
+        .saturating_add((gas_used * base_fee * TREASURY_CUT_OF_BASE_FEE_NUM) / TREASURY_CUT_OF_BASE_FEE_DENOM);
 
     // Commit updated balances
     ws_cache

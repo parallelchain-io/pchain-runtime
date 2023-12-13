@@ -42,7 +42,7 @@ pub use error::TransitionError;
 
 pub mod execution;
 
-pub mod formulas;
+pub mod rewards_formulas;
 
 pub mod gas;
 

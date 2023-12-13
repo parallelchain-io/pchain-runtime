@@ -2,7 +2,7 @@ use core::panic;
 use std::collections::HashMap;
 
 use pchain_runtime::{
-    formulas::{TOTAL_BASE_FEE, TREASURY_CUT_OF_BASE_FEE},
+    rewards_formulas::{TREASURY_CUT_OF_BASE_FEE_DENOM, TREASURY_CUT_OF_BASE_FEE_NUM},
     gas::{tx_inclusion_cost_v1, tx_inclusion_cost_v2},
     types::CommandKind,
     BlockProposalStats, TransitionError, ValidatorPerformance,
@@ -378,7 +378,7 @@ fn test_etoc_multiple() {
     // Treasury will get a cut of the base fee
     let treasury_balance = sws.get_balance(treasury_address);
     let base_fee_to_treasury =
-        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE;
+        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE_NUM) / TREASURY_CUT_OF_BASE_FEE_DENOM;
     assert_eq!(treasury_balance, base_fee_to_treasury);
 
     /* Version 2 */
@@ -495,7 +495,7 @@ fn test_etoc_multiple() {
     // Treasury will get a cut of the base fee
     let treasury_balance = sws.get_balance(treasury_address);
     let base_fee_to_treasury =
-        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE;
+        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE_NUM) / TREASURY_CUT_OF_BASE_FEE_DENOM;
     assert_eq!(treasury_balance, base_fee_to_treasury);
 }
 
@@ -588,7 +588,7 @@ fn test_etoc_multiple_insufficient_gas() {
     // Treasury will get a cut of the base fee
     let treasury_balance = sws_1.get_balance(treasury_address);
     let base_fee_to_treasury =
-        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE;
+        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE_NUM) / TREASURY_CUT_OF_BASE_FEE_DENOM;
     assert_eq!(treasury_balance, base_fee_to_treasury);
 
     // 2. Exhausted at second command
@@ -622,7 +622,7 @@ fn test_etoc_multiple_insufficient_gas() {
     // Treasury will get a cut of the base fee
     let treasury_balance = sws_2.get_balance(treasury_address);
     let base_fee_to_treasury =
-        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE;
+        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE_NUM) / TREASURY_CUT_OF_BASE_FEE_DENOM;
     assert_eq!(treasury_balance, base_fee_to_treasury);
 
     // 3. Exhausted at third command
@@ -656,7 +656,7 @@ fn test_etoc_multiple_insufficient_gas() {
     // Treasury will get a cut of the base fee
     let treasury_balance = sws_3.get_balance(treasury_address);
     let base_fee_to_treasury =
-        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE;
+        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE_NUM) / TREASURY_CUT_OF_BASE_FEE_DENOM;
     assert_eq!(treasury_balance, base_fee_to_treasury);
 
     // 4. Exhausted at third command (1 Gas difference)
@@ -693,7 +693,7 @@ fn test_etoc_multiple_insufficient_gas() {
     // Treasury will get a cut of the base fee
     let treasury_balance = sws_4.get_balance(treasury_address);
     let base_fee_to_treasury =
-        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE;
+        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE_NUM) / TREASURY_CUT_OF_BASE_FEE_DENOM;
     assert_eq!(treasury_balance, base_fee_to_treasury);
 
     /* Version 2 */
@@ -798,7 +798,7 @@ fn test_etoc_multiple_insufficient_gas() {
     // Treasury will get a cut of the base fee
     let treasury_balance = sws_1.get_balance(treasury_address);
     let base_fee_to_treasury =
-        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE;
+        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE_NUM) / TREASURY_CUT_OF_BASE_FEE_DENOM;
     assert_eq!(treasury_balance, base_fee_to_treasury);
 
     // // 2. Exhausted at second command
@@ -844,7 +844,7 @@ fn test_etoc_multiple_insufficient_gas() {
     // Treasury will get a cut of the base fee
     let treasury_balance = sws_2.get_balance(treasury_address);
     let base_fee_to_treasury =
-        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE;
+        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE_NUM) / TREASURY_CUT_OF_BASE_FEE_DENOM;
     assert_eq!(treasury_balance, base_fee_to_treasury);
 
     // // 3. Exhausted at third command
@@ -887,7 +887,7 @@ fn test_etoc_multiple_insufficient_gas() {
     // Treasury will get a cut of the base fee
     let treasury_balance = sws_3.get_balance(treasury_address);
     let base_fee_to_treasury =
-        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE;
+        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE_NUM) / TREASURY_CUT_OF_BASE_FEE_DENOM;
     assert_eq!(treasury_balance, base_fee_to_treasury);
 
     // // 4. Exhausted at third command (1 Gas difference)
@@ -930,7 +930,7 @@ fn test_etoc_multiple_insufficient_gas() {
     // Treasury will get a cut of the base fee
     let treasury_balance = sws_4.get_balance(treasury_address);
     let base_fee_to_treasury =
-        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE) / TOTAL_BASE_FEE;
+        (total_gas_used * base_fee_per_gas * TREASURY_CUT_OF_BASE_FEE_NUM) / TREASURY_CUT_OF_BASE_FEE_DENOM;
     assert_eq!(treasury_balance, base_fee_to_treasury);
 }
 
