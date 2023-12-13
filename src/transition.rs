@@ -60,14 +60,17 @@ impl Runtime {
         Default::default()
     }
 
-    /// specify smart contract cache to improve performance for contract code compilation.
+    /// Specify a cache for contracts already compiled down to machine code. When asked to execute a contract, the Runtime will
+    /// first look at its smart contract cache for the contract's machine code. If it is not there yet, it will get the contract's
+    /// WASM bytecode from the world state, compile it down to machine code, and then put it into the smart contract cache. The
+    /// next time the Runtime is asked to execute the same contract, it will get its machine code from the cache and skip the
+    /// compilation step.
     pub fn set_smart_contract_cache(mut self, sc_cache: Cache) -> Self {
         self.sc_context.cache = Some(sc_cache);
         self
     }
 
-    /// specify the limit to wasm linear memory in contract execution.
-    /// It is a tunable maximum guest memory limit that is made available to the VM
+    /// Specify how big WASM linear memory is allowed to grow in a single contract execution.
     pub fn set_smart_contract_memory_limit(mut self, memory_limit: usize) -> Self {
         self.sc_context.memory_limit = Some(memory_limit);
         self
