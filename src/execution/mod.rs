@@ -3,11 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+// TODO 1
 //! Implementation of state transition functions.
 //!
-//! The transition function basically [executes](execute) sequence of commands across [phases](phase):
-//! Pre-Charge -> Command(s) -> Charge. The Commands to execute includes [Account](account) Command,
-//! [Staking](staking) Command and [Protocol](protocol) Command.
+//! Transition functions [executes](execute) one or more commands across phases,
+//! and they can be triggered through submitting a [transaction](transactions) or a [view call](execute_view),
+//! the latter of which does not involve actual state transition.
 
 pub mod cache;
 
@@ -15,8 +16,6 @@ pub mod state;
 
 pub mod transactions;
 pub use transactions::*;
-
-pub mod gas;
 
 pub mod execute;
 

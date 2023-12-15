@@ -3,9 +3,10 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! ParallelChain Mainnet Runtime is a **State Transition Function** to transit from an input state of the blockchain to next state.
-//! It is also the sole system component to execute smart contracts written in Rust by using
-//! ParallelChain Smart Contract Development Kit (SDK).
+//! ParallelChain Mainnet Runtime is a **State Transition Function**
+//! that transits an input state of the blockchain to the next state.
+//! It is also the sole system component that executes WebAssembly smart contracts
+//! written in Rust by using the ParallelChain Smart Contract Development Kit (SDK).
 //!
 //! ```text
 //! f(WS, BD, TX) -> (WS', R)
@@ -20,15 +21,23 @@
 //!
 //! ```rust
 //! // prepare world state (ws), transaction (tx), and blockchain data (bd),
-//! // and call transition.
-//! let result = pchain_runtime::Runtime::new().transition(ws, tx, bd);
+//! // call the respective transition function.
+//!
+//! // using WorldState::<S,V1> and TransactionV1
+//! let result = pchain_runtime::Runtime::new().transition_v1(ws, tx, bd);
+//!
+//! // or using WorldState::<S,V2> and TransactionV2
+//! let result = pchain_runtime::Runtime::new().transition_v2(ws, tx, bd);
 //! ```
 //!
 //! In summary, a state [transition] function takes in Transaction, Blockchain and World State to [execute](execution),
-//! and outputs a transition result which could be success or [error]. The transition follows
-//! the data [types] definitions of ParallelChain Mainnet and the [formulas] in this library.
-//! The underlying WebAssembly runtime for transiting state through smart [contract] execution is [wasmer],
-//! which is gas-metered, and the [gas] cost incurred will be record in a receipt.
+//! and outputs a transition result which could be success or [error].
+//!
+//! The transition follows the data [type](types) definitions of ParallelChain Mainnet
+//! and the [reward formulas](rewards_formulas) in this library.
+//!
+//! The execution of [commands](commands) incurs gas, and this will be recorded in the respective receipts.
+//! Smart contracts can also effect state transitions, through the underlying [wasmer](wasmer) WebAssembly runtime.
 
 pub mod commands;
 
@@ -42,9 +51,8 @@ pub use error::TransitionError;
 
 pub mod execution;
 
-pub mod rewards_formulas;
-
 pub mod gas;
+pub mod rewards_formulas;
 
 pub mod transition;
 pub use transition::{
@@ -53,4 +61,4 @@ pub use transition::{
 };
 
 pub mod types;
-pub use types::{BlockProposalStats, BlockchainParams, ValidatorPerformance};
+pub use types::{BlockProposalStats, BlockchainParams, CommandKind, ValidatorPerformance};

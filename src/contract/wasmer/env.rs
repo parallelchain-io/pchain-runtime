@@ -3,23 +3,25 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines the environment provided when instantiating a Wasm module (specifically using Wasmer).
+//! Defines the environment provided when instantiating a Wasm module (using Wasmer).
+//!
+//! This environment forms part of the Wasm import object provided to Wasmer,
+//! and is created during the instantiation of [ContractModule](crate::contract::module::ContractModule).
+//!
 //! The environment tracks state changes happening inside a contract call.
-//! These changes include read-write operations on World State, gas consumed and
-//! context related to cross-contract calls.
+//! These changes include read-write operations on World State (by encapsulating [TransitionContext]),
+//! gas consumed and context related to cross-contract calls.
 
 use pchain_world_state::{VersionProvider, DB};
 use std::sync::{Arc, Mutex};
 use wasmer::{Global, LazyInit, Memory, NativeFunc};
 
-use crate::{
-    context::TransitionContext, execution::gas::WasmerGasGlobal, types::CallTx, BlockchainParams,
-};
-
 use super::memory::MemoryContext;
+use crate::{context::TransitionContext, gas::WasmerGasGlobal, types::CallTx, BlockchainParams};
 
 /// The Environment is implemented as an Env struct tracking relevant state variables.
-/// WasmerEnv implements the necessary trait for the Env struct to create a Wasm import object.
+/// From wasmer, we derive the necessary WasmerEnv trait for the Env struct to be used to
+/// create a Wasm import object.
 #[derive(wasmer::WasmerEnv, Clone)]
 pub(crate) struct Env<'a, S, V>
 where
@@ -45,11 +47,11 @@ where
     /// Indicator of whether this environment is created for a view call.
     pub is_view: bool,
 
-    /// Link to the linear memory instance boostrapped by Wasmer
+    /// Link to the linear memory instance boostrapped by the relevant Wasmer instance
     #[wasmer(export)]
     pub memory: LazyInit<Memory>,
 
-    /// Link to the Wasmer function to allocate linear memory
+    /// Link to the Wasmer function to allocate linear memory from the relevant Wasmer instance
     #[wasmer(export(name = "alloc"))]
     pub alloc: LazyInit<NativeFunc<u32, wasmer::WasmPtr<u8, wasmer::Array>>>,
 }
@@ -59,7 +61,9 @@ where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone,
 {
-    /// bootstrap a new instance of Env
+    /// bootstraps a new instance of Env
+    /// including various uninitialized variables (wasmer_gas_global, memory, alloc)
+    /// that would be initialized only after the Wasm module is instantiated by Wasmer
     pub fn new(
         context: Arc<Mutex<TransitionContext<'a, S, V>>>,
         call_counter: u32,
@@ -79,31 +83,33 @@ where
         }
     }
 
-    /// initialize the variable with a global exposed by Wasmer
+    /// initializes wasmer_gas_global with provided ref from the Wasmer instance
     pub fn init_wasmer_gas_global(&self, global: Global) {
-        self.wasmer_gas_global.lock().unwrap().write(global);
+        self.wasmer_gas_global.lock().unwrap().init(global);
     }
 
-    /// drop the variable wasmer_remaining_points
-    pub fn clear_wasmer_gas_global(&self) {
-        self.wasmer_gas_global.lock().unwrap().clear();
+    /// drops wasmer_gas_global
+    pub fn drop_wasmer_gas_global(&self) {
+        self.wasmer_gas_global.lock().unwrap().deinit();
     }
 }
 
-/// Impl MemoryContext for Env to expose linear memory access to the host functions
+/// Impl MemoryContext for Env to expose methods for linear memory access.
+/// These methods will be used by host functions.
 impl<'a, 'b, S, V> MemoryContext for Env<'a, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    /// ### Panics
-    /// panics if the linear memory instance is not initialized
+    /// # Panics
+    /// Will panic if the Wasm instance fails to initialize linear memory correctly.
+    /// This will render the Wasm instance unusable.
     fn memory(&self) -> &Memory {
         self.memory_ref().unwrap()
     }
 
-    /// ### Panics
-    /// panics if unable if the native function to allocate linear memory is not found
+    /// # Panics
+    /// Will panic if the native function to allocate linear memory is not found.
     fn alloc(&self) -> &NativeFunc<u32, wasmer::WasmPtr<u8, wasmer::Array>> {
         self.alloc_ref().unwrap()
     }

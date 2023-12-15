@@ -3,12 +3,21 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! ### Executing Transaction [Commands](pchain_types::blockchain::Command)
-//! Transaction commands are sent by users in a signed transaction, and are either Account or Staking commands.
+// TODO 1 - better phrase this
+
+//! Module for managing the lifecycle and execution strategy of the Account or Staking commands.
+//
+//! These commands are sent by users in a signed transaction,
+//! and are executed in accordance to a lifecycle briefly described below.
+//! The [CommandStrategy] trait encapsulates strategies for handling different
+//! versions of command execution.
+//!
+//! ### Lifecycle
+//! A brief description of the lifecycle is as follows:
 //!
 //! Firstly, the transaction undergoes validation during the Pre-Charge phase.
 //! The execution is cancelled if these checks fail.
-//! If the checks pass, the Signer's balance will be deducted upfront according to the specified gas limit.
+//! If the checks pass, the transaction signer's balance will be deducted upfront according to the specified gas limit.
 //!
 //! Next, Commands are encapsulated into `Command Tasks`. Each command task is an item in
 //! a stack. Execution order starts from the top item. When a [Call](pchain_types::blockchain::Command::Call)
@@ -23,7 +32,6 @@
 //!
 //! Finally in the Charge Phase, the Signer's balance will be refunded according to the actual gas used.
 //! Some fees are also transferred to Proposer and Treasury.
-//!
 
 use pchain_types::blockchain::{Command, CommandReceiptV1, CommandReceiptV2, ReceiptV1, ReceiptV2};
 use pchain_world_state::{VersionProvider, DB};
@@ -38,13 +46,16 @@ use crate::{
     types::{CommandKind, DeferredCommand},
     TransitionError, TransitionV1Result,
 };
+
+/// Generic command executor
+/// which delegates to a specific version of CommandStrategy
 fn execute_commands<'a, S, E, V, R, P>(
     mut state: ExecutionState<'a, S, E, V>,
     commands: Vec<Command>,
 ) -> R
 where
     S: DB + Send + Sync + Clone,
-    P: UserCommandHandler<'a, S, E, R, V>,
+    P: CommandStrategy<'a, S, E, R, V>,
     V: VersionProvider + Send + Sync + Clone + 'static,
 {
     // Phase: Pre-Charge
@@ -97,9 +108,7 @@ where
     P::handle_charge(state)
 }
 
-/// Defines the behavior of command execution
-/// Allowing generic versions of CommandReceipts and TransitionResults
-trait UserCommandHandler<'a, S, E, R, V>
+trait CommandStrategy<'a, S, E, R, V>
 where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone,
@@ -118,7 +127,7 @@ where
 /// Strategy struct for V1 specific execution output
 struct ExecuteCommandsV1;
 
-impl<'a, S, V> UserCommandHandler<'a, S, CommandReceiptV1, TransitionV1Result<'a, S, V>, V>
+impl<'a, S, V> CommandStrategy<'a, S, CommandReceiptV1, TransitionV1Result<'a, S, V>, V>
     for ExecuteCommandsV1
 where
     S: DB + Send + Sync + Clone,
@@ -179,7 +188,7 @@ where
 /// Strategy struct for V2 specific execution output
 struct ExecuteCommandsV2;
 
-impl<'a, S, V> UserCommandHandler<'a, S, CommandReceiptV2, TransitionV2Result<'a, S, V>, V>
+impl<'a, S, V> CommandStrategy<'a, S, CommandReceiptV2, TransitionV2Result<'a, S, V>, V>
     for ExecuteCommandsV2
 where
     S: DB + Send + Sync + Clone,

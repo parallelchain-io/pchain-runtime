@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use pchain_runtime::types::CommandKind;
+use pchain_runtime::{gas::tx_inclusion_cost_v1, types::CommandKind};
 use pchain_types::{
     blockchain::{CommandReceiptV2, ExitCodeV1, ExitCodeV2, TransactionV1, TransactionV2},
     cryptography::{contract_address_v1, contract_address_v2},
@@ -449,7 +449,7 @@ fn test_ctoc_with_insufficient_gas_limit() {
         nonce: 0,
         ..base_tx
     };
-    let tx_base_cost = pchain_runtime::gas::tx_inclusion_cost_v1(
+    let tx_base_cost = tx_inclusion_cost_v1(
         pchain_types::serialization::Serializable::serialize(&tx).len(),
         &tx.commands.iter().map(CommandKind::from).collect(),
     );

@@ -23,11 +23,11 @@ struct NonDeterminismFilterConfig {
     /// See <https://github.com/WebAssembly/design/blob/main/Nondeterminism.md>
     allow_floating_point_ops: bool,
     /// allow_simd_ops is a flag to enable/disable fixed width SIMD operations.
-    /// Note: There are floating point operations described in WASM SIMD Instructions
+    /// Note: There are floating point operations described in Wasm SIMD Instructions
     /// which are known to induce non-determinism and is encouraged to be set as false.
     /// See <https://github.com/WebAssembly/simd/blob/main/proposals/simd/SIMD.md>  <https://github.com/WebAssembly/design/blob/main/Nondeterminism.md>
     allow_simd_ops: bool,
-    /// allow_atomic_ops is a flag to enable/disable atomic operations with WASM threads.
+    /// allow_atomic_ops is a flag to enable/disable atomic operations with Wasm threads.
     /// Note: They are known to induce non-determinism due to hardware standardization constraints and are encouraged to be set as false.
     /// See <https://github.com/WebAssembly/design/blob/main/Nondeterminism.md>
     allow_atomic_ops: bool,
@@ -42,7 +42,7 @@ struct NonDeterminismFilterConfig {
     allow_exception_handling: bool,
 }
 
-/// NonDeterminismFilter is the middleware that disallows use of features from WASM which may induce non-determinism.
+/// NonDeterminismFilter is the middleware that disallows use of features from Wasm which may induce non-determinism.
 #[derive(Debug, MemoryUsage)]
 #[non_exhaustive]
 pub struct NonDeterminismFilter {
@@ -97,7 +97,7 @@ impl FunctionNonDeterminismFilter {
     }
 }
 
-/// FunctionMiddleware enables checks for each WASM opcode family
+/// FunctionMiddleware enables checks for each Wasm opcode family
 /// Raises MiddlewareError if the corresponding flag in NonDeterminismFilterConfig is false
 impl FunctionMiddleware for FunctionNonDeterminismFilter {
     // Process the given operator.
@@ -126,7 +126,7 @@ impl FunctionMiddleware for FunctionNonDeterminismFilter {
                     Err(MiddlewareError::new(" ", msg))
                 }
             }
-            // Opcode family of Atomic operations using WASM threads
+            // Opcode family of Atomic operations using Wasm threads
             Operator::MemoryAtomicNotify { .. }
             | Operator::MemoryAtomicWait32 { .. }
             | Operator::MemoryAtomicWait64 { .. }

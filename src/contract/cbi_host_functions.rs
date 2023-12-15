@@ -3,9 +3,14 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines the signature of host functions that are imported by ParallelChain Smart Contracts.
+//! Defines the signature of Wasm host functions that are imported by ParallelChain Smart Contracts
 //!
-//! The definitions follow the specification in [ParallelChain protocol](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md).
+//! The definitions follow the CBI Version 0 specification in
+//! [ParallelChain protocol](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md).
+//! In the context of Wasm, these host functions provide an API between
+//! the guest smart contract code and the blockchain environment.
+//!
+//! The actual implementation can be found in the [host functions module](crate::contract::host_functions).
 
 use wasmer::{imports, Function, ImportObject, Store};
 

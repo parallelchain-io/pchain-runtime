@@ -45,24 +45,26 @@ impl ContractModule {
             .map(|module| Self { store, module })
     }
 
-    pub(crate) fn from_contract_code(
+    /// called during initial contract deployment
+    /// compiles bytecode for the very first time with validation
+    pub(crate) fn from_bytecode_checked(
         contract_code: &Vec<u8>,
         memory_limit: Option<usize>,
     ) -> Result<Self, ModuleBuildError> {
         let store = store::instantiate_store(u64::MAX, memory_limit);
-        // Load the contract module from raw bytes here because it is not expected to save into sc_cache at this point of time.
-        let module = Module::from_wasm_bytecode(contract::CBI_VERSION, contract_code, &store)?;
-
+        let module =
+            Module::from_wasm_bytecode_checked(contract::CBI_VERSION, contract_code, &store)?;
         Ok(Self { store, module })
     }
 
-    pub(crate) fn from_contract_code_unchecked(
+    /// called during subsequent contract invocation
+    /// compiles bytecode without validation for faster performance
+    pub(crate) fn from_bytecode_unchecked(
         address: PublicAddress,
         contract_code: &Vec<u8>,
         sc_context: &SmartContractContext,
     ) -> Option<Self> {
         let store = store::instantiate_store(u64::MAX, sc_context.memory_limit);
-
         let module =
             Module::from_wasm_bytecode_unchecked(contract::CBI_VERSION, contract_code, &store)
                 .ok()?;
@@ -74,16 +76,17 @@ impl ContractModule {
         Some(Self { store, module })
     }
 
-    pub(crate) fn validate(&self) -> Result<(), ContractValidateError> {
-        self.module.validate_contract(&self.store)
+    /// check if the Wasm module is a proper contract according to the Parallelchain CBI
+    pub(crate) fn validate_proper_contract(&self) -> Result<(), ContractValidateError> {
+        self.module.validate_entry_point(&self.store)
     }
 
     pub(crate) fn cache(&self, contract_address: PublicAddress, cache: &Cache) {
         self.module.cache_to(contract_address, cache)
     }
 
-    pub(crate) fn bytes_length(&self) -> usize {
-        self.module.bytes_length()
+    pub(crate) fn bytecode_length(&self) -> usize {
+        self.module.bytecode_length()
     }
 
     pub(crate) fn instantiate<'a, S, V>(

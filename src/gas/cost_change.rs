@@ -3,16 +3,16 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct [CostChange] for gas counting.
+//! A struct which stores intermediate gas cost changes.
+//!
+//! The struct is used by the respective Gas Meters, and stores both the deducted and rewarded gas.
+//!
+//! In most chargeable operations, gas is deducted.
+//! However, in some cases, e.g. the removal of stored data, gas can be refunded as a reward.
+//! The net gas cost is computed by offsetting these values.
 
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
-/// A struct for storing intermediate gas cost changes.
-///
-/// Gas is deducted for most chargeable operations.
-/// In some cases, e.g. the removal of stored data, gas can be refunded as a reward.
-/// The net gas cost is computed by offsetting these values.
-///
 /// ### Example:
 /// ```no_run
 /// let mut change = CostChange::default(); // = 0

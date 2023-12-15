@@ -3,7 +3,13 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implements execution of [Account Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#account-commands).
+//! Business logic and helper structs to execute
+//! [Accounts Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#protocol-commands).
+//!
+//! These commands modify state of individual accounts in the World State,
+//! affecting elements such as user account balances, or contract account code bytes.
+//! They can do so directly, or indirectly by triggering the execution of WebAsembly smart contracts,
+//! which in turn hook into the state modification methods of the Wasm host API.
 
 use pchain_types::cryptography::{contract_address_v1, contract_address_v2, PublicAddress};
 use pchain_world_state::{VersionProvider, DB};
@@ -22,11 +28,10 @@ use crate::{
 
 use crate::execution::state::ExecutionState;
 
-/// Transfer
-///
-///
-///
+/* ↓↓↓ Transfer Command ↓↓↓ */
+
 /// Execution of [pchain_types::blockchain::Command::Transfer]
+/// Transfers the specified amount of tokens from the signer's account to the recipient's account.
 pub(crate) fn transfer<S, E, V>(
     state: &mut ExecutionState<'_, S, E, V>,
     recipient: PublicAddress,
@@ -59,11 +64,12 @@ where
     abort_if_gas_exhausted(state)
 }
 
-/// Call
-///
-///
-///
+/* ↓↓↓ Call Command ↓↓↓ */
+
 /// Execution of [pchain_types::blockchain::Command::Call]
+/// which invokes specified method of in the target contract
+/// with arguments, if any.
+/// Optionally, users can transfer a specified amount of tokens to the target contract.
 pub(crate) fn call<S, E, V>(
     state: &mut ExecutionState<S, E, V>,
     is_view: bool,
@@ -114,13 +120,17 @@ where
     }
 }
 
-/// CallInstance defines the steps of contract instantiation and contract call.
+/// CallInstance abstracts the details of contract instantiation and the actual method calling.
 struct CallInstance<'a, 'b, S, E, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
+    /// a reference to the global ExecutionState
+    /// which is needed to bring TransitionContext into the contract execution environment.
     state: &'b mut ExecutionState<'a, S, E, V>,
+
+    /// the specific Wasm instance
     instance: ContractInstance<'a, S, V>,
 }
 
@@ -144,7 +154,6 @@ where
         V: VersionProvider + Send + Sync + Clone + 'static,
     {
         // Check CBI version
-
         state
             .ctx
             .gas_meter
@@ -209,11 +218,10 @@ where
     }
 }
 
-/// Deploy
-///
-///
-///
+/* ↓↓↓ Deploy Command ↓↓↓ */
+
 /// Execution of [pchain_types::blockchain::Command::Deploy]
+/// which deploys the specified Wasm byte code to a deterministic contract address.
 pub(crate) fn deploy<'a, 'b, S, E, V>(
     state: &'b mut ExecutionState<'a, S, E, V>,
     cmd_index: u32,
@@ -224,35 +232,45 @@ where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone,
 {
+    // compute the deploy destination, which differs between V1 and V2 transactions
     let contract_address = match state.tx.version {
         TxnVersion::V1 => contract_address_v1(&state.tx.signer, state.tx.nonce),
         TxnVersion::V2 => contract_address_v2(&state.tx.signer, state.tx.nonce, cmd_index),
     };
 
-    // Instantiate instant to preform contract deployment.
     let instance = match DeployInstance::instantiate(state, contract, cbi_version, contract_address)
     {
         Ok(instance) => instance,
         Err(err) => abort!(state, err),
     };
 
-    // Deploy the contract
     match instance.deploy() {
         Some(err) => abort!(state, err),
         None => abort_if_gas_exhausted(state),
     }
 }
 
-/// DeployInstance defines the steps of contract instantiation and contract deploy.
+/// DeployInstance abstracts the details of building the WebAssembly module
+/// and storing the raw contract bytecode.
 struct DeployInstance<'a, 'b, S, E, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
+    /// a reference to the global ExecutionState
+    /// which provides a handle to TransitionContext
     state: &'b mut ExecutionState<'a, S, E, V>,
+
+    /// compiled WebAssembly module
     module: ContractModule,
+
+    /// calculated contract address
     contract_address: PublicAddress,
+
+    /// user-provided Wasm bytecode
     contract: Vec<u8>,
+
+    /// user-provided CBI version of the the smart contract
     cbi_version: u32,
 }
 
@@ -261,29 +279,34 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    /// Instantiate an instance after contract validation
+    /// builds a WebAssembly module from bytecode for validation
     fn instantiate(
         state: &'b mut ExecutionState<'a, S, E, V>,
-        contract: Vec<u8>,
+        bytecode: Vec<u8>,
         cbi_version: u32,
         contract_address: PublicAddress,
     ) -> Result<Self, TransitionError> {
         if !is_cbi_compatible(cbi_version) {
             return Err(TransitionError::OtherDeployError);
         }
+
+        // do not allow previously deployed contracts to be overwritten
         let exist_cbi_version = state.ctx.gas_meter.ws_cbi_version(contract_address);
         if exist_cbi_version.is_some() {
             return Err(TransitionError::ContractAlreadyExists);
         }
+
+        // check if the bytecode can be compiled into a valid Wasm module
         let module =
-            ContractModule::from_contract_code(&contract, state.ctx.sc_context.memory_limit)
+            ContractModule::from_bytecode_checked(&bytecode, state.ctx.sc_context.memory_limit)
                 .map_err(|build_err| match build_err {
                     ModuleBuildError::DisallowedOpcodePresent => TransitionError::DisallowedOpcode,
                     ModuleBuildError::Else => TransitionError::CannotCompile,
                 })?;
 
+        // check if the Wasm module is a valid contract according to the ParallelChain Protocol CBI
         module
-            .validate()
+            .validate_proper_contract()
             .map_err(|validate_err| match validate_err {
                 ContractValidateError::MethodNotFound => TransitionError::NoExportedContractMethod,
                 ContractValidateError::InstantiateError => TransitionError::CannotCompile,
@@ -292,16 +315,17 @@ where
         Ok(Self {
             state,
             module,
-            contract,
+            contract: bytecode,
             cbi_version,
             contract_address,
         })
     }
 
-    /// Deploy by writing contract to storage and transit to the state.
+    /// Write contract bytecode to the relevant account in the World State.
     fn deploy(self) -> Option<TransitionError> {
         let contract_address = self.contract_address;
 
+        // TODO - a little round about way of calling this module
         // cache the module
         if let Some(sc_cache) = &self.state.ctx.sc_context.cache {
             self.module.cache(contract_address, sc_cache);

@@ -31,12 +31,11 @@ impl Module {
 
     /// caches the contract module
     pub fn cache_to(&self, address: PublicAddress, cache: &SmartContractCache) {
-        let _ = cache.store(address, &self.0, self.1.bytes_length);
+        let _ = cache.store(address, &self.0, self.1.bytecode_length);
     }
 
-    /// returns the contract Module produced by compiling the wasm bytecode provided as an argumen
-    /// The bytecode will be validated and the process is slow. Err `ModuleBuildError::DisallowedOpcodePresent` could be returned.
-    pub fn from_wasm_bytecode(
+    /// compiles bytecode with validation, potentially slow
+    pub fn from_wasm_bytecode_checked(
         cbi_version: u32,
         bytecode: &Vec<u8>,
         wasmer_store: &wasmer::Store,
@@ -53,14 +52,13 @@ impl Module {
             wasmer_module,
             ModuleMetadata {
                 cbi_version,
-                bytes_length: bytecode.len(),
+                bytecode_length: bytecode.len(),
             },
         ))
     }
 
-    /// returns the contract Module produced by compiling the Wasm bytecode provided as an argument.
-    /// The bytecode will NOT be validated. Use method `from_wasm_bytecode` if the bytecode should be validated. Err
-    /// `ModuleBuildError::DisallowedOpcodePresent` could be returned.
+    /// compiles bytecode without validation
+    /// use this function only when you are sure that the bytecode has been previously validated
     pub fn from_wasm_bytecode_unchecked(
         cbi_version: u32,
         bytecode: &Vec<u8>,
@@ -81,14 +79,14 @@ impl Module {
             wasmer_module,
             ModuleMetadata {
                 cbi_version,
-                bytes_length: bytecode.len(),
+                bytecode_length: bytecode.len(),
             },
         ))
     }
 
     /// returns size of the wasm bytecode as recorded in the Module's metadata
-    pub fn bytes_length(&self) -> usize {
-        self.1.bytes_length
+    pub fn bytecode_length(&self) -> usize {
+        self.1.bytecode_length
     }
 
     /// instantiate creates a new instance of this contract Module.
@@ -107,7 +105,7 @@ impl Module {
 
     /// returns whether this contract Module
     /// exports a correctly named entry point method which can be invoked by the call() function.
-    pub fn validate_contract(
+    pub fn validate_entry_point(
         &self,
         wasmer_store: &wasmer::Store,
     ) -> Result<(), ContractValidateError> {

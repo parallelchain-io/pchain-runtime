@@ -3,7 +3,10 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implements execution of [Protocol Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#protocol-commands).
+//! Business logic and helper structs to execute
+//! [Protocol Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#protocol-commands).
+//!
+//! These commands are not available to users, and can only be triggered by the protocol itself.
 
 use std::collections::HashMap;
 
@@ -19,12 +22,11 @@ use crate::{
 
 use crate::execution::{cache::WorldStateCache, state::ExecutionState};
 
-/// Next Epoch
-///
-///
-///
+/* ↓↓↓ NextEpoch Command ↓↓↓ */
+
 /// Execution of [pchain_types::blockchain::Command::NextEpoch]
-/// Execution is gas free, as the NetworkAccountWorldState is used to perform World State operations.
+/// Execution does not cost gas as this command is triggered by the protocol.
+/// To achieve this, the [NetworkAccountWorldState] is used to perform World State operations.
 pub(crate) fn next_epoch<'a, S, E, V>(
     mut state: ExecutionState<'a, S, E, V>,
 ) -> (ExecutionState<'a, S, E, V>, ValidatorChanges)
@@ -235,8 +237,8 @@ where
     (state, new_validator_set)
 }
 
-/// NetworkAccountWorldState is used for accessing the world state of the Network Account.
-/// It implements NetworkAccountStorage using NON-chargeable read-write operations to World State.
+/// NetworkAccountWorldState is used only by Protocol Commands for accessing the world state of the Network Account.
+/// It implements NetworkAccountStorage to perform non-chargeable read-write operations to World State.
 pub(crate) struct NetworkAccountWorldState<'a, 'b, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,

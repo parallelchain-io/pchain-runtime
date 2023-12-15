@@ -19,7 +19,7 @@ use wasmer::{
 /// guest memory adjustment  
 #[derive(MemoryUsage)]
 pub struct CustomTunables<T: Tunables> {
-    /// maximum allowable guest memory (in WASM pages, each approximately 65KiB in size)
+    /// maximum allowable guest memory (in Wasm pages, each approximately 65KiB in size)
     limit: Pages,
 
     /// base implementation we delegate all the logic to after guest memory adjustment

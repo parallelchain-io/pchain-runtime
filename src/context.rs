@@ -1,19 +1,30 @@
-//! Defines a Transition Context for a single state transition,
-//! which can be passed around to larger structs representing a specific execution environment, e.g. [ExecutionState](crate::execution::state::ExecutionState).
-//! This context serves as an intermediary for access to the components responsible for
-//! mutating the World State, primarily through GasMeter.
-//! As a singleton, current versions of this context must supersede earlier versions.
+/*
+    Copyright © 2023, ParallelChain Lab
+    Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+*/
 
+//! Represents an intermediary providing access to the [World State](pchain_world_state) and components that can mutate it.
+//!
+//! The context is an integral part of larger constructs, such as the [ExecutionState](crate::execution::state::ExecutionState),
+//! for ensuring that World State changes are consistent within the scope of a transition.
+//!
+//! As a singleton instance encapsulating the World State, only a single 'valid' instance of
+//! [TransitionContext] can exist at any given time to maintain state integrity.
+//!
+//! When used during contract execution, the context also maintains intermediate metadata such as
+//! deferred commands generated during execution and metadata of the contranct instance.
 use pchain_world_state::{VersionProvider, WorldState, DB};
 
 use crate::{
     contract::SmartContractContext,
-    execution::{cache::WorldStateCache, gas::GasMeter},
+    execution::cache::WorldStateCache,
+    gas::GasMeter,
     types::{CommandOutput, DeferredCommand, TxnVersion},
 };
 
-/// TransitionContext encapsulates access to functions that can mutate World State,
-/// and tracks and manipulates state transition metadata.
+/// TransitionContext encapsulates the World State via [GasMeter](crate::gas::GasMeter),
+/// and when used during smart contract execution,
+/// stores the relevant contract sub-context and holds deferred commands pending execution.
 #[derive(Clone)]
 pub(crate) struct TransitionContext<'a, S, V>
 where
@@ -23,7 +34,8 @@ where
     /// Smart contract context for execution
     pub sc_context: SmartContractContext,
 
-    /// Commands that deferred from a Call Command via host function specified in CBI.
+    /// Queue of commands that were deferred from an original Call command
+    /// during the execution of a smart contract.
     pub deferred_commands: Vec<DeferredCommand>,
 
     /// GasMeter for the transaction, encapsulates World State access and gas tallying

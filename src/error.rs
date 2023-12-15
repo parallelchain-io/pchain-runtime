@@ -3,10 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines [TransitionError] which is a set of error definitions in state transitions.
+//! Defines a set of descriptive error definitions arising from state transitions.
 //!
-//! Transition Errors are mainly for diagnosis, and are different from the ExitCodes
-//! that are included in the block transaction receipts.
+//! Transition Errors are returned by failure paths caused by invalid input in [transition functions](crate::transition),
+//! for processes hosting the runtime to differentiate between failure modes.
+//!
+//! They are more granular than [ExitCodeV1]/[ExitCodeV2] which are included in the block transaction receipts.
 
 use pchain_types::blockchain::{ExitCodeV1, ExitCodeV2};
 
@@ -33,7 +35,7 @@ pub enum TransitionError {
     /// The contract bytecode contains disallowed opcodes.
     DisallowedOpcode,
 
-    /// Contract cannot be compiled into machine code (it is probably invalid WASM).
+    /// Contract cannot be compiled into machine code (it is probably invalid Wasm).
     CannotCompile,
 
     /// Contract does not export the METHOD_CONTRACT method.

@@ -3,45 +3,48 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines formulas for calculating gas, which is a measurement unit for transaction
-//! execution cost. The constants and functions in module are documented in gas section of the
+//! Constants and formulas which are primitives used in the cost calculation logic of
+//! [operations that incur gas](crate::gas::operations).
+//!
+//! The constants in this module are based on the specification described in the gas section of
 //! [Parallelchain Mainnet Protocol](https://github.com/parallelchain-io/parallelchain-protocol).
 //!
+//! The table below lists the protocol-defined equivalents of the constants and formulas defined here, where applicable.
+//! Do note that higher-level operation-specific formulas are defined directly
+//! within the [operations](crate::gas::operations) module.
 //!
-//! The mapping of equations or variables in the protocol to this module is as following:
-//!
-//! |Name       | Related Function / Constants      |
-//! |:---       |:---                       |
-//! |G_wread    | [wasm_memory_read_cost]   |
-//! |G_wwrite   | [wasm_memory_write_cost]  |
-//! |G_txdata   | [BLOCKCHAIN_WRITE_PER_BYTE_COST]  |
-//! |G_mincmdrcpsize| [minimum_receipt_size]        |
-//! |G_acckeylen    | [ACCOUNT_TRIE_KEY_LENGTH]    |
-//! |G_mpt_get      | [get_cost], [get_code_cost]   |
-//! |G_mpt_set      | [set_cost_read_key], [set_cost_delete_old_value], [set_cost_write_new_value], [set_cost_rehash] |
-//! |G_mpt_write   | [MPT_WRITE_PER_BYTE_COST] |
-//! |G_mpt_read    | [MPT_READ_PER_BYTE_COST]  |
-//! |G_mpt_traverse| [MPT_TRAVERSE_PER_BYTE_COST]      |
-//! |G_mpt_rehash  | [MPT_REHASH_PER_BYTE_COST]        |
-//! |G_mpt_refund  | [MPT_WRITE_REFUND_PROPORTION]     |
-//! |G_at_getcontractdisc  | [MPT_GET_CODE_DISCOUNT_PROPORTION] |
-//! |G_wsha256  | [CRYPTO_SHA256_PER_BYTE]          |
-//! |G_wkeccak256   | [CRYPTO_KECCAK256_PER_BYTE]   |
-//! |G_wripemd160   | [CRYPTO_RIPEMD160_PER_BYTE]   |
-//! |G_keccek256len | [KECCAK256_LENGTH] |
-//! |G_wvrfy25519   | [crypto_verify_ed25519_signature_cost]  |
-//! |G_txincl       | [tx_inclusion_cost_v1] |
-//! |G_txinclv2     | [tx_inclusion_cost_v2] |
+//! |Protocol Name          | Related Function / Constants      |
+//! |:---                   |:---                               |
+//! |G_wread                | [wasm_memory_read_cost]           |
+//! |G_wwrite               | [wasm_memory_write_cost]          |
+//! |G_txdata               | [BLOCKCHAIN_WRITE_PER_BYTE_COST]  |
+//! |G_minrcpsize           | [minimum_receipt_size_v1]         |
+//! |G_minrcpsize_v2        | [minimum_receipt_size_v2]         |
+//! |G_mincmdrcpsize        | [MIN_CMDRECP_SIZE_V1]             |
+//! |G_mincmdrcpsize_v2     | [MIN_CMDRECP_SIZE_V2_BASIC], [MIN_CMDRECP_SIZE_V2_EXTENDED]|
+//! |G_acckeylen            | [ACCOUNT_TRIE_KEY_LENGTH]         |
+//! |G_mpt_get1             | [get_cost_read]                   |
+//! |G_mpt_get2             | [get_cost_traverse]               |
+//! |G_mpt_set              | [get_cost_read], [set_cost_delete_old_value], [set_cost_write_new_value], [set_cost_rehash] |
+//! |G_mpt_write            | [MPT_WRITE_PER_BYTE_COST] |
+//! |G_mpt_read             | [MPT_READ_PER_BYTE_COST]  |
+//! |G_mpt_traverse         | [MPT_TRAVERSE_PER_BYTE_COST]      |
+//! |G_mpt_rehash           | [MPT_REHASH_PER_BYTE_COST]        |
+//! |G_mpt_refund           | [MPT_WRITE_REFUND_PROPORTION]     |
+//! |G_at_getcontractdisc   | [MPT_GET_CODE_DISCOUNT_PROPORTION] |
+//! |G_keccek256len         | [KECCAK256_LENGTH] |
+//! |G_txincl               | [tx_inclusion_cost_v1] |
+//! |G_txinclv2             | [tx_inclusion_cost_v2] |
 //!
 
-/* ↓↓↓ Gas Costs for WASM opcode execution ↓↓↓ */
+/* ↓↓↓ Gas Costs for Wasm opcode execution ↓↓↓ */
 
 use wasmer::wasmparser::Operator;
 
 use crate::types::CommandKind;
 
-/// wasm_opcode_gas_schedule maps between a WASM Operator to the cost of executing it. It
-/// specifies the gas cost of executing every legal opcode for the smart contract method calls.
+/// wasm_opcode_gas_schedule maps between a Wasm Operator to the cost of executing it.
+/// It specifies the gas cost of executing every legal opcode for the smart contract method calls.
 pub fn wasm_opcode_gas_schedule(operator: &Operator) -> u64 {
     match operator {
         // Constants
@@ -181,7 +184,7 @@ pub fn wasm_opcode_gas_schedule(operator: &Operator) -> u64 {
     }
 }
 
-/* ↓↓↓ Gas Costs for Accessing WASM memory from host functions ↓↓↓ */
+/* ↓↓↓ Gas Costs for Accessing Wasm memory from host functions ↓↓↓ */
 
 /// WASM_MEMORY_WRITE_PER64_BITS_COST is the cost of writing into the WASM linear memory *per 64 bits*.
 pub const WASM_MEMORY_WRITE_PER64_BITS_COST: u64 = 3;
@@ -271,7 +274,8 @@ pub fn tx_inclusion_cost_v1(tx_size: usize, commands: &Vec<CommandKind>) -> u64 
 ///     - signer's balance during two phases
 ///     - proposer's balance
 ///     - treasury's balance
-/// supersedes [V1](tx_inclusion_cost_v1) -> V2:
+///
+/// supersedes [V1](tx_inclusion_cost_v1)
 pub fn tx_inclusion_cost_v2(tx_size: usize, commands: &Vec<CommandKind>) -> u64 {
     // (1) Transaction storage size
     let tx_size = tx_size as u64;
@@ -294,12 +298,12 @@ pub fn tx_inclusion_cost_v2(tx_size: usize, commands: &Vec<CommandKind>) -> u64 
         .saturating_add(rw_key_cost)
 }
 
-/// Serialized size of a ReceiptV1 for Vec<CommandKind> containing minimum-sized command receipts.
+/// Serialized size of a ReceiptV1 for `Vec<CommandKind>` containing minimum-sized command receipts.
 pub fn minimum_receipt_size_v1(commands: &Vec<CommandKind>) -> u64 {
     MIN_RECP_SIZE_V1.saturating_add(MIN_CMDRECP_SIZE_V1.saturating_mul(commands.len() as u64))
 }
 
-/// Serialized size of a ReceiptV2 for Vec<CommandKind> containing minimum-sized command receipts.
+/// Serialized size of a ReceiptV2 for `Vec<CommandKind>` containing minimum-sized command receipts.
 pub fn minimum_receipt_size_v2(commands: &Vec<CommandKind>) -> u64 {
     MIN_RECP_SIZE_V2.saturating_add(
         commands
@@ -308,23 +312,13 @@ pub fn minimum_receipt_size_v2(commands: &Vec<CommandKind>) -> u64 {
     )
 }
 
-fn cmd_recp_min_size_v2(command: &CommandKind) -> u64 {
-    match command {
-        CommandKind::Call
-        | CommandKind::WithdrawDeposit
-        | CommandKind::StakeDeposit
-        | CommandKind::UnstakeDeposit => MIN_CMDRECP_SIZE_V2_EXTENDED,
-        _ => MIN_CMDRECP_SIZE_V2_BASIC,
-    }
-}
-
-/// blockchain_return_values_cost calculates the cost of writing return data into the receipt.
-pub const fn blockchain_return_value_cost(data_len: usize) -> u64 {
+/// blockchain_return_values_cost calculates the cost of writing byte data into the receipt.
+pub const fn blockchain_storage_cost(data_len: usize) -> u64 {
     // data_len * C_txdata
     (data_len as u64).saturating_mul(BLOCKCHAIN_WRITE_PER_BYTE_COST)
 }
 
-/// blockchain_log_cost calculates the cost of writing log into the receipt.
+/// blockchain_log_cost calculates the cost of writing a log into the receipt.
 pub const fn blockchain_log_cost(topic_len: usize, val_len: usize) -> u64 {
     let topic_len = topic_len as u64;
     let val_len = val_len as u64;
@@ -376,6 +370,15 @@ pub fn discount_code_read(code_read_cost: u64) -> u64 {
         .saturating_div(100)
 }
 
+/// cost of hashing Storage Trie costs
+pub const fn storage_trie_key_hashing_cost(key_len: usize) -> u64 {
+    if key_len < 32 {
+        0
+    } else {
+        CRYPTO_KECCAK256_PER_BYTE * key_len as u64
+    }
+}
+
 /// Set Cost (2): Cost for deleting the old value for a refund
 /// Note, Set Cost (1) is calculated under Get costs
 #[allow(clippy::double_comparisons)]
@@ -422,8 +425,15 @@ pub const CRYPTO_SHA256_PER_BYTE: u64 = 16;
 pub const CRYPTO_KECCAK256_PER_BYTE: u64 = 16;
 /// Multiplier of computing the RIPEMD160  hash over the length of a message.
 pub const CRYPTO_RIPEMD160_PER_BYTE: u64 = 16;
-/// Cost of verifying whether an Ed25519 signature over a message of length.
-pub const fn crypto_verify_ed25519_signature_cost(msg_len: usize) -> u64 {
-    // Base Cost (1400000) + 16 * Message Length
-    1_400_000_u64.saturating_add((msg_len as u64).saturating_mul(16_u64))
+/// Multiplier of verifying the Ed25519 signature over the length of a message.
+pub const CRYPTO_ED25519_PER_BYTE: u64 = 16;
+
+fn cmd_recp_min_size_v2(command: &CommandKind) -> u64 {
+    match command {
+        CommandKind::Call
+        | CommandKind::WithdrawDeposit
+        | CommandKind::StakeDeposit
+        | CommandKind::UnstakeDeposit => MIN_CMDRECP_SIZE_V2_EXTENDED,
+        _ => MIN_CMDRECP_SIZE_V2_BASIC,
+    }
 }

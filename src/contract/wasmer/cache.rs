@@ -3,6 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+// TODO 1
 //! Defines a cache for Wasm modules compiled from smart contract bytecode.
 //! The cache also stores metadata about the smart contract, such as the CBI version and
 //! the size of the Wasm bytecode before compilation.
@@ -27,8 +28,8 @@ pub struct Cache {
 
 impl Cache {
     /// Instantiate Smart Contract Cache.
-    /// ### Panics
-    /// panics if the directory failed to construct FileSystemCache.
+    /// # Panics
+    /// Will panic the directory failed to construct FileSystemCache.
     pub fn new<P: Into<PathBuf>>(binaries_dir: P) -> Self {
         let sc_path_buf: PathBuf = binaries_dir.into();
         let metadata_path = sc_path_buf.join("metadata");
@@ -83,7 +84,7 @@ impl Cache {
                 key,
                 ModuleMetadata {
                     cbi_version: contract::CBI_VERSION,
-                    bytes_length,
+                    bytecode_length: bytes_length,
                 },
             )
             .map_err(|_| SerializeError::Io(Error::from(ErrorKind::NotFound)))?;
@@ -152,14 +153,14 @@ impl WasmerCache for FileStorage {
 /// ModuleMetadata defines the descriptive information about the contract stored in the FileSystemCache.
 pub struct ModuleMetadata {
     pub cbi_version: u32,
-    pub bytes_length: usize,
+    pub bytecode_length: usize,
 }
 
 impl From<ModuleMetadata> for Vec<u8> {
     fn from(value: ModuleMetadata) -> Self {
         [
             value.cbi_version.to_le_bytes().to_vec(),
-            value.bytes_length.to_le_bytes().to_vec(),
+            value.bytecode_length.to_le_bytes().to_vec(),
         ]
         .concat()
     }
@@ -167,12 +168,12 @@ impl From<ModuleMetadata> for Vec<u8> {
 
 impl From<Vec<u8>> for ModuleMetadata {
     fn from(bytes: Vec<u8>) -> Self {
-        let (cbi_bytes, bl_bytes) = bytes.split_at(std::mem::size_of::<u32>());
+        let (cbi_bytes, wasm_bytes) = bytes.split_at(std::mem::size_of::<u32>());
         let cbi_version: u32 = u32::from_le_bytes(cbi_bytes.try_into().unwrap());
-        let bytes_length: usize = usize::from_le_bytes(bl_bytes.try_into().unwrap());
+        let bytecode_length: usize = usize::from_le_bytes(wasm_bytes.try_into().unwrap());
         Self {
             cbi_version,
-            bytes_length,
+            bytecode_length,
         }
     }
 }

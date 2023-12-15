@@ -3,9 +3,18 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Define constructs used for gas accounting during a contract call due to them being executed in a isolated Wasm environment.
-//! They operate independently of the global (GasMeter)[crate::execution::gas::gas_meter::GasMeter]],
+//! Define constructs used for gas accounting inside a contract call, as they execute in a isolated Wasm environment.
+//!
+//! The constructs are different from the native runtime's global [gas meter](crate::gas::gas_meter::GasMeter),
 //! and only live for the duration of the contract call.
+//!
+//! There are two constructs which reflect the two sources of gas usage during a contract call.
+//! First is the [WasmerGasGlobal], which points to a global gas variable provided by a Wasmer module instance.
+//! This variable is updated by the Wasmer as Wasm opcodes are executed, and is used to track the gas usage.
+//!
+//! The second construct is the [HostFuncGasMeter], which accounts for the cost of invoking Host Function APIs.
+//! These APIs are not natively tallied for gas usage by Wasmer, hence the need for an external "host function gas meter"
+//! to track the gas costs associated with invoking these APIs.
 
 use core::panic;
 use std::mem::MaybeUninit;
@@ -21,16 +30,18 @@ use crate::{
 };
 
 use super::{
-    operation::{self, OperationReceipt},
+    operations::{self, OperationReceipt},
     GasMeter,
 };
 
-/// Source of truth for total gas used when executing contract calls.
-/// References the Wasmer global variable tracking gas usage from Wasm opcode execution
-/// and exposes method for deducting gas usage by host functions.
+/// Source of truth for total gas used during a contract call execution.
+/// References the Wasmer global variable that tracks gas usage from Wasm opcode execution
+/// Provides methods for managing the lifecycle of this variable
+/// and for deducting gas incurred by [HostFuncGasMeter].
 pub(crate) struct WasmerGasGlobal {
     /// global vaiable of wasmer_middlewares::metering remaining points.
     wasmer_gas: MaybeUninit<Global>,
+    /// safety indicator to check for initialization
     is_initialized: bool,
 }
 
@@ -42,12 +53,14 @@ impl WasmerGasGlobal {
         }
     }
 
-    pub fn write(&mut self, global: Global) {
+    /// initialize the global variable with the Wasmer global var exposed after Wasm module instantiation
+    pub fn init(&mut self, global: Global) {
         self.wasmer_gas.write(global);
         self.is_initialized = true;
     }
 
-    pub fn clear(&mut self) {
+    /// directs Wasmer to drop the global variable
+    pub fn deinit(&mut self) {
         unsafe {
             self.check_init();
             self.wasmer_gas.assume_init_drop();
@@ -55,6 +68,7 @@ impl WasmerGasGlobal {
         self.is_initialized = false;
     }
 
+    /// read the remaining gas
     pub fn gas(&self) -> u64 {
         unsafe {
             self.check_init();
@@ -62,8 +76,8 @@ impl WasmerGasGlobal {
         }
     }
 
-    /// subtract amount from wasmer_gas
-    pub fn subtract(&self, amount: u64) -> u64 {
+    /// used by HostFuncGasMeter to deduct gas incurred by invoking Host Function APIs
+    pub fn subtract_gas(&self, amount: u64) -> u64 {
         let current_remaining_points: u64 = self.gas();
         let new_remaining_points = current_remaining_points.saturating_sub(amount);
         unsafe {
@@ -76,6 +90,9 @@ impl WasmerGasGlobal {
         }
     }
 
+    /// check for initialization before accessing the Wasmer variable
+    /// ### panics
+    /// panics if the variable is not initialized
     fn check_init(&self) {
         if !self.is_initialized {
             panic!("Can't access `wasmer_metering_remaining_points` as not initialized");
@@ -84,7 +101,8 @@ impl WasmerGasGlobal {
 }
 
 /// Implements a facade for all chargeable Wasm host functions,
-/// and deducts the cost of each operation from WasmerGasGlobal.
+/// delegates the actual operation to the [operation] module.
+/// and deducts its cost from [WasmerGasGlobal].
 pub(crate) struct HostFuncGasMeter<'a, 'b, S, M, V>
 where
     S: DB + Send + Sync + Clone + 'static,
@@ -131,7 +149,7 @@ where
 
     /// method for manual gas deduction from WasmerRemainingGas
     pub fn deduct_gas(&mut self, amount: u64) -> u64 {
-        self.wasmer_gas_global.subtract(amount)
+        self.wasmer_gas_global.subtract_gas(amount)
     }
 
     pub fn command_output_cache(&mut self) -> &mut CommandOutputCache {
@@ -139,25 +157,25 @@ where
     }
 
     pub fn ws_get_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
-        let result = operation::ws_storage_data(self.version, self.ws_cache, address, key);
+        let result = operations::ws_storage_data(self.version, self.ws_cache, address, key);
         self.charge(result).filter(|v| !v.is_empty())
     }
 
     /// Get the balance from read-write set. It balance is not found, gets from WS and caches it.
     pub fn ws_get_balance(&self, address: PublicAddress) -> u64 {
-        let result = operation::ws_balance(self.ws_cache, &address);
+        let result = operations::ws_balance(self.ws_cache, &address);
         self.charge(result)
     }
 
     pub fn ws_set_storage_data(&mut self, address: PublicAddress, key: &[u8], value: Vec<u8>) {
         let result =
-            operation::ws_set_storage_data(self.version, self.ws_cache, address, key, value);
+            operations::ws_set_storage_data(self.version, self.ws_cache, address, key, value);
         self.charge(result);
     }
 
     /// Sets balance in the WSCache. It does not write to WS immediately.
     pub fn ws_set_balance(&mut self, address: PublicAddress, value: u64) {
-        let result = operation::ws_set_balance(self.ws_cache, address, value);
+        let result = operations::ws_set_balance(self.ws_cache, address, value);
         self.charge(result);
     }
 
@@ -166,30 +184,30 @@ where
         address: PublicAddress,
         sc_context: &SmartContractContext,
     ) -> Option<ContractModule> {
-        let result = operation::ws_cached_contract(self.ws_cache, sc_context, address);
+        let result = operations::ws_cached_contract(self.ws_cache, sc_context, address);
         self.charge(result)
     }
 
     /// write data to linear memory, charge the write cost and return the length
     pub fn write_bytes(&self, value: Vec<u8>, val_ptr_ptr: u32) -> Result<u32, anyhow::Error> {
-        let result = operation::write_bytes(self.memory_ctx, value, val_ptr_ptr);
+        let result = operations::write_bytes(self.memory_ctx, value, val_ptr_ptr);
         self.charge(result)
     }
 
     /// read data from linear memory and charge the read cost
     pub fn read_bytes(&self, offset: u32, len: u32) -> Result<Vec<u8>, anyhow::Error> {
-        let result = operation::read_bytes(self.memory_ctx, offset, len);
+        let result = operations::read_bytes(self.memory_ctx, offset, len);
         self.charge(result)
     }
 
     pub fn command_output_append_log(&mut self, log: Log) {
         let result =
-            operation::command_output_append_log(self.command_output_cache.logs.as_mut(), log);
+            operations::command_output_append_log(self.command_output_cache.logs.as_mut(), log);
         self.charge(result)
     }
 
     pub fn command_output_set_return_value(&mut self, return_value: Vec<u8>) {
-        let result = operation::command_output_set_return_value(
+        let result = operations::command_output_set_return_value(
             self.command_output_cache.return_value.as_mut(),
             return_value,
         );
@@ -203,17 +221,17 @@ where
     //
 
     pub fn sha256(&self, input_bytes: Vec<u8>) -> Vec<u8> {
-        let result = operation::sha256(input_bytes);
+        let result = operations::sha256(input_bytes);
         self.charge(result)
     }
 
     pub fn keccak256(&self, input_bytes: Vec<u8>) -> Vec<u8> {
-        let result = operation::keccak256(input_bytes);
+        let result = operations::keccak256(input_bytes);
         self.charge(result)
     }
 
     pub fn ripemd(&self, input_bytes: Vec<u8>) -> Vec<u8> {
-        let result = operation::ripemd(input_bytes);
+        let result = operations::ripemd(input_bytes);
         self.charge(result)
     }
 
@@ -223,12 +241,13 @@ where
         signature: [u8; 64],
         pub_key: [u8; 32],
     ) -> Result<i32, anyhow::Error> {
-        let result = operation::verify_ed25519_signature(message, signature, pub_key);
+        let result = operations::verify_ed25519_signature(message, signature, pub_key);
         self.charge(result)
     }
 
     fn charge<T>(&self, op_receipt: OperationReceipt<T>) -> T {
-        self.wasmer_gas_global.subtract(op_receipt.1.net_cost().0);
+        self.wasmer_gas_global
+            .subtract_gas(op_receipt.1.net_cost().0);
         op_receipt.0
     }
 }

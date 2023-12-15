@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines common data structures used inside this library, or from external crates
+//! Defines common data structures used within this library, or from external crates
 
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};

@@ -12,9 +12,10 @@ use wasmer_compiler_singlepass::Singlepass;
 use wasmer_engine_universal::Universal;
 use wasmer_middlewares::Metering;
 
+use crate::gas::wasm_opcode_gas_schedule;
+
 use super::custom_tunables::CustomTunables;
 use super::non_determinism_filter::NonDeterminismFilter;
-use crate::gas::wasm_opcode_gas_schedule;
 
 /// Instantiate a Store which includes customised middleware e.g. [filter](super::non_determinism_filter::NonDeterminismFilter).
 pub fn instantiate_store(gas_limit: u64, memory_limit: Option<usize>) -> Store {

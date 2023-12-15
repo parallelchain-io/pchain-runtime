@@ -3,6 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+// TODO 1
 //! Defines a cache layer that abstracts operations on the World State.
 
 use std::{cell::RefCell, collections::HashMap};
@@ -125,8 +126,8 @@ where
     }
 
     /// check for existence of a value in the storage trie for a particular address
-    /// ### panics
-    /// panics on unexpected errors with the storage trie, which might reflect an invalid World State
+    /// # Panics
+    ///  Will panic on unexpected errors with the storage trie, which reflects an invalid World State
     pub fn contains_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> bool {
         self.storage_data
             .contains(&(address, key.to_vec()), |(addr, key)| -> bool {
@@ -142,8 +143,8 @@ where
     }
 
     /// retrieves data from account storage
-    /// ### Panics
-    /// panics on unexpected errors with the storage trie, which might reflect an invalid World State
+    /// # Panics
+    /// Will panic on unexpected errors with the storage trie, which reflects an invalid World State
     pub fn storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
         self.storage_data
             .get(&(address, key.to_vec()), |(addr, k)| {

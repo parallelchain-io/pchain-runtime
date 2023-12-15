@@ -3,7 +3,14 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implements host functions defined in [crate::contract::cbi_host_functions].
+//! Implementation of host functions per the CBI specification.
+//!
+//! This module implements the host functions as defined in
+//! [CBI Host Functions](crate::contract::cbi_host_functions). These functions are accessible to
+//! contract code executing within the Wasm instance, enabling interaction with the blockchain.
+//!
+//! The module includes functions that are [chargeable operations](crate::gas::operations),
+//! which are associated with a gas cost.
 
 use pchain_types::{
     blockchain::{Command, Log},
@@ -15,16 +22,17 @@ use pchain_world_state::{VersionProvider, DB, NETWORK_ADDRESS};
 
 use crate::{
     contract::{CBIHostFunctions, FuncError},
-    execution::gas::HostFuncGasMeter,
+    gas::HostFuncGasMeter,
     types::{BaseTx, CallTx, DeferredCommand},
 };
 
 use super::wasmer::env::Env;
 
-/// [HostFunctions] implements trait [CBIHostFunctions] according to CBI version 0.
-/// The Env struct is available by reference in every method to retrieve the current execution context.
-/// Inside every method, we instantitate a new [HostFuncGasMeter] which holds the latest gas consumption state and
-/// through it, call methods that require gas consumption.
+/// Within every host function defined on the HostFunction struct,
+/// the Env struct is available by reference to retrieve the current execution context.
+/// Inside every method, we instantitate a new [host function gas meter](crate::execution::gas::HostFuncGasMeter)
+/// which holds the latest gas consumption state of the contract call.
+/// This meter is used to deduct gas consumption in the Wasm context.
 pub(crate) struct HostFunctions {}
 impl<'a, 'b, S, V> CBIHostFunctions<Env<'a, S, V>> for HostFunctions
 where

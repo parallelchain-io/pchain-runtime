@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a cache for values returned by executed Commands.
+//! Defines a temporary store for values returned from executing a Command.
 use crate::types::CommandOutput;
 use pchain_types::blockchain::Log;
 
@@ -11,20 +11,20 @@ use pchain_types::blockchain::Log;
 #[derive(Clone, Default)]
 pub(crate) struct CommandOutputCache {
     /// stores the list of event logs from exeuting a command, ordered by the sequence of emission
-    pub(in crate::execution) logs: MaybeUnused<Vec<Log>>,
+    pub logs: MaybeUnused<Vec<Log>>,
 
     /// value returned by a call transaction using the `return_value` SDK function.
     /// It is None if the execution did not return anything.
-    pub(in crate::execution) return_value: MaybeUnused<Vec<u8>>,
+    pub return_value: MaybeUnused<Vec<u8>>,
 
     /// value returned from result of WithdrawDeposit command.
-    pub(in crate::execution) amount_withdrawn: MaybeUnused<u64>,
+    pub amount_withdrawn: MaybeUnused<u64>,
 
     /// value returned from result of StakeDeposit command.
-    pub(in crate::execution) amount_staked: MaybeUnused<u64>,
+    pub amount_staked: MaybeUnused<u64>,
 
     /// value returned from result of UnstakeDeposit command.
-    pub(in crate::execution) amount_unstaked: MaybeUnused<u64>,
+    pub amount_unstaked: MaybeUnused<u64>,
 }
 
 impl CommandOutputCache {

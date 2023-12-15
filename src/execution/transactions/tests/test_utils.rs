@@ -6,7 +6,7 @@ use crate::{
         execute_next_epoch::{execute_next_epoch_v1, execute_next_epoch_v2},
         state::ExecutionState,
     },
-    gas,
+    gas::{tx_inclusion_cost_v1, tx_inclusion_cost_v2},
     types::{self, BaseTx, TxnVersion},
     BlockProposalStats, BlockchainParams, TransitionV1Result, ValidatorPerformance,
 };
@@ -105,7 +105,7 @@ pub(crate) fn set_tx(
     tx.nonce = nonce;
     tx.commands = commands.clone();
     state.tx = BaseTx::from(&tx);
-    gas::tx_inclusion_cost_v1(state.tx.size, &state.tx.command_kinds)
+    tx_inclusion_cost_v1(state.tx.size, &state.tx.command_kinds)
 }
 
 pub(crate) fn create_tx(signer: PublicAddress) -> TransactionV1 {
@@ -131,7 +131,7 @@ pub(crate) fn set_tx_v2(
     tx.nonce = nonce;
     tx.commands = commands.clone();
     state.tx = BaseTx::from(&tx);
-    gas::tx_inclusion_cost_v2(state.tx.size, &state.tx.command_kinds)
+    tx_inclusion_cost_v2(state.tx.size, &state.tx.command_kinds)
 }
 
 pub(crate) fn create_tx_v2(signer: PublicAddress) -> TransactionV2 {

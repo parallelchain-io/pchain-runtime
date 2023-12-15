@@ -3,6 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+// TODO 1
+
 //! Defines struct which holds the contract Wasm instance and Env metadata
 //! and exposes an entry point for calling contract methods
 //!
@@ -40,7 +42,7 @@ where
         let call_result = unsafe { self.instance.call_method() };
 
         // drop the variable of wasmer remaining gas
-        self.environment.clear_wasmer_gas_global();
+        self.environment.drop_wasmer_gas_global();
 
         let (remaining_gas, call_error) = match call_result {
             Ok(remaining_gas) => (remaining_gas, None),

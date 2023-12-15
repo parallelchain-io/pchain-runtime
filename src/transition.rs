@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of state transition function.
+//! Implementation of state transition functions.
 //!
 //! The struct [Runtime] is an entry point to trigger state transition. It provides methods to
 //! take in a [Transaction] with [blockchain parameters](BlockchainParams). It then outputs a [TransitionResult]
@@ -16,8 +16,7 @@
 //! - [Transition Error](TransitionError)
 //! - [ValidatorChanges] (for [NextEpoch](pchain_types::blockchain::Command::NextEpoch) command)
 //!
-//! [Runtime] also exposes a method to execute a [view call]
-//! (https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
+//! [Runtime] also exposes a method to execute [view calls](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
 
 use pchain_types::{
     blockchain::{
@@ -62,7 +61,7 @@ impl Runtime {
 
     /// Specify a cache for contracts already compiled down to machine code. When asked to execute a contract, the Runtime will
     /// first look at its smart contract cache for the contract's machine code. If it is not there yet, it will get the contract's
-    /// WASM bytecode from the world state, compile it down to machine code, and then put it into the smart contract cache. The
+    /// Wasm bytecode from the world state, compile it down to machine code, and then put it into the smart contract cache. The
     /// next time the Runtime is asked to execute the same contract, it will get its machine code from the cache and skip the
     /// compilation step.
     pub fn set_smart_contract_cache(mut self, sc_cache: Cache) -> Self {
@@ -70,7 +69,7 @@ impl Runtime {
         self
     }
 
-    /// Specify how big WASM linear memory is allowed to grow in a single contract execution.
+    /// Specify how big Wasm linear memory is allowed to grow in a single contract execution.
     pub fn set_smart_contract_memory_limit(mut self, memory_limit: usize) -> Self {
         self.sc_context.memory_limit = Some(memory_limit);
         self

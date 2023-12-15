@@ -3,11 +3,15 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Execution of Next Epoch Command
+//! Module for managing the lifecycle and execution strategy of the Next Epoch command.
 //!
 //! Next Epoch is a special command that does not go through Pre-Charge Phase or Charge Phase, but
-//! will modify the state and update signer's nonce. Its goal is to compute the resulting state of
-//! Network Account and return changes to a validator set for next epoch in [TransitionResult].
+//! will modify the state and update signer's nonce. Its goal is to compute the resulting state of the Network Account
+//! and to provide updates for the validator set for the upcoming epoch.
+//!
+//! The [NextEpochCommandStrategy] trait encapsulates strategies for handling different
+//! versions of this command. This trait is crucial for managing invalid command scenarios and
+//! post-execution processing, including handling changes to validators.
 
 use pchain_types::blockchain::{Command, CommandReceiptV1, CommandReceiptV2};
 use pchain_world_state::{VersionProvider, DB};
@@ -19,7 +23,7 @@ use crate::{
 
 use super::state::{ExecutionState, FinalizeState};
 
-trait ProtocolCommandHandler<'a, S, E, R, V>
+trait NextEpochCommandStrategy<'a, S, E, R, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
@@ -31,14 +35,15 @@ where
     ) -> R;
 }
 
-/// Execution of NextEpoch Command.
+/// Generic next epoch command executor
+/// which delegates to a specific version of NextEpochCommandStrategy
 fn execute_next_epoch_command<'a, S, E, R, V, P>(
     state: ExecutionState<'a, S, E, V>,
     commands: Vec<Command>,
 ) -> R
 where
     S: DB + Send + Sync + Clone + 'static,
-    P: ProtocolCommandHandler<'a, S, E, R, V>,
+    P: NextEpochCommandStrategy<'a, S, E, R, V>,
     V: VersionProvider + Send + Sync + Clone + 'static,
 {
     let signer = state.tx.signer;
@@ -81,7 +86,7 @@ where
 
 struct ExecuteNextEpochV1;
 
-impl<'a, S, V> ProtocolCommandHandler<'a, S, CommandReceiptV1, TransitionV1Result<'a, S, V>, V>
+impl<'a, S, V> NextEpochCommandStrategy<'a, S, CommandReceiptV1, TransitionV1Result<'a, S, V>, V>
     for ExecuteNextEpochV1
 where
     S: DB + Send + Sync + Clone + 'static,
@@ -118,7 +123,7 @@ where
 
 struct ExecuteNextEpochV2;
 
-impl<'a, S, V> ProtocolCommandHandler<'a, S, CommandReceiptV2, TransitionV2Result<'a, S, V>, V>
+impl<'a, S, V> NextEpochCommandStrategy<'a, S, CommandReceiptV2, TransitionV2Result<'a, S, V>, V>
     for ExecuteNextEpochV2
 where
     S: DB + Send + Sync + Clone,

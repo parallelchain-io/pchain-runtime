@@ -3,6 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+// TODO 1 - purpose and relationship
+
 use crate::{execution::state::ExecutionState, TransitionError};
 use pchain_world_state::{VersionProvider, DB};
 

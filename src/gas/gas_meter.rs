@@ -3,30 +3,29 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+// TODO 1
 //! Defines a global [GasMeter] that is the single source for truth for total gas used in a transaction.
 //! It is responsible for the actual gas deduction,
 //! and presents a facade for all charegeable operations (e.g. World State operations),
-//! except operations during contract execution that are called via the (Wasm Host Function Gas Meter)[crate::execution::gas::wasmer_gas::HostFuncGasMeter].
+//! except operations during contract execution that are called via the (Wasm Host Function Gas Meter)[crate::gas::wasmer_gas::HostFuncGasMeter].
 //! The GasMeter lives for the entire duration of a Transaction.
 
 use std::cell::RefCell;
 
-use pchain_types::cryptography::PublicAddress;
-use pchain_world_state::{NetworkAccountStorage, VersionProvider, DB, NETWORK_ADDRESS};
-
+use crate::execution::cache::{CommandOutputCache, WorldStateCache};
 use crate::{
     contract::{ContractModule, SmartContractContext},
-    gas,
     types::{CommandKind, CommandOutput, TxnVersion},
     TransitionError,
 };
+use pchain_types::cryptography::PublicAddress;
+use pchain_world_state::{NetworkAccountStorage, VersionProvider, DB, NETWORK_ADDRESS};
 
 use super::{
-    operation::{self, OperationReceipt},
+    constants::{tx_inclusion_cost_v1, tx_inclusion_cost_v2},
+    operations::{self, OperationReceipt},
     CostChange,
 };
-
-use crate::execution::cache::{CommandOutputCache, WorldStateCache};
 
 /// GasMeter contains both gas-accounting variables and data structures which involve chargeable operations.
 #[derive(Clone)]
@@ -153,8 +152,8 @@ where
     ) -> Result<(), TransitionError> {
         // stored separately because it is not considered to belong to a single command
         let required_cost = match version {
-            TxnVersion::V1 => gas::tx_inclusion_cost_v1(tx_size, tx_command_kinds),
-            TxnVersion::V2 => gas::tx_inclusion_cost_v2(tx_size, tx_command_kinds),
+            TxnVersion::V1 => tx_inclusion_cost_v1(tx_size, tx_command_kinds),
+            TxnVersion::V2 => tx_inclusion_cost_v2(tx_size, tx_command_kinds),
         };
 
         if required_cost > self.gas_limit {
@@ -166,7 +165,7 @@ where
     }
 
     pub fn command_output_set_return_value(&mut self, return_value: Vec<u8>) {
-        let result = operation::command_output_set_return_value(
+        let result = operations::command_output_set_return_value(
             self.output_cache_of_current_command.return_value.as_mut(),
             return_value,
         );
@@ -174,7 +173,7 @@ where
     }
 
     pub fn command_output_set_amount_withdrawn(&mut self, amount_withdrawn: u64) {
-        let result = operation::command_output_set_amount_withdrawn(
+        let result = operations::command_output_set_amount_withdrawn(
             self.output_cache_of_current_command
                 .amount_withdrawn
                 .as_mut(),
@@ -184,7 +183,7 @@ where
     }
 
     pub fn command_output_set_amount_staked(&mut self, amount_staked: u64) {
-        let result = operation::command_output_set_amount_staked(
+        let result = operations::command_output_set_amount_staked(
             self.output_cache_of_current_command.amount_staked.as_mut(),
             amount_staked,
         );
@@ -192,7 +191,7 @@ where
     }
 
     pub fn command_output_set_amount_unstaked(&mut self, amount_unstaked: u64) {
-        let result = operation::command_output_set_amount_unstaked(
+        let result = operations::command_output_set_amount_unstaked(
             self.output_cache_of_current_command
                 .amount_unstaked
                 .as_mut(),
@@ -214,7 +213,7 @@ where
     /// Check if App key has non-empty data
     pub fn ws_contains_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> bool {
         let result =
-            operation::ws_contains_storage_data(self.version, &mut self.ws_cache, address, key);
+            operations::ws_contains_storage_data(self.version, &mut self.ws_cache, address, key);
         self.charge(result)
     }
 
@@ -223,19 +222,19 @@ where
     //
     /// Gets app data from the read-write set.
     pub fn ws_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
-        let result = operation::ws_storage_data(self.version, &mut self.ws_cache, address, key);
+        let result = operations::ws_storage_data(self.version, &mut self.ws_cache, address, key);
         let value = self.charge(result)?;
         (!value.is_empty()).then_some(value)
     }
 
     /// Get the balance from read-write set. It balance is not found, gets from WS and caches it.
     pub fn ws_balance(&self, address: PublicAddress) -> u64 {
-        let result = operation::ws_balance(&self.ws_cache, &address);
+        let result = operations::ws_balance(&self.ws_cache, &address);
         self.charge(result)
     }
 
     pub fn ws_cbi_version(&self, address: PublicAddress) -> Option<u32> {
-        let result = operation::ws_cbi_version(&self.ws_cache, &address);
+        let result = operations::ws_cbi_version(&self.ws_cache, &address);
         self.charge(result)
     }
 
@@ -244,7 +243,7 @@ where
         address: PublicAddress,
         sc_context: &SmartContractContext,
     ) -> Option<ContractModule> {
-        self.charge(operation::ws_cached_contract(
+        self.charge(operations::ws_cached_contract(
             &self.ws_cache,
             sc_context,
             address,
@@ -256,25 +255,25 @@ where
     //
     pub fn ws_set_storage_data(&mut self, address: PublicAddress, key: &[u8], value: Vec<u8>) {
         let result =
-            operation::ws_set_storage_data(self.version, &mut self.ws_cache, address, key, value);
+            operations::ws_set_storage_data(self.version, &mut self.ws_cache, address, key, value);
         self.charge(result)
     }
 
     /// Sets balance in the write set. It does not write to WS immediately.
     pub fn ws_set_balance(&mut self, address: PublicAddress, value: u64) {
-        let result = operation::ws_set_balance(&mut self.ws_cache, address, value);
+        let result = operations::ws_set_balance(&mut self.ws_cache, address, value);
         self.charge(result)
     }
 
     /// Sets CBI version in the write set. It does not write to WS immediately.
     pub fn ws_set_cbi_version(&mut self, address: PublicAddress, cbi_version: u32) {
-        let result = operation::ws_set_cbi_version(&mut self.ws_cache, address, cbi_version);
+        let result = operations::ws_set_cbi_version(&mut self.ws_cache, address, cbi_version);
         self.charge(result)
     }
 
     /// Sets contract bytecode in the write set. It does not write to WS immediately.
     pub fn ws_set_code(&mut self, address: PublicAddress, code: Vec<u8>) {
-        let result = operation::ws_set_contract_code(&mut self.ws_cache, address, code);
+        let result = operations::ws_set_contract_code(&mut self.ws_cache, address, code);
         self.charge(result)
     }
 }

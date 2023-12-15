@@ -3,6 +3,8 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
+// TODO 1 - purpose and relationship
+
 //! Defines structures and functions which are useful in state transition across common phases.
 //!
 //! Common Phases include:
@@ -83,8 +85,8 @@ where
 
 /// Execute the Charge phase and updates relevant account balances
 /// returns the final Execution state
-/// ### Panics
-/// Panics if relevant account balances fail to be updated correctly due to an invalid World State
+/// # Panics
+/// Will panic if the relevant account balances fail to be updated correctly due to an invalid World State.
 pub(crate) fn charge<S, E, V>(mut state: ExecutionState<S, E, V>) -> ExecutionState<S, E, V>
 where
     S: DB + Send + Sync + Clone + 'static,
@@ -123,8 +125,9 @@ where
     if proposer_address == treasury_address {
         treasury_balance = new_proposer_balance;
     }
-    let new_treasury_balance = treasury_balance
-        .saturating_add((gas_used * base_fee * TREASURY_CUT_OF_BASE_FEE_NUM) / TREASURY_CUT_OF_BASE_FEE_DENOM);
+    let new_treasury_balance = treasury_balance.saturating_add(
+        (gas_used * base_fee * TREASURY_CUT_OF_BASE_FEE_NUM) / TREASURY_CUT_OF_BASE_FEE_DENOM,
+    );
 
     // Commit updated balances
     ws_cache

@@ -3,7 +3,9 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! ExecutionState encapsulates the entire state of transaction execution.
+// TODO 1
+//! Abstraction encapsulating the entire state of transaction execution.
+//!
 //! It serves as a central structure holding all inputs and outputs for a transaction's lifecycle,
 //! excluding Command data, which is passed separately to execution functions alongside ExecutionState,
 //! to emphasize that Command data is separate from mutated state.
