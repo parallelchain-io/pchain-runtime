@@ -3,8 +3,15 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-// TODO 1
-//! Implements execution of [Staking Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#staking-commands).
+//! Business logic used by [Execute](crate::execution::execute) trait implementations for
+//! [Staking Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#staking-commands).
+//!
+//! These commands allow users who wish to operate staking pools (operators)
+//! and other users who wish to delegate their tokens as stakes to these pools (delegators)
+//! to perform the relevant actions.
+//!
+//! Note that delegation is a two-stage process involving first, the creation of a deposit,
+//! and secondly, staking that deposit to become part of a pool.
 
 use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{
@@ -20,10 +27,8 @@ use crate::{
     TransitionError,
 };
 
-/// CreatePool
-///
-///
-///
+/* ↓↓↓ Create Pool Command ↓↓↓ */
+
 /// Execution of [pchain_types::blockchain::Command::CreatePool]
 pub(crate) fn create_pool<S, E, V>(
     operator: PublicAddress,
@@ -55,10 +60,8 @@ where
     abort_if_gas_exhausted(state)
 }
 
-/// SetPoolSettings
-///
-///
-///
+/* ↓↓↓ Set Pool Settings Command ↓↓↓ */
+
 /// Execution of [pchain_types::blockchain::Command::SetPoolSettings]
 pub(crate) fn set_pool_settings<S, E, V>(
     operator: PublicAddress,
@@ -88,10 +91,8 @@ where
     abort_if_gas_exhausted(state)
 }
 
-/// DeletePool
-///
-///
-///
+/* ↓↓↓ Delete Pool Command ↓↓↓ */
+
 /// Execution of [pchain_types::blockchain::Command::DeletePool]
 pub(crate) fn delete_pool<S, E, V>(
     operator: PublicAddress,
@@ -113,10 +114,8 @@ where
     abort_if_gas_exhausted(state)
 }
 
-/// CreateDeposit
-///
-///
-///
+/* ↓↓↓ Create Deposit Command ↓↓↓ */
+
 /// Execution of [pchain_types::blockchain::Command::CreateDeposit]
 pub(crate) fn create_deposit<S, E, V>(
     owner: PublicAddress,
@@ -154,10 +153,8 @@ where
     abort_if_gas_exhausted(state)
 }
 
-/// SetDepositSettings
-///
-///
-///
+/* ↓↓↓ Set Deposit Settings Command ↓↓↓ */
+
 /// Execution of [pchain_types::blockchain::Command::SetDepositSettings]
 pub(crate) fn set_deposit_settings<S, E, V>(
     owner: PublicAddress,
@@ -183,10 +180,8 @@ where
     abort_if_gas_exhausted(state)
 }
 
-/// TopUpDeposit
-///
-///
-///
+/* ↓↓↓ Top Up Deposit Command ↓↓↓ */
+
 /// Execution of [pchain_types::blockchain::Command::TopUpDeposit]
 pub(crate) fn topup_deposit<S, E, V>(
     owner: PublicAddress,
@@ -219,10 +214,8 @@ where
     abort_if_gas_exhausted(state)
 }
 
-/// WithdrawDeposit
-///
-///
-///
+/* ↓↓↓ Withdraw Deposit Command ↓↓↓ */
+
 /// Execution of [pchain_types::blockchain::Command::WithdrawDeposit]
 pub(crate) fn withdraw_deposit<S, E, V>(
     owner: PublicAddress,
@@ -328,10 +321,8 @@ where
     abort_if_gas_exhausted(state)
 }
 
-/// StakeDeposit
-///
-///
-///
+/* ↓↓↓ Stake Deposit Command ↓↓↓ */
+
 /// Execution of [pchain_types::blockchain::Command::StakeDeposit]
 pub(crate) fn stake_deposit<S, E, V>(
     owner: PublicAddress,
@@ -402,10 +393,8 @@ where
     abort_if_gas_exhausted(state)
 }
 
-/// UnstakeDeposit
-///
-///
-///
+/* ↓↓↓ Unstake Deposit Command ↓↓↓ */
+
 /// Execution of [pchain_types::blockchain::Command::UnstakeDeposit]
 pub(crate) fn unstake_deposit<S, E, V>(
     owner: PublicAddress,
@@ -464,10 +453,8 @@ where
     abort_if_gas_exhausted(state)
 }
 
-/// Helpers
-///
-///
-///
+/* ↓↓↓ Helpers Command ↓↓↓ */
+
 /// return owner's stake from operator's pool (NVS)
 pub(crate) fn stake_of_pool<T>(
     state: &mut T,

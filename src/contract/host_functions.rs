@@ -23,14 +23,14 @@ use pchain_world_state::{VersionProvider, DB, NETWORK_ADDRESS};
 use crate::{
     contract::{CBIHostFunctions, FuncError},
     gas::HostFuncGasMeter,
-    types::{BaseTx, CallTx, DeferredCommand},
+    types::{CallTx, DeferredCommand, TxnMetadata},
 };
 
 use super::wasmer::env::Env;
 
 /// Within every host function defined on the HostFunction struct,
 /// the Env struct is available by reference to retrieve the current execution context.
-/// Inside every method, we instantitate a new [host function gas meter](crate::execution::gas::HostFuncGasMeter)
+/// Inside every method, we instantitate a new [host function gas meter](crate::gas::HostFuncGasMeter)
 /// which holds the latest gas consumption state of the contract call.
 /// This meter is used to deduct gas consumption in the Wasm context.
 pub(crate) struct HostFunctions {}
@@ -269,7 +269,7 @@ where
 
         // by default, fields would be inherited from parent transaction
         let call_tx = CallTx {
-            base_tx: BaseTx {
+            base_tx: TxnMetadata {
                 command_kinds: env.call_tx.command_kinds.clone(),
                 signer: env.call_tx.target,
                 gas_limit: fn_gas_meter.remaining_gas(),

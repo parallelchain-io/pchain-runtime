@@ -3,19 +3,19 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-// TODO 1 - purpose and relationship
+//! Defines the behaviour of common phases during command execution.
+//!
+//! Used in the [command executor functions](crate::execution::execute_commands)
+//!
+//! The Common Phases include:
+//!
+//! - [Pre-Charge](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#pre-charge)
+//! which validates whether transactions are eligible for inclusion in the block,
+//! and charges the maximum-allowable gas fee from the transaction's signer, before actual execution.
+//!
+//! - [Charge](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#charge)
+//! refunds any amount of remaining gas to the signer, and transfers the gas fee to the proposer and the treasury.
 
-//! Defines structures and functions which are useful in state transition across common phases.
-//!
-//! Common Phases include:
-//! - [Pre-Charge](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#pre-charge): simple checks to ensure
-//! transaction can be included in a block.
-//! - [Charge](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#charge): refunds the amount of gas charged
-//! in the pre-charge step that wasn't used in the transaction's execution. It then transfers fee to the proposer and the treasury.
-//!
-//! The actual command execution happens in Commands Phase. It is implemented in modules [account](crate::execution::account) and
-//! [protocol](crate::execution::protocol).
-//!
 use pchain_world_state::{VersionProvider, DB};
 
 use crate::{

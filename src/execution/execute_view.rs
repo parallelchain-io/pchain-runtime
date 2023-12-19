@@ -2,15 +2,15 @@
     Copyright © 2023, ParallelChain Lab
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
-// TODO 1
 
-//! Execution of a [View call](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
+//! Manages the execution of [view calls](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls) in smart contracts.
 //!
-//! A View Call refers to the invocation of view-only methods in a contract without actual gas charging.
-//! These methods are not allowed to modify the state of blockchain.
-//! Unlike the execution of actual Transaction commands, there is neither a Pre-charge nor Charge phase.
-//! The gas used in the resulting command receipt is purely for reference.
+//! View Calls enable the invocation of read-only methods in contracts without gas charging, as they do not modify the blockchain state.
+//! Unlike transactions involving state changes, View Calls omit the Pre-charge and Charge phases, focusing solely on execution.
 //!
+//! They result in a [CommandReceiptV1] or [CommandReceiptV2], similar to regular command executions.
+//! However, the `gas_used` in View Calls serves only as a reference, given the absence of actual gas consumption.
+
 use pchain_types::{
     blockchain::{CallReceipt, CommandReceiptV1, CommandReceiptV2, ExitCodeV1, ExitCodeV2},
     cryptography::PublicAddress,

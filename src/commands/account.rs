@@ -3,11 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Business logic and helper structs to execute
-//! [Accounts Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#protocol-commands).
+//! Business logic used by [Execute](crate::execution::execute) trait implementations for
+//! [Account Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#protocol-commands).
 //!
 //! These commands modify state of individual accounts in the World State,
 //! affecting elements such as user account balances, or contract account code bytes.
+//!
 //! They can do so directly, or indirectly by triggering the execution of WebAsembly smart contracts,
 //! which in turn hook into the state modification methods of the Wasm host API.
 
@@ -22,7 +23,7 @@ use crate::{
         ContractInstance, ContractModule,
     },
     execution::abort::{abort, abort_if_gas_exhausted},
-    types::{BaseTx, CallTx, TxnVersion},
+    types::{CallTx, TxnMetadata, TxnVersion},
     TransitionError,
 };
 
@@ -177,7 +178,7 @@ where
             .ok_or(TransitionError::ExecutionProperGasExhausted)?;
 
         let call_tx = CallTx {
-            base_tx: BaseTx {
+            base_tx: TxnMetadata {
                 command_kinds: state.tx.command_kinds.clone(),
                 gas_limit: gas_limit_for_execution,
                 ..state.tx
@@ -325,7 +326,6 @@ where
     fn deploy(self) -> Option<TransitionError> {
         let contract_address = self.contract_address;
 
-        // TODO - a little round about way of calling this module
         // cache the module
         if let Some(sc_cache) = &self.state.ctx.sc_context.cache {
             self.module.cache(contract_address, sc_cache);

@@ -3,11 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-// TODO 1
-
-//! Defines struct which holds the contract Wasm instance and Env metadata
-//! and exposes an entry point for calling contract methods
+//! Construct to facilitate state management and gas value handling for smart contract calls.
 //!
+//! The [ContractInstance] struct, which is initialized during the [smart contract call process](crate::commands::account::call),
+//! orchestrates [TransitionContext] to ensure accurate state preservation during and after contract execution.
+//! While it does not actively manage gas usage, it reads and passes on the value of any remaining gas after execution.
+
 use pchain_world_state::{VersionProvider, DB};
 
 use crate::{
@@ -18,7 +19,7 @@ use crate::{
     },
 };
 
-/// ContractInstance contains contract instance which is prepared to be called in Commands Phase.
+/// ContractInstance holds the active Wasm instance and its associated execution environment (`Env`).
 pub(crate) struct ContractInstance<'a, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,

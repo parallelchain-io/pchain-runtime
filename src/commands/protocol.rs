@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Business logic and helper structs to execute
+//! Business logic used by [Execute](crate::execution::execute) trait implementations for
 //! [Protocol Commands](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Runtime.md#protocol-commands).
 //!
 //! These commands are not available to users, and can only be triggered by the protocol itself.

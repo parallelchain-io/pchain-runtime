@@ -17,10 +17,9 @@
 //! - Cryptographic operations in contract calls
 //! 
 //! There is a fifth category of operations which incur gas, namely executing Wasm opcodes in the Wasm runtime.
-//! The Wasm runtime (Wasmer) is responsible for executing Wasm bytecode, which it compiles into machine code.
-//! This process involves translating the primitive Wasm opcodes into machine code instructions that the host processor can execute. 
-//! By reading configuration defined by us in [gas primitives](crate::gas), Wasmer tallies the cost for each opcode executed
-//! and we can access this tally through the [WasmerGasGlobal](crate::execution::gas::wasmer_gas::WasmerGasGlobal) struct.
+//! The Wasm runtime (Wasmer) translates the primitive Wasm opcodes into machine code instructions that the host processor can execute. 
+//! By reading configuration defined in [gas primitives](crate::gas), Wasmer tallies the cost for each opcode executed
+//! and we can access this tally through the [WasmerGasGlobal](crate::gas::wasmer_gas::WasmerGasGlobal) struct.
 
 use ed25519_dalek::Verifier;
 use pchain_types::{blockchain::Log, cryptography::PublicAddress};

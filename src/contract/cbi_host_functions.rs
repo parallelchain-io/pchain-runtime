@@ -7,6 +7,7 @@
 //!
 //! The definitions follow the CBI Version 0 specification in
 //! [ParallelChain protocol](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md).
+//!
 //! In the context of Wasm, these host functions provide an API between
 //! the guest smart contract code and the blockchain environment.
 //!
@@ -187,7 +188,7 @@ where
     ) -> Result<i32, FuncError>;
 }
 
-/// Create importable for instantiation of contract module.
+/// Creates an importable for instantiation of contract module.
 pub(crate) fn create_importable<'a, T, K>(store: &'a Store, env: &T) -> Importable<'a>
 where
     T: wasmer::WasmerEnv + 'static,
@@ -235,7 +236,7 @@ where
     )
 }
 
-/// Create importable (View) for instantiation of contract module.
+/// Creates an importable (used in view calls) for instantiation of contract module.
 pub(crate) fn create_importable_view<'a, T, K>(store: &'a Store, env: &T) -> Importable<'a>
 where
     T: wasmer::WasmerEnv + 'static,
@@ -283,12 +284,12 @@ where
     )
 }
 
-/// Importable is data object required to instantiate contract module
+/// Struct holding components needed to instantiate a contract module
 pub(crate) struct Importable<'a>(pub(crate) ImportObject, &'a Store);
 
-/// `blank` implementations of exports functions, used to instantiate a contract to
-/// extract its exported metadata (without executing any of its methods).
-pub(crate) mod blank {
+/// A set of host functions with empty implementations, used only during module validation
+/// to instantiate a contract for extracting its exported metadata without executing any of its methods.
+pub(crate) mod empty {
     use wasmer::{imports, Function, Store};
 
     pub(crate) fn imports(store: &Store) -> wasmer::ImportObject {
@@ -388,7 +389,7 @@ pub(crate) mod blank {
     }
 }
 
-/// stubs that are used as non-callable host functions. E.g. set() in view calls.
+/// A set of non-callalbe host function stubs, to be used in view calls.
 mod not_callable {
     use super::FuncError;
 

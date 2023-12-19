@@ -10,7 +10,7 @@
 //!
 //! There are three categories of Commands:
 //! - [Account](account) Commands that modify the state inside user or contract accounts.
-//! - [Staking](staking) Commands that modify the state relating to users' stakes and deposits.
+//! - [Staking](staking) Commands that modify the state relating to users' deposits and stakes.
 //! - [Protocol](protocol) Commands that modify the protocol state.
 
 pub(crate) mod account;

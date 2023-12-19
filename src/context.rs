@@ -5,14 +5,12 @@
 
 //! Represents an intermediary providing access to the [World State](pchain_world_state) and components that can mutate it.
 //!
-//! The context is an integral part of larger constructs, such as the [ExecutionState](crate::execution::state::ExecutionState),
-//! for ensuring that World State changes are consistent within the scope of a transition.
-//!
 //! As a singleton instance encapsulating the World State, only a single 'valid' instance of
 //! [TransitionContext] can exist at any given time to maintain state integrity.
+//! It forms an integral part of larger constructs, such as the [ExecutionState](crate::execution::state::ExecutionState).
 //!
-//! When used during contract execution, the context also maintains intermediate metadata such as
-//! deferred commands generated during execution and metadata of the contranct instance.
+//! When used during [contract](crate::contract) execution, the context also maintains intermediate metadata such as
+//! deferred commands generated during execution and metadata of the contract instance.
 use pchain_world_state::{VersionProvider, WorldState, DB};
 
 use crate::{

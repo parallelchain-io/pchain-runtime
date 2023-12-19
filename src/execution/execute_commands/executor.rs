@@ -3,17 +3,15 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-// TODO 1 - better phrase this
-
-//! Module for managing the lifecycle and execution strategy of the Account or Staking commands.
-//
+//! Generic executor functions to manage the lifecycle and strategy to execute
+//! [Account](crate::commands::account) or [Staking](crate::commands::staking) commands.
+//!
 //! These commands are sent by users in a signed transaction,
 //! and are executed in accordance to a lifecycle briefly described below.
 //! The [CommandStrategy] trait encapsulates strategies for handling different
 //! versions of command execution.
 //!
 //! ### Lifecycle
-//! A brief description of the lifecycle is as follows:
 //!
 //! Firstly, the transaction undergoes validation during the Pre-Charge phase.
 //! The execution is cancelled if these checks fail.
@@ -39,13 +37,14 @@ use pchain_world_state::{VersionProvider, DB};
 use crate::{
     execution::{
         execute::Execute,
-        phases::{self},
         state::{ExecutionState, FinalizeState},
     },
     transition::TransitionV2Result,
     types::{CommandKind, DeferredCommand},
     TransitionError, TransitionV1Result,
 };
+
+use super::phases;
 
 /// Generic command executor
 /// which delegates to a specific version of CommandStrategy
@@ -108,6 +107,7 @@ where
     P::handle_charge(state)
 }
 
+/// Generic strategy trait for handling different versions of command execution
 trait CommandStrategy<'a, S, E, R, V>
 where
     S: DB + Send + Sync + Clone,
@@ -245,7 +245,7 @@ where
         }
     }
 }
-/// ExecutableCommands is a (LIFO) stack of ExecutableCommand
+/// Stack to sequence command execution
 #[derive(Debug)]
 pub(crate) struct ExecutableCommands(Vec<ExecutableCommand>);
 

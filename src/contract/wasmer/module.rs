@@ -3,12 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! A wrapper over [wasmer::Module] to represent a compiled smart contract instance Parallelchain Mainnet.
+//! A thin wrapper over [wasmer::Module] to represent a compiled smart contract instance Parallelchain Mainnet.
 
 use pchain_types::cryptography::PublicAddress;
 
 use crate::contract::wasmer::cache::{Cache as SmartContractCache, ModuleMetadata};
-use crate::contract::{blank, Importable};
+use crate::contract::{empty, Importable};
 
 use super::instance::{ContractValidateError, Instance, CONTRACT_METHOD};
 
@@ -117,7 +117,7 @@ impl Module {
         {
             return Err(ContractValidateError::MethodNotFound);
         }
-        let imports_object = blank::imports(wasmer_store);
+        let imports_object = empty::imports(wasmer_store);
         if let Ok(instance) = wasmer::Instance::new(&self.0, &imports_object) {
             if instance
                 .exports

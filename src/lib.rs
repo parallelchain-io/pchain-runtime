@@ -5,7 +5,8 @@
 
 //! ParallelChain Mainnet Runtime is a **State Transition Function**
 //! that transits an input state of the blockchain to the next state.
-//! It is also the sole system component that executes WebAssembly smart contracts
+//!
+//! It is also the sole system component that executes WebAssembly (Wasm) smart contracts
 //! written in Rust by using the ParallelChain Smart Contract Development Kit (SDK).
 //!
 //! ```text
@@ -14,7 +15,7 @@
 //! WS = World state represented by set of key-value pairs
 //! BD = Blockchain Data
 //! TX = Transaction, which is essentially a sequence of Commands
-//! R = Receipt, which is a sequence of Command Receipts correspondingly.
+//! R = Receipt, comprising mainly a corresponding sequence of Command Receipts
 //! ```
 //!
 //! ### Example
@@ -37,13 +38,14 @@
 //! and the [reward formulas](rewards_formulas) in this library.
 //!
 //! The execution of [commands](commands) incurs gas, and this will be recorded in the respective receipts.
-//! Smart contracts can also effect state transitions, through the underlying [wasmer](wasmer) WebAssembly runtime.
+//! Smart [contracts](contract) can also effect state transitions, through the underlying [wasmer](wasmer) WebAssembly runtime.
 
 pub mod commands;
 
 pub mod context;
 
 pub mod contract;
+pub use contract::cbi_version::cbi_version;
 pub use contract::wasmer::cache::Cache;
 
 pub mod error;
@@ -56,8 +58,7 @@ pub mod rewards_formulas;
 
 pub mod transition;
 pub use transition::{
-    cbi_version, Runtime, TransitionV1Result, TransitionV1ToV2Result, TransitionV2Result,
-    ValidatorChanges,
+    Runtime, TransitionV1Result, TransitionV1ToV2Result, TransitionV2Result, ValidatorChanges,
 };
 
 pub mod types;

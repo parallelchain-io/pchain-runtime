@@ -3,12 +3,19 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-// TODO 1
-//! Defines a global [GasMeter] that is the single source for truth for total gas used in a transaction.
-//! It is responsible for the actual gas deduction,
-//! and presents a facade for all charegeable operations (e.g. World State operations),
-//! except operations during contract execution that are called via the (Wasm Host Function Gas Meter)[crate::gas::wasmer_gas::HostFuncGasMeter].
-//! The GasMeter lives for the entire duration of a Transaction.
+//! Global [GasMeter] for tracking gas usage throughout the entire state transition.
+//!
+//! Acting as a facade, this GasMeter provides access to gas-related operations
+//! outside of a Wasm environment through its exposed methods,
+//! and serves as the authoritative source for the gas usage tracking.
+//!
+//! It integrates with the [WasmerGas](crate::gas::wasmer_gas) module for Wasm gas tracking,
+//! with the latter's usage being recorded and then deducted from this GasMeter.
+//!
+//! The GasMeter is tied to its parent [TransitionContext](crate::context::TransitionContext)
+//! and remains active for the full duration of the state transition.
+//! Designed as a singleton, the GasMeter can be cloned for operational convenience,
+//! yet there is always a single, authoritative instance in operation at any given time.
 
 use std::cell::RefCell;
 
@@ -50,7 +57,7 @@ where
     /// finalized and reset at the end of each command
     gas_used_for_current_command: GasUsed,
 
-    /*** Operations involving the following data structures are chargeable ***/
+    /* ↓↓↓ Operations involving the following data structures are chargeable ↓↓↓ */
     /// stores all resulting outputs from executing the current command
     pub output_cache_of_current_command: CommandOutputCache,
 
@@ -105,11 +112,7 @@ where
         (gas_used, command_output)
     }
 
-    //
-    //
-    // Gas Accounting
-    //
-    //
+    /* ↓↓↓ Gas accounting methods ↓↓↓ */
 
     /// method to bring in gas consumed in the Wasmer env due to
     /// 1) read and write to Wasmer memory,
@@ -138,11 +141,7 @@ where
             .saturating_add(self.total_gas_used_for_executed_commands)
     }
 
-    //
-    //
-    // Facade methods for Transaction Storage methods that cost gas
-    //
-    //
+    /* ↓↓↓ Facade methods for transaction storage operations ↓↓↓ */
 
     pub fn charge_txn_pre_exec_inclusion(
         &mut self,
@@ -200,17 +199,11 @@ where
         self.charge(result)
     }
 
-    //
-    //
-    // Facade methods for World State methods that cost gas
-    //
-    //
-    //
+    /* ↓↓↓ Facade methods for World State operations ↓↓↓ */
 
     //
     // CONTAINS methods
     //
-    /// Check if App key has non-empty data
     pub fn ws_contains_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> bool {
         let result =
             operations::ws_contains_storage_data(self.version, &mut self.ws_cache, address, key);
@@ -220,14 +213,12 @@ where
     //
     // GET methods
     //
-    /// Gets app data from the read-write set.
     pub fn ws_storage_data(&mut self, address: PublicAddress, key: &[u8]) -> Option<Vec<u8>> {
         let result = operations::ws_storage_data(self.version, &mut self.ws_cache, address, key);
         let value = self.charge(result)?;
         (!value.is_empty()).then_some(value)
     }
 
-    /// Get the balance from read-write set. It balance is not found, gets from WS and caches it.
     pub fn ws_balance(&self, address: PublicAddress) -> u64 {
         let result = operations::ws_balance(&self.ws_cache, &address);
         self.charge(result)
@@ -259,27 +250,27 @@ where
         self.charge(result)
     }
 
-    /// Sets balance in the write set. It does not write to WS immediately.
+    /// Sets balance in the write set, note it does not write to WS immediately.
     pub fn ws_set_balance(&mut self, address: PublicAddress, value: u64) {
         let result = operations::ws_set_balance(&mut self.ws_cache, address, value);
         self.charge(result)
     }
 
-    /// Sets CBI version in the write set. It does not write to WS immediately.
+    /// Sets CBI version in the write set, note it does not write to WS immediately.
     pub fn ws_set_cbi_version(&mut self, address: PublicAddress, cbi_version: u32) {
         let result = operations::ws_set_cbi_version(&mut self.ws_cache, address, cbi_version);
         self.charge(result)
     }
 
-    /// Sets contract bytecode in the write set. It does not write to WS immediately.
+    /// Sets contract bytecode in the write set, note it does not write to WS immediately.
     pub fn ws_set_code(&mut self, address: PublicAddress, code: Vec<u8>) {
         let result = operations::ws_set_contract_code(&mut self.ws_cache, address, code);
         self.charge(result)
     }
 }
 
-/// GasMeter implements NetworkAccountStorage to expose CHARGEABLE read-write operations to the network world state
-/// such as when contracts interact with the network account's storage.
+/// GasMeter implements NetworkAccountStorage to expose *chargeable* read-write operations to the
+/// network account's storage, such as when contracts interact with it.
 impl<'a, S, V> NetworkAccountStorage for GasMeter<'a, S, V>
 where
     S: DB + Send + Sync + Clone,
@@ -302,6 +293,10 @@ where
     }
 }
 
+/// Struct for recording gas used by a single command.
+/// A `RefCell` is used here to enable interior mutability.
+/// This design choice allows the struct to modify its `total` field
+/// (the gas used) even when methods are called with only a read-only reference.
 #[derive(Clone, Default)]
 pub(crate) struct GasUsed {
     total: RefCell<CostChange>,

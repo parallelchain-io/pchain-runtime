@@ -3,18 +3,26 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-// TODO 1
-//! Defines a cache layer that abstracts operations on the World State.
+//! A cache layer for efficient operations on the World State.
+//!
+//! Acting as a gatekeeper, the [WorldStateCache] centralizes access control, ensuring that all operations on the World State are channeled through it.
+//!
+//! Primarily utilized by the [GasMeter](crate::gas::GasMeter), it directs the persistence of specific data types to their respective
+//! sections within the World State's various tries.
+//!
+//! It also leverages caching, and batching of updates, to improve read and write peformance.
 
 use std::{cell::RefCell, collections::HashMap};
 
 use pchain_types::cryptography::PublicAddress;
 use pchain_world_state::{VersionProvider, WorldState, DB};
 
-/// The WorldStateCache contains different cache categories representing the types of data that
-/// are stored for an Account (excluding the nonce which is not determined by users).
+/// Unified container for different caches representing the various types of data
 ///
-/// Within each data category, there are two sets of caches
+/// Each data type for an Account is held in its own sets of cache, excluding nonces
+/// which are not mutated by command execution (only after).
+///
+/// Within each data category, there are two sets of caches:
 /// - `reads` (data read first-hand from World State)
 /// - `writes` (data pending to be written to World State)
 ///
@@ -242,6 +250,7 @@ impl CacheValue for Vec<u8> {
     }
 }
 
+/// Generic hashmap based cache for storing key-value pairs.
 #[derive(Clone, Default)]
 pub(crate) struct CacheData<K, V> {
     /// writes caches key-value pairs for Write operations before committing to World State.

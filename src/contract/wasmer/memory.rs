@@ -8,7 +8,7 @@
 use anyhow::{anyhow, Result};
 use wasmer::{Array, Memory, NativeFunc, WasmPtr};
 
-/// Provides read-write access to Wasm linear memory through the [Wasmer Environment](super::wasmer_env).
+/// Provides read-write access to Wasm linear memory through the [Wasmer Environment](crate::contract::wasmer::env).
 /// This Memory context interfaces with Wasmer's exports to facilitate memory operations.
 pub trait MemoryContext {
     fn memory(&self) -> &Memory;

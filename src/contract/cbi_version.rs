@@ -4,14 +4,23 @@
 */
 
 //! Defines versioning of the ParallelChain Mainnet Contract Binary Interface (CBI).
-//! Each version references specification that smart contracts need to follow.
+//!
+//! Each version codifies specifications that smart contracts need to follow.
+
+/// current CBI version
 pub const CBI_VERSION: u32 = CBIVER_ADAM;
 
 /// CBI version defined in protocol v0.4 and v0.5.
 const CBIVER_ADAM: u32 = 0;
 
-/// Check if version is compatible to runtime. Current CBI version = [CBI_VERSION].
+/// check if the given CBI version is compatible with the current CBI version
 #[allow(clippy::absurd_extreme_comparisons)]
 pub(crate) const fn is_cbi_compatible(version: u32) -> bool {
     version <= CBI_VERSION
+}
+
+/// returns present CBI versin
+#[inline]
+pub const fn cbi_version() -> u32 {
+    CBI_VERSION
 }

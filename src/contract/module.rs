@@ -4,6 +4,8 @@
 */
 
 //! An abstraction of the smart contract module compiled from Wasm bytecode that exposes high-level management APIs.
+//!
+//! The [ContractModule] struct is typically compiled during [command execution](crate::commands::account) and cached for subsequent calls.
 
 use std::{
     mem::transmute,
@@ -36,6 +38,7 @@ pub(crate) struct ContractModule {
 }
 
 impl ContractModule {
+    /// called during contract invocation for faster loading of the Wasm module
     pub fn from_cache(address: PublicAddress, sc_context: &SmartContractContext) -> Option<Self> {
         let store = store::instantiate_store(u64::MAX, sc_context.memory_limit);
         sc_context

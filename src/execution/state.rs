@@ -3,30 +3,31 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-// TODO 1
-//! Abstraction encapsulating the entire state of transaction execution.
+//! Abstraction over the entire state of transaction execution.
 //!
-//! It serves as a central structure holding all inputs and outputs for a transaction's lifecycle,
-//! excluding Command data, which is passed separately to execution functions alongside ExecutionState,
+//! [ExecutionState] is the central data structure holding all inputs and outputs for a transaction's lifecycle,
+//! excluding [Commands](pchain_types::blockchain::Command), which are passed separately to execution functions alongside the ExecutionState,
 //! to emphasize that Command data is separate from mutated state.
 
 use pchain_types::blockchain::{
     CommandReceiptV1, CommandReceiptV2, ExitCodeV1, ExitCodeV2, ReceiptV1, ReceiptV2,
 };
 use pchain_world_state::{VersionProvider, WorldState, DB};
-use receipt_cache::ReceiptCacher;
+use receipt_buffer::ProcessReceipts;
 
 use crate::{
     context::TransitionContext,
-    types::{self, BaseTx, CommandKind, DeferredCommand},
+    types::{self, CommandKind, DeferredCommand, TxnMetadata},
     BlockchainParams, TransitionError,
 };
 
-use super::cache::{receipt_cache, CommandReceiptCache};
+use super::cache::{receipt_buffer, CommandReceiptBuffer};
 
-/// ExecutionState acts as a unified repository of the transaction's current state, including
-/// details like submitted transaction data (excluding Commmands), blockchain parameters,
+/// A unified repository of the transaction's current state.
+///
+/// It includes submitted transaction data (excluding Commmands), blockchain parameters,
 /// and World State (via TransitionContext).
+///
 /// It lives for the entire life of a transaction's execution.
 pub(crate) struct ExecutionState<'a, S, E, V>
 where
@@ -34,7 +35,7 @@ where
     V: VersionProvider + Send + Sync + Clone,
 {
     /// Base Transaction as a transition input
-    pub tx: BaseTx,
+    pub tx: TxnMetadata,
 
     /// Blockchain data as a transition input, which includes the block specific context
     pub bd: BlockchainParams,
@@ -43,7 +44,7 @@ where
     pub ctx: TransitionContext<'a, S, V>,
 
     /// Output cache for Command Receipts, which store the results and metadata of executed commands.
-    pub receipt: CommandReceiptCache<E>,
+    pub receipt: CommandReceiptBuffer<E>,
 }
 
 impl<'a, S, E, V> ExecutionState<'a, S, E, V>
@@ -51,12 +52,12 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    pub fn new(tx: BaseTx, bd: BlockchainParams, ctx: TransitionContext<'a, S, V>) -> Self {
+    pub fn new(tx: TxnMetadata, bd: BlockchainParams, ctx: TransitionContext<'a, S, V>) -> Self {
         Self {
             tx,
             bd,
             ctx,
-            receipt: CommandReceiptCache::<E>::new(),
+            receipt: CommandReceiptBuffer::<E>::new(),
         }
     }
 }

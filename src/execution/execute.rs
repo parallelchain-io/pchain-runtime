@@ -3,11 +3,18 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-// TODO 1
-
-//! Specifies the execution behaviour of Commands (and resulting DeferredCommands)
-//! that are sent by users to the blockchain.
-//! Note that the NextEpoch Command is handled separately in [execute_next_epoch_command](crate::execution::execute_next_epoch).
+//! Facilitates polymorphic execution of user-sent [Commands](pchain_types::blockchain::Command) through the `Execute` trait.
+//!
+//! This trait, implemented for various Commands contained in [TransactionV1](pchain_types::blockchain::TransactionV1) and
+//! [TransactionV2](pchain_types::blockchain::TransactionV2), allows each Command to be executed via a uniform `.execute()` method.
+//!
+//! The unified approach, enabled by the Execute trait, ensures consistent processing of diverse Command types by the
+//! [generic executor function](crate::execution::execute_commands), and separates command-specific logic from the execution flow.
+//!
+//! Additionally the execution of these Commands may generate DeferredCommands, which are executed using similar logic.
+//!
+//! While user-sent Commands are handled here, specialized Commands like NextEpoch are managed separately
+//! in [execute_next_epoch_command](crate::execution::execute_next_epoch).
 
 use pchain_types::{
     blockchain::Command,

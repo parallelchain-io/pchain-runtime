@@ -3,20 +3,22 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of state transition functions.
+//! Entry points for state transition functions.
 //!
-//! The struct [Runtime] is an entry point to trigger state transition. It provides methods to
-//! take in a [Transaction] with [blockchain parameters](BlockchainParams). It then outputs a [TransitionResult]
-//! committing a set of deterministic state changes to the [World State](WorldState),
-//! which we be included in subsequent state changes
+//! The [Runtime] primarily facilitates the execution of state transitions.
+//! These transitions process either a [TransactionV1] or [TransactionV2], along with [blockchain parameters](BlockchainParams),
+//! resulting in either a [TransitionV1Result] or [TransitionV2Result].
+//! This process involves committing deterministic state changes to the [World State](WorldState),
+//! forming the foundation for future transitions.
 //!
-//! The result of state transition includes
-//! - State changes to [world state](pchain_world_state)
-//! - [Receipt]
-//! - [Transition Error](TransitionError)
-//! - [ValidatorChanges] (for [NextEpoch](pchain_types::blockchain::Command::NextEpoch) command)
+//! State transition outcomes include:
+//! - State modifications in the [world state](pchain_world_state)
+//! - [ReceiptV1] or [ReceiptV2]
+//! - [TransitionError]
+//! - [ValidatorChanges] (specific to the [NextEpoch](pchain_types::blockchain::Command::NextEpoch) command)
 //!
-//! [Runtime] also exposes a method to execute [view calls](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
+//! Additionally, the [Runtime] offers methods to execute [view calls](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls)
+//! and to transition between [World State V1](pchain_world_state::V1) and [V2](pchain_world_state::V2).
 
 use pchain_types::{
     blockchain::{
@@ -32,23 +34,19 @@ use crate::{
     contract::SmartContractContext,
     execution::{
         execute_commands::{execute_commands_v1, execute_commands_v2},
+        // execute_commands::{execute_commands_v1, execute_commands_v2},
         execute_next_epoch::{execute_next_epoch_v1, execute_next_epoch_v2},
         execute_view::{execute_view_v1, execute_view_v2},
         state::ExecutionState,
     },
-    types::{BaseTx, TxnVersion},
+    types::{TxnMetadata, TxnVersion},
     BlockchainParams, Cache, TransitionError,
 };
 
-/// Version of Contract Binary Interface
-#[inline]
-pub const fn cbi_version() -> u32 {
-    crate::contract::CBI_VERSION
-}
-
 /// A Runtime for state transition.
-/// Instances of runtime share the same execution logic,
-/// but offer tunable configurations such as data cache for smart contract and memory limit allowed for Wasm contract code execution.
+/// Instances share the same execution logic,
+/// but offer tunable configurations such as data cache for smart contract
+/// and memory limit allowed for Wasm contract code execution.
 #[derive(Default)]
 pub struct Runtime {
     sc_context: SmartContractContext,
@@ -87,7 +85,7 @@ impl Runtime {
         V: VersionProvider + Send + Sync + Clone + 'static,
     {
         // transaction inputs
-        let base_tx = BaseTx::from(&tx);
+        let base_tx = TxnMetadata::from(&tx);
         let commands = tx.commands;
 
         // create transition context from world state
@@ -117,7 +115,7 @@ impl Runtime {
         V: VersionProvider + Send + Sync + Clone + 'static,
     {
         // transaction inputs
-        let base_tx = BaseTx::from(&tx);
+        let base_tx = TxnMetadata::from(&tx);
         let commands = tx.commands;
 
         // create transition context from world state
@@ -153,7 +151,7 @@ impl Runtime {
         ctx.sc_context = self.sc_context.clone();
 
         // create a dummy transaction
-        let dummy_tx = BaseTx {
+        let dummy_tx = TxnMetadata {
             gas_limit,
             ..Default::default()
         };
@@ -185,7 +183,7 @@ impl Runtime {
         ctx.sc_context = self.sc_context.clone();
 
         // create a dummy transaction
-        let dummy_tx = BaseTx {
+        let dummy_tx = TxnMetadata {
             gas_limit,
             ..Default::default()
         };
@@ -206,7 +204,7 @@ impl Runtime {
         tx: TransactionV1,
         bd: BlockchainParams,
     ) -> TransitionV1ToV2Result<'a, S> {
-        let base_tx = BaseTx::from(&tx);
+        let base_tx = TxnMetadata::from(&tx);
         let commands = tx.commands;
 
         let mut ctx = TransitionContext::new(base_tx.version, ws, tx.gas_limit);
@@ -249,13 +247,14 @@ impl Runtime {
     }
 }
 
-/// Result of a world state upgrade from V1 to V2. It is the return type of `pchain_runtime::Runtime::upgrade_ws_v1_to_v2`.
+/// Result of a world state upgrade from V1 to V2.
+/// Return type of `pchain_runtime::Runtime::upgrade_ws_v1_to_v2`.
 #[derive(Clone)]
 pub struct TransitionV1ToV2Result<'a, S>
 where
     S: DB + Send + Sync + Clone + 'static,
 {
-    /// New world state (ws') after upgrading to V2
+    /// Next world state (ws') after upgrading to V2
     pub new_state: Option<WorldState<'a, S, V2>>,
     /// Transaction receipt, always None.
     pub receipt: Option<ReceiptV1>,
@@ -265,25 +264,26 @@ where
     pub validator_changes: Option<ValidatorChanges>,
 }
 
-/// Result of state transition. It is the return type of `pchain_runtime::Runtime::transition`.
+/// Return type of `pchain_runtime::Runtime::transition_v1`.
 #[derive(Clone)]
 pub struct TransitionV1Result<'a, S, V>
 where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    /// New world state (ws') after state transition
+    /// Next world state (ws') after state transition
     pub new_state: WorldState<'a, S, V>,
-    /// Transaction receipt. None if the transition receipt is not includable in the block
+    /// Transaction receipt. None if no commands were executed,
+    /// e.g. due to failing checks in the pre-charge phase
     pub receipt: Option<ReceiptV1>,
     /// Transition error. None if no error.
     pub error: Option<TransitionError>,
-    /// Changes in validate set.
-    /// It is specific to [Next Epoch](pchain_types::blockchain::Command::NextEpoch) Command. None for other commands.
+    /// Changes in validator set.
+    /// Only from executing the [Next Epoch](pchain_types::blockchain::Command::NextEpoch) Command. None for other commands.
     pub validator_changes: Option<ValidatorChanges>,
 }
 
-/// Result of state transition. It is the return type of `pchain_runtime::Runtime::transition`.
+/// Return type of `pchain_runtime::Runtime::transition_v2`.
 ///
 /// [V1](TransitionV1Result) -> V2: contains ReceiptV2 instead of ReceiptV1
 #[derive(Clone)]
@@ -292,14 +292,15 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    /// New world state (ws') after state transition
+    /// Next world state (ws') after state transition
     pub new_state: WorldState<'a, S, V>,
-    /// Transaction receipt. None if the transition receipt is not includable in the block
+    /// Transaction receipt. None if no commands were executed,
+    /// e.g. due to failing checks in the pre-charge phase
     pub receipt: Option<ReceiptV2>,
     /// Transition error. None if no error.
     pub error: Option<TransitionError>,
-    /// Changes in validate set.
-    /// It is specific to [Next Epoch](pchain_types::blockchain::Command::NextEpoch) Command. None for other commands.
+    /// Changes in validator set.
+    /// Only from executing the [Next Epoch](pchain_types::blockchain::Command::NextEpoch) Command. None for other commands.
     pub validator_changes: Option<ValidatorChanges>,
 }
 
@@ -307,7 +308,7 @@ where
 /// executing Command [NextEpoch](pchain_types::blockchain::Command::NextEpoch).
 #[derive(Clone, Debug)]
 pub struct ValidatorChanges {
-    /// the new validator set in list of tuple of operator address and power
+    /// the next validator set in list of tuple of operator address and power
     pub new_validator_set: Vec<(PublicAddress, u64)>,
     /// the list of address of operator who is removed from state
     pub remove_validator_set: Vec<PublicAddress>,

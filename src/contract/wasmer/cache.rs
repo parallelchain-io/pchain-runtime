@@ -3,10 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-// TODO 1
-//! Defines a cache for Wasm modules compiled from smart contract bytecode.
-//! The cache also stores metadata about the smart contract, such as the CBI version and
-//! the size of the Wasm bytecode before compilation.
+//! Provides a cache for Wasm modules essential for smart contract execution.
+//!
+//! The `Cache` is a key component used by [SmartContractContext](crate::contract::SmartContractContext),
+//! facilitating efficient retrieval of modules compiled from smart contract bytecode.
+//! In addition to caching, it maintains critical metadata, including the CBI version and
+//! the size of the Wasm bytecode pre-compilation.
 
 use anyhow::Result;
 use pchain_types::cryptography::PublicAddress;
@@ -20,7 +22,9 @@ use wasmer_cache::{Cache as WasmerCache, FileSystemCache};
 
 use crate::contract;
 
-/// The Cache struct uses [FileSystemCache] from Wasmer as the backing cache storage.
+/// Represents the backing storage for Wasm module cache.
+/// The `Cache` struct encapsulates a [FileSystemCache] from Wasmer,
+/// housed in a directory pointed to by the (`inner`) field.
 #[derive(Clone)]
 pub struct Cache {
     inner: Arc<RwLock<FileStorage>>,

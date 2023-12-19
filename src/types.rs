@@ -3,7 +3,7 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines common data structures used within this library, or from external crates
+//! Defines common data structures and formatting functions used in Runtime, or in other crates.
 
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
@@ -20,7 +20,7 @@ use pchain_types::{
     serialization::Serializable,
 };
 
-/// Defines information that are supplied to state transition function.
+/// Metadata relating to the current block supplied to state transition function.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct BlockchainParams {
     /// Height of the Block
@@ -53,7 +53,7 @@ pub struct ValidatorPerformance {
     pub stats: HashMap<PublicAddress, BlockProposalStats>,
 }
 
-/// Statistics on Block Proposal
+/// Statistics on the number of proposed blocks by a validator
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockProposalStats {
     /// Number of proposed blocks within an epoch
@@ -68,12 +68,11 @@ impl BlockProposalStats {
     }
 }
 
-/// BaseTx consists of common fields inside [Transaction].
+/// Transaction metadata as input based dervied from a subset fields of [TransactionV1] or [TransactionV2].
 #[derive(Clone, Default)]
-pub(crate) struct BaseTx {
+pub(crate) struct TxnMetadata {
     pub version: TxnVersion,
     pub command_kinds: Vec<CommandKind>,
-
     pub signer: PublicAddress,
     pub hash: Sha256Hash,
     pub nonce: u64,
@@ -84,7 +83,7 @@ pub(crate) struct BaseTx {
     pub size: usize,
 }
 
-impl From<&TransactionV1> for BaseTx {
+impl From<&TransactionV1> for TxnMetadata {
     fn from(tx: &TransactionV1) -> Self {
         Self {
             version: TxnVersion::V1,
@@ -99,7 +98,7 @@ impl From<&TransactionV1> for BaseTx {
     }
 }
 
-impl From<&TransactionV2> for BaseTx {
+impl From<&TransactionV2> for TxnMetadata {
     fn from(tx: &TransactionV2) -> Self {
         Self {
             version: TxnVersion::V2,
@@ -127,7 +126,7 @@ impl Default for TxnVersion {
     }
 }
 
-/// Used to distinguish command types for V2 (ReceiptV2 and CommandReceiptV2)
+/// Enumerates types of commands without their payloads, providing a lightweight representation of various Command types.
 #[derive(Clone, Copy)]
 pub enum CommandKind {
     Transfer,
@@ -165,10 +164,10 @@ impl From<&Command> for CommandKind {
     }
 }
 
-/// CallTx is a struct representation of [pchain_types::Command::Call].
+/// Encapsulates relevant data as input for executing contract calls.
 #[derive(Clone)]
 pub(crate) struct CallTx {
-    pub base_tx: BaseTx,
+    pub base_tx: TxnMetadata,
     pub target: PublicAddress,
     pub method: String,
     pub arguments: Option<Vec<Vec<u8>>>,
@@ -176,7 +175,7 @@ pub(crate) struct CallTx {
 }
 
 impl Deref for CallTx {
-    type Target = BaseTx;
+    type Target = TxnMetadata;
     fn deref(&self) -> &Self::Target {
         &self.base_tx
     }
@@ -188,13 +187,14 @@ impl DerefMut for CallTx {
     }
 }
 
-/// DeferredCommand is the command created from contract call.
+/// Commands arising from the execution of a contract call.
 #[derive(Clone, Debug)]
 pub(crate) struct DeferredCommand {
     pub contract_address: PublicAddress,
     pub command: Command,
 }
 
+/// Holds various outputs from the execution of commands
 #[derive(Clone, Default)]
 pub(crate) struct CommandOutput {
     /// Output value in [pchain_types::blockchain::CallReceipt].

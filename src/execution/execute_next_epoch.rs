@@ -110,7 +110,7 @@ where
         // Extract receipt from current execution result
         state.finalize_cmd_receipt_collect_deferred(CommandKind::NextEpoch, &Ok(()));
 
-        // Commit to New world state
+        // Commit to next world state
         let (new_state, receipt) = state.finalize_receipt();
         TransitionV1Result {
             new_state,
@@ -147,7 +147,7 @@ where
         // Extract receipt from current execution result
         state.finalize_cmd_receipt_collect_deferred(CommandKind::NextEpoch, &Ok(()));
 
-        // Commit to New world state
+        // Commit to next world state
         let (new_state, receipt) = state.finalize_receipt();
         TransitionV2Result {
             new_state,

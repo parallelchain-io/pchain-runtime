@@ -100,9 +100,9 @@ impl WasmerGasGlobal {
     }
 }
 
-/// Implements a facade for all chargeable Wasm host functions,
-/// delegates the actual operation to the [operation] module.
-/// and deducts its cost from [WasmerGasGlobal].
+/// Implements a facade for all chargeable Wasm host functions.
+/// It delegates the actual operation to the [operations] module.
+/// and deducts its cost from [WasmerGasGlobal] through the latter's exposed method.
 pub(crate) struct HostFuncGasMeter<'a, 'b, S, M, V>
 where
     S: DB + Send + Sync + Clone + 'static,

@@ -3,20 +3,23 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct that serves as temporary store for Command Receipts.
+//! Holds command receipts in memory during command execution.
+//!
+//! This storage is used to accumulate command receipts
+//! to form a single receipt when the transaction is fully processed.
 use pchain_types::blockchain::{
     CommandReceiptV1, CommandReceiptV2, ExitCodeV2, ReceiptV1, ReceiptV2,
 };
 
 use crate::types::{self, CommandKind};
 
-/// Store the results of execution of a Command
+/// Stores the results of execution of a Command
 #[derive(Default)]
-pub(crate) struct CommandReceiptCache<E> {
+pub(crate) struct CommandReceiptBuffer<E> {
     cmd_rcps: Vec<E>,
 }
 
-impl<E> CommandReceiptCache<E> {
+impl<E> CommandReceiptBuffer<E> {
     pub fn new() -> Self {
         Self {
             cmd_rcps: Vec::new(),
@@ -24,7 +27,7 @@ impl<E> CommandReceiptCache<E> {
     }
 }
 
-pub(crate) trait ReceiptCacher<E, R> {
+pub(crate) trait ProcessReceipts<E, R> {
     fn push_command_receipt(&mut self, command_receipt: E);
 
     fn push_deferred_command_receipt(&mut self, command_receipt: E);
@@ -32,7 +35,7 @@ pub(crate) trait ReceiptCacher<E, R> {
     fn into_receipt(self, gas_used: u64, commands: &[CommandKind]) -> R;
 }
 
-impl ReceiptCacher<CommandReceiptV1, ReceiptV1> for CommandReceiptCache<CommandReceiptV1> {
+impl ProcessReceipts<CommandReceiptV1, ReceiptV1> for CommandReceiptBuffer<CommandReceiptV1> {
     fn push_command_receipt(&mut self, command_receipt: CommandReceiptV1) {
         self.cmd_rcps.push(command_receipt)
     }
@@ -54,7 +57,7 @@ impl ReceiptCacher<CommandReceiptV1, ReceiptV1> for CommandReceiptCache<CommandR
     }
 }
 
-impl ReceiptCacher<CommandReceiptV2, ReceiptV2> for CommandReceiptCache<CommandReceiptV2> {
+impl ProcessReceipts<CommandReceiptV2, ReceiptV2> for CommandReceiptBuffer<CommandReceiptV2> {
     fn push_command_receipt(&mut self, command_receipt: CommandReceiptV2) {
         self.cmd_rcps.push(command_receipt);
     }

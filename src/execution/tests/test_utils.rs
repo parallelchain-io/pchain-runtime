@@ -7,7 +7,7 @@ use crate::{
         state::ExecutionState,
     },
     gas::{tx_inclusion_cost_v1, tx_inclusion_cost_v2},
-    types::{self, BaseTx, TxnVersion},
+    types::{self, TxnMetadata, TxnVersion},
     BlockProposalStats, BlockchainParams, TransitionV1Result, ValidatorPerformance,
 };
 use pchain_types::{
@@ -81,7 +81,7 @@ pub(crate) fn create_state_v1(
 ) -> ExecutionStateV1<SimpleStore> {
     let tx = create_tx(ACCOUNT_A);
     let ctx = TransitionContext::new(TxnVersion::V1, init_ws.unwrap(), tx.gas_limit);
-    let base_tx = BaseTx::from(&tx);
+    let base_tx = TxnMetadata::from(&tx);
 
     ExecutionState::new(base_tx, create_bd(), ctx)
 }
@@ -91,7 +91,7 @@ pub(crate) fn create_state_v2(
 ) -> ExecutionStateV2<SimpleStore> {
     let tx = create_tx_v2(ACCOUNT_A);
     let ctx = TransitionContext::new(TxnVersion::V2, init_ws.unwrap(), tx.gas_limit);
-    let base_tx = BaseTx::from(&tx);
+    let base_tx = TxnMetadata::from(&tx);
     ExecutionState::new(base_tx, create_bd(), ctx)
 }
 
@@ -104,7 +104,7 @@ pub(crate) fn set_tx(
     let mut tx = create_tx(signer);
     tx.nonce = nonce;
     tx.commands = commands.clone();
-    state.tx = BaseTx::from(&tx);
+    state.tx = TxnMetadata::from(&tx);
     tx_inclusion_cost_v1(state.tx.size, &state.tx.command_kinds)
 }
 
@@ -130,7 +130,7 @@ pub(crate) fn set_tx_v2(
     let mut tx = create_tx_v2(signer);
     tx.nonce = nonce;
     tx.commands = commands.clone();
-    state.tx = BaseTx::from(&tx);
+    state.tx = TxnMetadata::from(&tx);
     tx_inclusion_cost_v2(state.tx.size, &state.tx.command_kinds)
 }
 

@@ -3,7 +3,16 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Creates a Wasmer Store which is a collection of all the runtime state that can be manipulated by a WebAssembly program.
+//! Facilitates the configuration of a Wasm store for smart contract execution.
+//!
+//! This module provides essential functions to configure the Wasm store,
+//! which represents the collective state of all Wasm runtime objects, including functions, memory, and global variables.
+//!
+//! Utilized by [ContractModule](crate::contract::wasmer::module), this module includes functions for:
+//! - Instantiating the store with custom middleware, such as [NonDeterminismFilter](super::non_determinism_filter::NonDeterminismFilter), and configuring gas and memory limits.
+//! - Setting a cap on the Wasm linear memory.
+//!
+//! These functions play a pivotal role in tailoring the Wasmer-provided store to the exact needs of the contract execution environment.
 
 use std::convert::TryFrom;
 use std::sync::Arc;

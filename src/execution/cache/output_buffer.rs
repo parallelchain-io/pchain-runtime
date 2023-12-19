@@ -3,11 +3,13 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a temporary store for values returned from executing a Command.
+//! Temporary store for outputs from processing a single command.
+//!
+//! Used in the [GasMeter](crate::gas::GasMeter) and [HostFuncGasMeter](crate::gas::HostFuncGasMeter).
 use crate::types::CommandOutput;
 use pchain_types::blockchain::Log;
 
-/// CommandOutputCache is compatible with the fields of both CommandReceiptV1 and CommandReceiptV2.
+/// CommandOutputCache is compatible with the return fields of both CommandReceiptV1 and CommandReceiptV2.
 #[derive(Clone, Default)]
 pub(crate) struct CommandOutputCache {
     /// stores the list of event logs from exeuting a command, ordered by the sequence of emission
@@ -45,8 +47,8 @@ impl CommandOutputCache {
     }
 }
 
-/// This struct is considered as "Used" when method `as_mut` is called, which initializes default value for
-/// the data `T`.
+/// This struct is defaulted with `T:default`
+/// when `as_mut` is called for the first time.
 #[derive(Clone, Default)]
 pub(crate) struct MaybeUnused<T>(Option<T>)
 where

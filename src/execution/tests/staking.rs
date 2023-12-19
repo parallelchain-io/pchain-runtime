@@ -13,10 +13,8 @@ use pchain_types::{
 use pchain_world_state::{NetworkAccount, Pool, Stake, StakeValue};
 
 use crate::{
-    execution::{
-        execute_commands::{execute_commands_v1, execute_commands_v2},
-        execute_next_epoch::{execute_next_epoch_v1, execute_next_epoch_v2},
-    },
+    execution::execute_commands::{execute_commands_v1, execute_commands_v2},
+    execution::execute_next_epoch::{execute_next_epoch_v1, execute_next_epoch_v2},
     TransitionError,
 };
 

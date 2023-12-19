@@ -3,13 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-// TODO 7
-//! Defines a struct containing a [wasmer::Instance] to execute a method call according to ParallelChain Smart Contract Defintions.
+//! Defines a stateful instance of a WebAssembly module which can execute contract method calls.
+//!
+//! The struct is used in [ContractInstance](crate::contract::ContractInstance) to store the contract instance.
 
 use anyhow::Result;
-
-/// Instance represents a stateful instance of a WebAssembly module (quasi-process) and ready for contract method execution
-/// through its callable function.
+/// The struct contains a [wasmer::Instance] which be be invoked through its callable function.
 pub(in crate::contract) struct Instance(pub(crate) wasmer::Instance);
 
 impl Instance {

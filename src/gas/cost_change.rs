@@ -13,6 +13,8 @@
 
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
+/// CostChange contains both the deducted and rewarded gas.
+///
 /// ### Example:
 /// ```no_run
 /// let mut change = CostChange::default(); // = 0
