@@ -4,7 +4,7 @@ use pchain_types::{
     blockchain::{CommandReceiptV2, ExitCodeV1, ExitCodeV2, TransactionV1, TransactionV2},
     cryptography::{contract_address_v1, contract_address_v2},
 };
-use pchain_world_state::{WorldState, V1, V2};
+use pchain_world_state::{V1, V2};
 
 use crate::common::{
     gas::{extract_gas_used, verify_receipt_content_v2},
@@ -317,16 +317,20 @@ fn test_ctoc_use_contract() {
         .is_some());
 
     /* Version 2 */
-    // note here we build in WorldState V1 because the "all_features" contract test fixture Wasm
-    // includes a hardcoded contract V1 address from the "use_contract" macro
+    // note that this test deploys "all_features_points_to_v05_address", which is identical to "all_features"
+    // except that it points to, and is compiled with,
+    // a v05 contract address where it can invoke "basic contract"
     let storage = SimulateWorldStateStorage::default();
-    let (mut sws, _, contract_addr_2) =
-        deploy_two_contracts("basic_contract", false, "all_features", true, &storage);
+    let (mut sws, _, contract_addr_2) = deploy_two_contracts_v2(
+        "basic_contract",
+        false,
+        "all_features_points_to_v05_address",
+        true,
+        &storage,
+    );
+
     let origin_address = [2u8; 32];
     sws.set_balance(origin_address, 300_000_000);
-
-    // then upgrade to WS v2 and continue the test
-    let ws_v2 = WorldState::<SimulateWorldStateStorage, V1>::upgrade(sws.world_state).unwrap();
 
     let bd = TestData::block_params();
     let mut base_tx = TestData::transaction_v2();
@@ -335,7 +339,7 @@ fn test_ctoc_use_contract() {
 
     // Call the Second contract to make cross contract call to First contract
     let result = pchain_runtime::Runtime::new().transition_v2(
-        ws_v2,
+        sws.world_state,
         TransactionV2 {
             commands: vec![ArgsBuilder::new().add(0u64).make_call(
                 Some(0),
@@ -349,8 +353,8 @@ fn test_ctoc_use_contract() {
     );
     assert!(verify_receipt_content_v2(
         result.receipt.as_ref().expect("Receipt expected"),
-        3608886,
-        3473496,
+        3613786,
+        3478396,
         ExitCodeV2::Ok,
         0
     ));
@@ -397,8 +401,8 @@ fn test_ctoc_use_contract() {
     assert!(result.error.is_none());
     assert!(verify_receipt_content_v2(
         result.receipt.as_ref().expect("Receipt expected"),
-        3625423,
-        3489103,
+        3630323,
+        3494003,
         ExitCodeV2::Ok,
         0
     ));
@@ -593,13 +597,6 @@ fn deploy_two_contracts_v2<'a>(
 
     let result = pchain_runtime::Runtime::new().transition_v2(sws.world_state, tx, bd.clone());
     assert!(result.error.is_none());
-    assert!(verify_receipt_content_v2(
-        result.receipt.as_ref().expect("Receipt expected"),
-        223066070,
-        220290230,
-        ExitCodeV2::Ok,
-        0
-    ));
 
     let sws: SimulateWorldState<'_, V2> = result.new_state.into();
 
@@ -619,13 +616,6 @@ fn deploy_two_contracts_v2<'a>(
 
     let result = pchain_runtime::Runtime::new().transition_v2(sws.world_state, tx, bd.clone());
     assert!(result.error.is_none());
-    assert!(verify_receipt_content_v2(
-        result.receipt.as_ref().expect("Receipt expected"),
-        223066070,
-        220290230,
-        ExitCodeV2::Ok,
-        0
-    ));
     let sws: SimulateWorldState<'_, V2> = result.new_state.into();
 
     (sws, contract_address_1, contract_address_2)
