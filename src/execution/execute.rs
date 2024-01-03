@@ -8,7 +8,7 @@
 //! This trait, implemented for various Commands contained in [TransactionV1](pchain_types::blockchain::TransactionV1) and
 //! [TransactionV2](pchain_types::blockchain::TransactionV2), allows each Command to be executed via a uniform `.execute()` method.
 //!
-//! The unified approach, enabled by the Execute trait, ensures consistent processing of diverse Command types by the
+//! The unified approach ensures consistent processing of diverse Command types by the
 //! [generic executor function](crate::execution::execute_commands), and separates command-specific logic from the execution flow.
 //!
 //! Additionally the execution of these Commands may generate DeferredCommands, which are executed using similar logic.
@@ -57,7 +57,7 @@ where
         state: &mut ExecutionState<S, E, V>,
         command_index: usize,
     ) -> Result<(), TransitionError> {
-        let actor = state.tx.signer;
+        let actor = state.txn_meta.signer;
         execute(state, command_index, actor, self)
     }
 }

@@ -42,7 +42,7 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    let signer = state.tx.signer;
+    let signer = state.txn_meta.signer;
     let origin_balance = state.ctx.gas_meter.ws_balance(signer);
 
     if origin_balance < amount {
@@ -84,7 +84,7 @@ where
     V: VersionProvider + Send + Sync + Clone + 'static,
 {
     if let Some(amount) = amount {
-        let signer = state.tx.signer;
+        let signer = state.txn_meta.signer;
 
         // check balance
         let origin_balance = state.ctx.gas_meter.ws_balance(signer);
@@ -172,16 +172,16 @@ where
 
         // Check that storage related operations for execution setup have not exceeded gas limit at this point
         let gas_limit_for_execution = state
-            .tx
+            .txn_meta
             .gas_limit
             .checked_sub(state.ctx.gas_meter.total_gas_used())
             .ok_or(TransitionError::ExecutionProperGasExhausted)?;
 
         let call_tx = CallTx {
             base_tx: TxnMetadata {
-                command_kinds: state.tx.command_kinds.clone(),
+                command_kinds: state.txn_meta.command_kinds.clone(),
                 gas_limit: gas_limit_for_execution,
-                ..state.tx
+                ..state.txn_meta
             },
             amount,
             arguments,
@@ -211,7 +211,7 @@ where
         let (ctx, wasm_exec_gas, call_error) = self.instance.call();
         self.state.ctx = ctx;
         self.state.ctx.gas_meter.reduce_gas(wasm_exec_gas);
-        if self.state.tx.gas_limit < self.state.ctx.gas_meter.total_gas_used() {
+        if self.state.txn_meta.gas_limit < self.state.ctx.gas_meter.total_gas_used() {
             Some(TransitionError::ExecutionProperGasExhausted)
         } else {
             call_error.map(TransitionError::from)
@@ -234,9 +234,11 @@ where
     V: VersionProvider + Send + Sync + Clone,
 {
     // compute the deploy destination, which differs between V1 and V2 transactions
-    let contract_address = match state.tx.version {
-        TxnVersion::V1 => contract_address_v1(&state.tx.signer, state.tx.nonce),
-        TxnVersion::V2 => contract_address_v2(&state.tx.signer, state.tx.nonce, cmd_index),
+    let contract_address = match state.txn_meta.version {
+        TxnVersion::V1 => contract_address_v1(&state.txn_meta.signer, state.txn_meta.nonce),
+        TxnVersion::V2 => {
+            contract_address_v2(&state.txn_meta.signer, state.txn_meta.nonce, cmd_index)
+        }
     };
 
     let instance = match DeployInstance::instantiate(state, contract, cbi_version, contract_address)
@@ -340,7 +342,7 @@ where
         ctx.gas_meter
             .ws_set_cbi_version(contract_address, cbi_version);
 
-        (self.state.tx.gas_limit < self.state.ctx.gas_meter.total_gas_used())
+        (self.state.txn_meta.gas_limit < self.state.ctx.gas_meter.total_gas_used())
             .then_some(TransitionError::ExecutionProperGasExhausted)
     }
 }

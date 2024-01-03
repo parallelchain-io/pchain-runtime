@@ -302,7 +302,7 @@ where
     }
 
     // 5. Set the withdrawal amount to return_value
-    match state.tx.version {
+    match state.txn_meta.version {
         TxnVersion::V1 => {
             let return_value = withdrawal_amount.to_le_bytes().to_vec();
             state
@@ -374,7 +374,7 @@ where
     };
 
     // Set the staked amount to return_value
-    match state.tx.version {
+    match state.txn_meta.version {
         TxnVersion::V1 => {
             let return_value = stake_power_to_increase.to_le_bytes().to_vec();
             state
@@ -434,7 +434,7 @@ where
     );
 
     // 4. set the unstaked amount to return_value
-    match state.tx.version {
+    match state.txn_meta.version {
         TxnVersion::V1 => {
             let return_value = amount_unstaked.to_le_bytes().to_vec();
             state

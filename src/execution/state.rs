@@ -5,9 +5,15 @@
 
 //! Abstraction over the entire state of transaction execution.
 //!
-//! [ExecutionState] is the central data structure holding all inputs and outputs for a transaction's lifecycle,
-//! excluding [Commands](pchain_types::blockchain::Command), which are passed separately to execution functions alongside the ExecutionState,
-//! to emphasize that Command data is separate from mutated state.
+//! The [ExecutionState] acts as the central data structure in the transaction execution lifecycle,
+//! and encapsulates all relevant inputs and outputs necessary for processing a transaction,
+//! except for the actual [Commands](pchain_types::blockchain::Command).
+//!
+//! This design is influenced by Rust's ownership model, particularly the concept of 'taking' and consuming data.
+//! Commands are implemented separately as consumable entities.
+//! When passed to [execution functions](crate::execution::execute) along with the ExecutionState,
+//! they are effectively 'taken', or consumed, in the process.
+//! This ensures that each Command is executed only once and prevents accidental reuse.
 
 use pchain_types::blockchain::{
     CommandReceiptV1, CommandReceiptV2, ExitCodeV1, ExitCodeV2, ReceiptV1, ReceiptV2,
@@ -25,7 +31,7 @@ use super::cache::{receipt_buffer, CommandReceiptBuffer};
 
 /// A unified repository of the transaction's current state.
 ///
-/// It includes submitted transaction data (excluding Commmands), blockchain parameters,
+/// It includes submitted transaction data (excluding Commands), blockchain parameters,
 /// and World State (via TransitionContext).
 ///
 /// It lives for the entire life of a transaction's execution.
@@ -35,7 +41,7 @@ where
     V: VersionProvider + Send + Sync + Clone,
 {
     /// Base Transaction as a transition input
-    pub tx: TxnMetadata,
+    pub txn_meta: TxnMetadata,
 
     /// Blockchain data as a transition input, which includes the block specific context
     pub bd: BlockchainParams,
@@ -52,9 +58,13 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    pub fn new(tx: TxnMetadata, bd: BlockchainParams, ctx: TransitionContext<'a, S, V>) -> Self {
+    pub fn new(
+        txn_meta: TxnMetadata,
+        bd: BlockchainParams,
+        ctx: TransitionContext<'a, S, V>,
+    ) -> Self {
         Self {
-            tx,
+            txn_meta,
             bd,
             ctx,
             receipt: CommandReceiptBuffer::<E>::new(),
@@ -71,7 +81,8 @@ where
         let gas_used = self.ctx.gas_meter.total_gas_used_for_executed_commands();
         (
             self.ctx.into_ws_cache().commit_to_world_state(),
-            self.receipt.into_receipt(gas_used, &self.tx.command_kinds),
+            self.receipt
+                .into_receipt(gas_used, &self.txn_meta.command_kinds),
         )
     }
     fn finalize_cmd_receipt_collect_deferred<Q>(
@@ -126,7 +137,8 @@ where
         let gas_used = self.ctx.gas_meter.total_gas_used_for_executed_commands();
         (
             self.ctx.into_ws_cache().commit_to_world_state(),
-            self.receipt.into_receipt(gas_used, &self.tx.command_kinds),
+            self.receipt
+                .into_receipt(gas_used, &self.txn_meta.command_kinds),
         )
     }
     fn finalize_cmd_receipt_collect_deferred<Q>(

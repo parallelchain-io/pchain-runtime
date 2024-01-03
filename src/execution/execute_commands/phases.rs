@@ -33,23 +33,23 @@ where
     V: VersionProvider + Send + Sync + Clone,
 {
     state.ctx.gas_meter.charge_txn_pre_exec_inclusion(
-        state.tx.version,
-        state.tx.size,
-        &state.tx.command_kinds,
+        state.txn_meta.version,
+        state.txn_meta.size,
+        &state.txn_meta.command_kinds,
     )?;
 
     // note, remaining reads/ writes are performed directly on WS
     // not through GasMeter, hence not chargeable
     // because they are internal housekeeping and not part of the txn execution
 
-    let signer = state.tx.signer;
+    let signer = state.txn_meta.signer;
     let ws_cache = state.ctx.gas_free_ws_cache_mut();
 
     let origin_nonce = ws_cache.ws.account_trie().nonce(&signer).expect(&format!(
         "Account trie should get CBI version for {:?}",
         signer
     ));
-    if state.tx.nonce != origin_nonce {
+    if state.txn_meta.nonce != origin_nonce {
         return Err(TransitionError::WrongNonce);
     }
 
@@ -59,9 +59,9 @@ where
         .balance(&signer)
         .expect(&format!("Account trie should get balance for {:?}", signer));
 
-    let gas_limit = state.tx.gas_limit;
+    let gas_limit = state.txn_meta.gas_limit;
     let base_fee = state.bd.this_base_fee;
-    let priority_fee = state.tx.priority_fee_per_gas;
+    let priority_fee = state.txn_meta.priority_fee_per_gas;
 
     // pre_charge = gas_limit * (base_fee + priority_fee)
     let pre_charge = base_fee
@@ -92,15 +92,15 @@ where
     S: DB + Send + Sync + Clone + 'static,
     V: VersionProvider + Send + Sync + Clone,
 {
-    let signer = state.tx.signer;
+    let signer = state.txn_meta.signer;
     let base_fee = state.bd.this_base_fee;
-    let priority_fee = state.tx.priority_fee_per_gas;
+    let priority_fee = state.txn_meta.priority_fee_per_gas;
 
     let gas_used = std::cmp::min(
         state.ctx.gas_meter.total_gas_used_for_executed_commands(),
-        state.tx.gas_limit,
+        state.txn_meta.gas_limit,
     );
-    let gas_unused = state.tx.gas_limit.saturating_sub(gas_used); // Safety for avoiding underflow
+    let gas_unused = state.txn_meta.gas_limit.saturating_sub(gas_used); // Safety for avoiding underflow
 
     let ws_cache = state.ctx.gas_free_ws_cache_mut();
 

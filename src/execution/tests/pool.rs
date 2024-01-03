@@ -56,7 +56,7 @@ fn test_create_pool() {
     ///// Exceptions: /////
 
     let mut state = create_state_v1(Some(state.ctx.into_ws_cache().ws));
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let ret = execute_commands_v1(
         state,
         vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })],
@@ -65,7 +65,7 @@ fn test_create_pool() {
     assert_eq!(extract_gas_used(&ret), 1980);
 
     let mut state = create_state_v1(Some(ret.new_state));
-    state.tx.nonce = 2;
+    state.txn_meta.nonce = 2;
     let ret = execute_commands_v1(
         state,
         vec![Command::CreatePool(CreatePoolInput {
@@ -113,7 +113,7 @@ fn test_create_pool_set_policy() {
     ///// Exceptions: /////
 
     let mut state = create_state_v1(Some(state.ctx.into_ws_cache().ws));
-    state.tx.signer = ACCOUNT_B;
+    state.txn_meta.signer = ACCOUNT_B;
     let ret = execute_commands_v1(
         state,
         vec![Command::SetPoolSettings(SetPoolSettingsInput {
@@ -125,8 +125,8 @@ fn test_create_pool_set_policy() {
     assert_eq!(extract_gas_used(&ret), 1980);
 
     let mut state = create_state_v1(Some(ret.new_state));
-    state.tx.signer = ACCOUNT_A;
-    state.tx.nonce = 1;
+    state.txn_meta.signer = ACCOUNT_A;
+    state.txn_meta.nonce = 1;
     let ret = execute_commands_v1(
         state,
         vec![Command::SetPoolSettings(SetPoolSettingsInput {
@@ -138,7 +138,7 @@ fn test_create_pool_set_policy() {
     assert_eq!(extract_gas_used(&ret), 0);
 
     let mut state = create_state_v1(Some(ret.new_state));
-    state.tx.nonce = 2;
+    state.txn_meta.nonce = 2;
     let ret = execute_commands_v1(
         state,
         vec![Command::SetPoolSettings(SetPoolSettingsInput {
@@ -195,7 +195,7 @@ fn test_create_delete_pool() {
     ///// Exceptions: /////
 
     let mut state = create_state_v1(Some(state.ctx.into_ws_cache().ws));
-    state.tx.signer = ACCOUNT_B;
+    state.txn_meta.signer = ACCOUNT_B;
     let ret = execute_commands_v1(state, vec![Command::DeletePool]);
     assert_eq!(ret.error, Some(TransitionError::PoolNotExists));
     assert_eq!(extract_gas_used(&ret), 1980);
@@ -257,7 +257,7 @@ fn test_create_pool_create_deposit() {
     ///// Exceptions: /////
 
     let mut state = create_state_v1(Some(state.ctx.into_ws_cache().ws));
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let ret = execute_commands_v1(
         state,
         vec![Command::CreateDeposit(CreateDepositInput {
@@ -465,7 +465,7 @@ fn test_update_pool_epoch_change_validator() {
     let state = create_state_v1(Some(ws));
     let mut state = execute_next_epoch_test_v1(state);
 
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
 
     let ret = execute_commands_v1(state, vec![Command::DeletePool]);
     assert_eq!(
@@ -479,12 +479,12 @@ fn test_update_pool_epoch_change_validator() {
 
     let mut state = create_state_v1(Some(ret.new_state));
 
-    state.tx.nonce = 2;
+    state.txn_meta.nonce = 2;
     let state = execute_next_epoch_test_v1(state);
 
     let mut state = create_state_v1(Some(state.ctx.into_ws_cache().ws));
-    state.tx.signer = ACCOUNT_B;
-    state.tx.nonce = 0;
+    state.txn_meta.signer = ACCOUNT_B;
+    state.txn_meta.nonce = 0;
     let ret = execute_commands_v1(
         state,
         vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })],
@@ -499,7 +499,7 @@ fn test_update_pool_epoch_change_validator() {
     assert_eq!(extract_gas_used(&ret), 1432070);
     let mut state = create_state_v1(Some(ret.new_state));
 
-    state.tx.nonce = 3;
+    state.txn_meta.nonce = 3;
     execute_next_epoch_test_v1(state);
 
     /* Version 2 */
@@ -510,7 +510,7 @@ fn test_update_pool_epoch_change_validator() {
     let state = create_state_v2(Some(ws));
     let mut state = execute_next_epoch_test_v2(state);
 
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
 
     let ret = execute_commands_v2(state, vec![Command::DeletePool]);
     assert!(verify_receipt_content_v2(
@@ -522,12 +522,12 @@ fn test_update_pool_epoch_change_validator() {
     ));
 
     let mut state = create_state_v2(Some(ret.new_state));
-    state.tx.nonce = 2;
+    state.txn_meta.nonce = 2;
     let state = execute_next_epoch_test_v2(state);
 
     let mut state = create_state_v2(Some(state.ctx.into_ws_cache().ws));
-    state.tx.signer = ACCOUNT_B;
-    state.tx.nonce = 0;
+    state.txn_meta.signer = ACCOUNT_B;
+    state.txn_meta.nonce = 0;
     let ret = execute_commands_v2(
         state,
         vec![Command::CreatePool(CreatePoolInput { commission_rate: 1 })],
@@ -542,6 +542,6 @@ fn test_update_pool_epoch_change_validator() {
 
     let mut state = create_state_v2(Some(ret.new_state));
 
-    state.tx.nonce = 3;
+    state.txn_meta.nonce = 3;
     execute_next_epoch_test_v2(state);
 }

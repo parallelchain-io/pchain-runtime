@@ -1993,7 +1993,7 @@ fn test_unstake_deposit_same_owner() {
     ///// Exceptions: /////
 
     let mut state = create_state_v1(Some(state.ctx.into_ws_cache().ws));
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let ret = execute_commands_v1(
         state,
         vec![Command::UnstakeDeposit(UnstakeDepositInput {
@@ -2054,7 +2054,7 @@ fn test_unstake_deposit_same_owner() {
     ///// Exceptions: /////
 
     let mut state = create_state_v2(Some(state.ctx.into_ws_cache().ws));
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let ret = execute_commands_v2(
         state,
         vec![Command::UnstakeDeposit(UnstakeDepositInput {
@@ -2454,7 +2454,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
 
     // First proceed next epoch
     let mut state = create_state_v1(Some(ret.new_state));
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let ret = execute_next_epoch_v1(state, vec![Command::NextEpoch]);
     assert_eq!(
         (
@@ -2495,7 +2495,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
 
     // Proceed next epoch
     let mut state = create_state_v1(Some(ret.new_state));
-    state.tx.nonce = 2;
+    state.txn_meta.nonce = 2;
     state.bd.validator_performance = Some(single_node_performance(
         ACCOUNT_A,
         TEST_MAX_VALIDATOR_SET_SIZE as u32,
@@ -2627,7 +2627,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
 
     // First proceed next epoch
     let mut state = create_state_v2(Some(ret.new_state));
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let ret = execute_next_epoch_v2(state, vec![Command::NextEpoch]);
     assert!(ret.error.is_none());
     assert!(verify_receipt_content_v2(
@@ -2690,7 +2690,7 @@ fn test_withdrawal_deposit_delegated_stakes() {
     ));
     // // Proceed next epoch
     let mut state = create_state_v2(Some(ret.new_state));
-    state.tx.nonce = 2;
+    state.txn_meta.nonce = 2;
     state.bd.validator_performance = Some(single_node_performance(
         ACCOUNT_A,
         TEST_MAX_VALIDATOR_SET_SIZE as u32,

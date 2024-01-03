@@ -46,7 +46,7 @@ where
     P: NextEpochCommandStrategy<'a, S, E, R, V>,
     V: VersionProvider + Send + Sync + Clone + 'static,
 {
-    let signer = state.tx.signer;
+    let signer = state.txn_meta.signer;
 
     // Validate the input transaction:
     // - There can only be one NextEpoch Command in a transaction.
@@ -63,7 +63,7 @@ where
     if commands.len() != 1
         || commands.first() != Some(&Command::NextEpoch)
         || state.bd.validator_performance.is_none()
-        || state.tx.nonce != nonce
+        || state.txn_meta.nonce != nonce
     {
         return P::handle_invalid_next_epoch_command(state);
     }

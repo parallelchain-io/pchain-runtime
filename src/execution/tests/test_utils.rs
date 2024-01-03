@@ -81,9 +81,9 @@ pub(crate) fn create_state_v1(
 ) -> ExecutionStateV1<SimpleStore> {
     let tx = create_tx(ACCOUNT_A);
     let ctx = TransitionContext::new(TxnVersion::V1, init_ws.unwrap(), tx.gas_limit);
-    let base_tx = TxnMetadata::from(&tx);
+    let txn_meta = TxnMetadata::from(&tx);
 
-    ExecutionState::new(base_tx, create_bd(), ctx)
+    ExecutionState::new(txn_meta, create_bd(), ctx)
 }
 
 pub(crate) fn create_state_v2(
@@ -91,8 +91,8 @@ pub(crate) fn create_state_v2(
 ) -> ExecutionStateV2<SimpleStore> {
     let tx = create_tx_v2(ACCOUNT_A);
     let ctx = TransitionContext::new(TxnVersion::V2, init_ws.unwrap(), tx.gas_limit);
-    let base_tx = TxnMetadata::from(&tx);
-    ExecutionState::new(base_tx, create_bd(), ctx)
+    let txn_meta = TxnMetadata::from(&tx);
+    ExecutionState::new(txn_meta, create_bd(), ctx)
 }
 
 pub(crate) fn set_tx(
@@ -104,8 +104,8 @@ pub(crate) fn set_tx(
     let mut tx = create_tx(signer);
     tx.nonce = nonce;
     tx.commands = commands.clone();
-    state.tx = TxnMetadata::from(&tx);
-    tx_inclusion_cost_v1(state.tx.size, &state.tx.command_kinds)
+    state.txn_meta = TxnMetadata::from(&tx);
+    tx_inclusion_cost_v1(state.txn_meta.size, &state.txn_meta.command_kinds)
 }
 
 pub(crate) fn create_tx(signer: PublicAddress) -> TransactionV1 {
@@ -130,8 +130,8 @@ pub(crate) fn set_tx_v2(
     let mut tx = create_tx_v2(signer);
     tx.nonce = nonce;
     tx.commands = commands.clone();
-    state.tx = TxnMetadata::from(&tx);
-    tx_inclusion_cost_v2(state.tx.size, &state.tx.command_kinds)
+    state.txn_meta = TxnMetadata::from(&tx);
+    tx_inclusion_cost_v2(state.txn_meta.size, &state.txn_meta.command_kinds)
 }
 
 pub(crate) fn create_tx_v2(signer: PublicAddress) -> TransactionV2 {

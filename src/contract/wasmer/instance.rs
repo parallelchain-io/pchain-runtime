@@ -3,9 +3,12 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a stateful instance of a WebAssembly module which can execute contract method calls.
+//! A stateful WebAssembly module instance for executing contract method calls.
 //!
-//! The struct is used in [ContractInstance](crate::contract::ContractInstance) to store the contract instance.
+//! This struct is encapsulated as a field within the [ContractInstance](crate::contract::ContractInstance) struct,
+//! and can be accessed via the `instance` field in `ContractInstance`.
+//! This design allows users of `ContractInstance`
+//! to call a contract method without caring about the implementation.
 
 use anyhow::Result;
 /// The struct contains a [wasmer::Instance] which be be invoked through its callable function.

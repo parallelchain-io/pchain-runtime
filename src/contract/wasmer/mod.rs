@@ -7,7 +7,7 @@
 //!
 //! This module orchestrates the execution of smart contract code within a Wasm [instance].
 //!
-//! The instance is created using resources from both a [Wasm environment](mod@env) and a [Wasm Store](store),
+//! The instance is created using resources from both a [Wasm environment](env) and a [Wasm Store](store),
 //! where the environment provides read-write access to [Wasm linear memory](memory),
 //! and the store, equipped with a [Wasmer OpCode Filter](non_determinism_filter),
 //! maintains the runtime state and ensures that only valid contracts are executed.

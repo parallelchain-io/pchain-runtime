@@ -7,7 +7,8 @@
 //!
 //! The [ContractInstance] struct, which is initialized during the [smart contract call process](crate::commands::account::call),
 //! orchestrates [TransitionContext] to ensure accurate state preservation during and after contract execution.
-//! While it does not actively manage gas usage, it reads and passes on the value of any remaining gas after execution.
+//! It leverages the [Instance] struct to facilitate the actual call execution,
+//! and also reads and passes on, the calculated value of gas remaining, from the execution result.
 
 use pchain_world_state::{VersionProvider, DB};
 

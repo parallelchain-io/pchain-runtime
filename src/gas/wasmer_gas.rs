@@ -10,7 +10,7 @@
 //!
 //! There are two constructs which reflect the two sources of gas usage during a contract call.
 //! First is the [WasmerGasGlobal], which points to a global gas variable provided by a Wasmer module instance.
-//! This variable is updated by the Wasmer as Wasm opcodes are executed, and is used to track the gas usage.
+//! This variable is updated by Wasmer as Wasm opcodes are executed, and is used to track the gas usage.
 //!
 //! The second construct is the [HostFuncGasMeter], which accounts for the cost of invoking Host Function APIs.
 //! These APIs are not natively tallied for gas usage by Wasmer, hence the need for an external "host function gas meter"

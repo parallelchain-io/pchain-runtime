@@ -269,7 +269,7 @@ fn test_next_epoch_single_pool_with_vp() {
     let mut state = execute_next_epoch_test_v1(state);
     state.bd.validator_performance = Some(single_node_performance(ACCOUNT_A, 1));
     // second epoch
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let mut state = execute_next_epoch_test_v1(state);
 
     // PVP is copied by VP
@@ -385,7 +385,7 @@ fn test_next_epoch_single_pool_with_vp() {
     let mut state = execute_next_epoch_test_v2(state);
     state.bd.validator_performance = Some(single_node_performance(ACCOUNT_A, 1));
     // second epoch
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let mut state = execute_next_epoch_test_v2(state);
 
     // PVP is copied by VP
@@ -506,7 +506,7 @@ fn test_next_epoch_single_pool_auto_stake() {
     let mut state = execute_next_epoch_test_v1(state);
     state.bd.validator_performance = Some(single_node_performance(ACCOUNT_A, 1));
     // second epoch
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let mut state = execute_next_epoch_test_v1(state);
 
     // PVP is copied by VP
@@ -629,7 +629,7 @@ fn test_next_epoch_single_pool_auto_stake() {
     let mut state = execute_next_epoch_test_v2(state);
     state.bd.validator_performance = Some(single_node_performance(ACCOUNT_A, 1));
     // second epoch
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let mut state = execute_next_epoch_test_v2(state);
 
     // PVP is copied by VP
@@ -834,7 +834,7 @@ fn test_next_epoch_multiple_pools_and_stakes() {
     // Second Epoch
     let mut state = create_state_v1(Some(state.ctx.into_ws_cache().ws));
     state.bd.validator_performance = Some(all_nodes_performance());
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let t = std::time::Instant::now();
     let mut state = execute_next_epoch_test_v1(state);
     println!("next epoch 2 exec time: {}", t.elapsed().as_millis());
@@ -1007,7 +1007,7 @@ fn test_next_epoch_multiple_pools_and_stakes() {
     // Second Epoch
     let mut state = create_state_v2(Some(state.ctx.into_ws_cache().ws));
     state.bd.validator_performance = Some(all_nodes_performance());
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let t = std::time::Instant::now();
     let mut state = execute_next_epoch_test_v2(state);
     println!("next epoch 2 exec time: {}", t.elapsed().as_millis());
@@ -1185,7 +1185,7 @@ fn test_next_epoch_multiple_pools_and_stakes_auto_stake() {
     // Second Epoch
     let mut state = create_state_v1(Some(state.ctx.into_ws_cache().ws));
     state.bd.validator_performance = Some(all_nodes_performance());
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let t = std::time::Instant::now();
     let mut state = execute_next_epoch_test_v1(state);
     println!("next epoch 2 exec time: {}", t.elapsed().as_millis());
@@ -1357,7 +1357,7 @@ fn test_next_epoch_multiple_pools_and_stakes_auto_stake() {
     // Second Epoch
     let mut state = create_state_v2(Some(state.ctx.into_ws_cache().ws));
     state.bd.validator_performance = Some(all_nodes_performance());
-    state.tx.nonce = 1;
+    state.txn_meta.nonce = 1;
     let t = std::time::Instant::now();
     let mut state = execute_next_epoch_test_v2(state);
     println!("next epoch 2 exec time: {}", t.elapsed().as_millis());

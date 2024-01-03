@@ -85,15 +85,15 @@ impl Runtime {
         V: VersionProvider + Send + Sync + Clone + 'static,
     {
         // transaction inputs
-        let base_tx = TxnMetadata::from(&tx);
+        let txn_meta = TxnMetadata::from(&tx);
         let commands = tx.commands;
 
         // create transition context from world state
-        let mut ctx = TransitionContext::new(base_tx.version, ws, tx.gas_limit);
+        let mut ctx = TransitionContext::new(txn_meta.version, ws, tx.gas_limit);
         ctx.sc_context = self.sc_context.clone();
 
         // initial state for transition
-        let state = ExecutionState::new(base_tx, bd, ctx);
+        let state = ExecutionState::new(txn_meta, bd, ctx);
 
         // initiate command execution
         if commands.iter().any(|c| matches!(c, Command::NextEpoch)) {
@@ -115,15 +115,15 @@ impl Runtime {
         V: VersionProvider + Send + Sync + Clone + 'static,
     {
         // transaction inputs
-        let base_tx = TxnMetadata::from(&tx);
+        let txn_meta = TxnMetadata::from(&tx);
         let commands = tx.commands;
 
         // create transition context from world state
-        let mut ctx = TransitionContext::new(base_tx.version, ws, tx.gas_limit);
+        let mut ctx = TransitionContext::new(txn_meta.version, ws, tx.gas_limit);
         ctx.sc_context = self.sc_context.clone();
 
         // initial state for transition
-        let state = ExecutionState::new(base_tx, bd, ctx);
+        let state = ExecutionState::new(txn_meta, bd, ctx);
 
         // initiate command execution
         if commands.iter().any(|c| matches!(c, Command::NextEpoch)) {
@@ -151,7 +151,7 @@ impl Runtime {
         ctx.sc_context = self.sc_context.clone();
 
         // create a dummy transaction
-        let dummy_tx = TxnMetadata {
+        let dummy_txn_meta = TxnMetadata {
             gas_limit,
             ..Default::default()
         };
@@ -159,7 +159,7 @@ impl Runtime {
         let dummy_bd = BlockchainParams::default();
 
         // initialize state for executing view call
-        let state = ExecutionState::new(dummy_tx, dummy_bd, ctx);
+        let state = ExecutionState::new(dummy_txn_meta, dummy_bd, ctx);
 
         // execute view
         execute_view_v1(state, target, method, arguments)
@@ -183,7 +183,7 @@ impl Runtime {
         ctx.sc_context = self.sc_context.clone();
 
         // create a dummy transaction
-        let dummy_tx = TxnMetadata {
+        let dummy_txn_meta = TxnMetadata {
             gas_limit,
             ..Default::default()
         };
@@ -191,7 +191,7 @@ impl Runtime {
         let dummy_bd = BlockchainParams::default();
 
         // initialize state for executing view call
-        let state = ExecutionState::new(dummy_tx, dummy_bd, ctx);
+        let state = ExecutionState::new(dummy_txn_meta, dummy_bd, ctx);
 
         // execute view
         execute_view_v2(state, target, method, arguments)
@@ -204,12 +204,12 @@ impl Runtime {
         tx: TransactionV1,
         bd: BlockchainParams,
     ) -> TransitionV1ToV2Result<'a, S> {
-        let base_tx = TxnMetadata::from(&tx);
+        let txn_meta = TxnMetadata::from(&tx);
         let commands = tx.commands;
 
-        let mut ctx = TransitionContext::new(base_tx.version, ws, tx.gas_limit);
+        let mut ctx = TransitionContext::new(txn_meta.version, ws, tx.gas_limit);
         ctx.sc_context = self.sc_context.clone();
-        let state = ExecutionState::new(base_tx, bd, ctx);
+        let state = ExecutionState::new(txn_meta, bd, ctx);
 
         // first execute next epoch
         let TransitionV1Result {
