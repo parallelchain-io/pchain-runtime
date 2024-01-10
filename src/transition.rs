@@ -3,22 +3,23 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Entry points for state transition functions.
+//! Defines the [Runtime] struct, the entrypoint of this library and the type on which the different versions of the transition
+//! function are implemented on as methods.
 //!
-//! The [Runtime] primarily facilitates the execution of state transitions.
-//! These transitions process either a [TransactionV1] or [TransactionV2], along with [blockchain parameters](BlockchainParams),
-//! resulting in either a [TransitionV1Result] or [TransitionV2Result].
-//! This process involves committing deterministic state changes to the [World State](WorldState),
-//! forming the foundation for future transitions.
+//! ## Transition result
 //!
-//! State transition outcomes include:
+//! The output of the transition function is wrapped inside a versioned "transition result" struct ([TransitionV1Result] and
+//! [TransitionV2Result]). The contents of a transition result include:
 //! - State modifications in the [world state](pchain_world_state)
 //! - [ReceiptV1] or [ReceiptV2]
 //! - [TransitionError]
-//! - [ValidatorChanges] (specific to the [NextEpoch](pchain_types::blockchain::Command::NextEpoch) command)
-//!
-//! Additionally, the [Runtime] offers methods to execute [view calls](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls)
-//! and to transition between [World State V1](pchain_world_state::V1) and [V2](pchain_world_state::V2).
+//! - [ValidatorChanges] (Only `Some` if the transaction included a [NextEpoch](pchain_types::blockchain::Command::NextEpoch) 
+//!   command)
+//! 
+//! ## View functions
+//! 
+//! Besides the different versions of the transition function, Runtime also offers the methods [view_v1](Runtime::view_v1)
+//! [view_v2](Runtime::view_v2). These execute [view calls](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
 
 use pchain_types::{
     blockchain::{
