@@ -114,10 +114,14 @@ where
 
     /* ↓↓↓ Gas accounting methods ↓↓↓ */
 
-    /// method to bring in gas consumed in the Wasmer env due to
-    /// 1) read and write to Wasmer memory,
-    /// 2) compute cost
-    pub fn reduce_gas(&mut self, gas: u64) {
+    /// Use with caution!! Method adds on gas consumed outside of calling GasMeter methods,
+    /// which should be exceptional cases, not the norm, for accurate gas charging.
+    ///
+    /// Presently used only in the following scenarios:
+    /// 1) Gas consumed in Wasm environment as they are not metered by GasMeter
+    /// 2) Gas consumed for exhausting gas fully in WithdrawDeposit, StakeDeposit and UnstakeDeposit
+    /// when the commands are executed with insufficient gas to write the return value
+    pub fn manually_charge_gas(&mut self, gas: u64) {
         self.gas_used_for_current_command
             .charge(CostChange::deduct(gas));
     }

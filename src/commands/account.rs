@@ -210,7 +210,7 @@ where
     fn call(self) -> Option<TransitionError> {
         let (ctx, wasm_exec_gas, call_error) = self.instance.call();
         self.state.ctx = ctx;
-        self.state.ctx.gas_meter.reduce_gas(wasm_exec_gas);
+        self.state.ctx.gas_meter.manually_charge_gas(wasm_exec_gas);
         if self.state.txn_meta.gas_limit < self.state.ctx.gas_meter.total_gas_used() {
             Some(TransitionError::ExecutionProperGasExhausted)
         } else {

@@ -23,6 +23,7 @@ use crate::{
         abort::{abort, abort_if_gas_exhausted},
         state::ExecutionState,
     },
+    gas::{blockchain_storage_cost, CostChange},
     types::TxnVersion,
     TransitionError,
 };
@@ -227,38 +228,42 @@ where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone,
 {
+    let gas_meter = &mut state.ctx.gas_meter;
+
     // 1. Check if there is any deposit to withdraw
-    let mut deposits = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
+    let mut deposits = NetworkAccount::deposits(gas_meter, operator, owner);
     if !deposits.exists() {
         abort!(state, TransitionError::DepositsNotExists)
     }
     let deposit_balance = deposits.balance().unwrap();
 
     // 2. Compute withdrawal amount
-    let prev_epoch_locked_power = NetworkAccount::pvp(&mut state.ctx.gas_meter)
-        .pool(operator)
-        .map_or(0, |mut pool| {
-            if operator == owner {
-                pool.operator_stake()
-                    .map_or(0, |stake| stake.map_or(0, |s| s.power))
-            } else {
-                pool.delegated_stakes()
-                    .get_by(&owner)
-                    .map_or(0, |stake| stake.power)
-            }
-        });
-    let cur_epoch_locked_power = NetworkAccount::vp(&mut state.ctx.gas_meter)
-        .pool(operator)
-        .map_or(0, |mut pool| {
-            if operator == owner {
-                pool.operator_stake()
-                    .map_or(0, |stake| stake.map_or(0, |s| s.power))
-            } else {
-                pool.delegated_stakes()
-                    .get_by(&owner)
-                    .map_or(0, |stake| stake.power)
-            }
-        });
+    let prev_epoch_locked_power =
+        NetworkAccount::pvp(gas_meter)
+            .pool(operator)
+            .map_or(0, |mut pool| {
+                if operator == owner {
+                    pool.operator_stake()
+                        .map_or(0, |stake| stake.map_or(0, |s| s.power))
+                } else {
+                    pool.delegated_stakes()
+                        .get_by(&owner)
+                        .map_or(0, |stake| stake.power)
+                }
+            });
+    let cur_epoch_locked_power =
+        NetworkAccount::vp(gas_meter)
+            .pool(operator)
+            .map_or(0, |mut pool| {
+                if operator == owner {
+                    pool.operator_stake()
+                        .map_or(0, |stake| stake.map_or(0, |s| s.power))
+                } else {
+                    pool.delegated_stakes()
+                        .get_by(&owner)
+                        .map_or(0, |stake| stake.power)
+                }
+            });
     let locked_power = std::cmp::max(prev_epoch_locked_power, cur_epoch_locked_power);
     let withdrawal_amount = std::cmp::min(max_amount, deposit_balance.saturating_sub(locked_power));
     let new_deposit_balance = deposit_balance.saturating_sub(withdrawal_amount);
@@ -271,26 +276,23 @@ where
 
     // 4. Update the deposit's balance to reflect the withdrawal.
     if new_deposit_balance == 0 {
-        NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner).delete();
+        NetworkAccount::deposits(gas_meter, operator, owner).delete();
     } else {
-        NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner)
-            .set_balance(new_deposit_balance);
+        NetworkAccount::deposits(gas_meter, operator, owner).set_balance(new_deposit_balance);
     }
 
-    let owner_balance = state.ctx.gas_meter.ws_balance(owner);
-    state.ctx.gas_meter.ws_set_balance(
+    let owner_balance = gas_meter.ws_balance(owner);
+    gas_meter.ws_set_balance(
         owner,
         owner_balance.saturating_add(deposit_balance - new_deposit_balance),
     );
 
     // 5. If the deposit's new balance is now too small to support its Stake in the next Epoch, cap the Stake's power at the new balance.
-    if let Some(stake_power) = stake_of_pool(&mut state.ctx.gas_meter, operator, owner) {
+    if let Some(stake_power) = stake_of_pool(gas_meter, operator, owner) {
         if new_deposit_balance < stake_power {
-            if let Some(prev_pool_power) =
-                NetworkAccount::pools(&mut state.ctx.gas_meter, operator).power()
-            {
+            if let Some(prev_pool_power) = NetworkAccount::pools(gas_meter, operator).power() {
                 reduce_stake_power(
-                    &mut state.ctx.gas_meter,
+                    gas_meter,
                     operator,
                     prev_pool_power,
                     owner,
@@ -301,23 +303,39 @@ where
         }
     }
 
-    // 5. Set the withdrawal amount to return_value
-    match state.txn_meta.version {
+    let ret_val_bytes = withdrawal_amount.to_le_bytes().to_vec();
+    let ret_val_cost = match state.txn_meta.version {
         TxnVersion::V1 => {
-            let return_value = withdrawal_amount.to_le_bytes().to_vec();
-            state
-                .ctx
-                .gas_meter
-                .command_output_set_return_value(return_value);
+            CostChange::deduct(blockchain_storage_cost(ret_val_bytes.len()))
+                .net_cost()
+                .0
         }
         TxnVersion::V2 => {
-            state
-                .ctx
-                .gas_meter
-                .command_output_set_amount_withdrawn(withdrawal_amount);
+            CostChange::deduct(blockchain_storage_cost(std::mem::size_of::<u64>()))
+                .net_cost()
+                .0
+        }
+    };
+
+    // check gas before return value, to preserve behaviour of v0.4
+    // in future versions, to refactor it such that the gas meter operation itself checks for gas exhaustion and aborts
+    if gas_meter.total_gas_used().saturating_add(ret_val_cost) > state.txn_meta.gas_limit {
+        // manually deduct to full exhuastion
+        gas_meter.manually_charge_gas(ret_val_cost);
+        return abort_if_gas_exhausted(state);
+    }
+
+    // 6. Set the withdrawal amount to return_value
+    match state.txn_meta.version {
+        TxnVersion::V1 => {
+            gas_meter.command_output_set_return_value(ret_val_bytes);
+        }
+        TxnVersion::V2 => {
+            gas_meter.command_output_set_amount_withdrawn(withdrawal_amount);
         }
     }
 
+    // technically redundant but still leaving for consistency
     abort_if_gas_exhausted(state)
 }
 
@@ -334,22 +352,23 @@ where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone,
 {
+    let gas_meter = &mut state.ctx.gas_meter;
     // 1. Check if there is a Deposit to stake
-    let mut deposit = NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner);
+    let mut deposit = NetworkAccount::deposits(gas_meter, operator, owner);
     if !deposit.exists() {
         abort!(state, TransitionError::DepositsNotExists)
     }
     let deposit_balance = deposit.balance().unwrap();
 
     // 2. Check if there is a Pool to stake to.
-    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
+    let mut pool = NetworkAccount::pools(gas_meter, operator);
     if !pool.exists() {
         abort!(state, TransitionError::PoolNotExists)
     }
     let prev_pool_power = pool.power().unwrap();
 
     // We use this to update the Pool's power after the power of one of its stakes get increased.
-    let stake_power = stake_of_pool(&mut state.ctx.gas_meter, operator, owner);
+    let stake_power = stake_of_pool(gas_meter, operator, owner);
 
     let stake_power_to_increase = std::cmp::min(
         max_amount,
@@ -361,7 +380,7 @@ where
 
     // Update Stakes and the Pool's power and its position in the Next Validator Set.
     match increase_stake_power(
-        &mut state.ctx.gas_meter,
+        gas_meter,
         operator,
         prev_pool_power,
         owner,
@@ -373,23 +392,43 @@ where
         Err(_) => abort!(state, TransitionError::InvalidStakeAmount),
     };
 
+    let amt_staked_bytes = stake_power_to_increase.to_le_bytes().to_vec();
+    let amt_staked_bytes_cost = match state.txn_meta.version {
+        TxnVersion::V1 => {
+            CostChange::deduct(blockchain_storage_cost(amt_staked_bytes.len()))
+                .net_cost()
+                .0
+        }
+        TxnVersion::V2 => {
+            CostChange::deduct(blockchain_storage_cost(std::mem::size_of::<u64>()))
+                .net_cost()
+                .0
+        }
+    };
+
+    // check gas before return value, to preserve behaviour of v0.4
+    // in future versions, to refactor it such that the gas meter operation itself checks for gas exhaustion and aborts
+    if gas_meter
+        .total_gas_used()
+        .saturating_add(amt_staked_bytes_cost)
+        > state.txn_meta.gas_limit
+    {
+        // manually deduct to full exhuastion
+        gas_meter.manually_charge_gas(amt_staked_bytes_cost);
+        return abort_if_gas_exhausted(state);
+    }
+
     // Set the staked amount to return_value
     match state.txn_meta.version {
         TxnVersion::V1 => {
-            let return_value = stake_power_to_increase.to_le_bytes().to_vec();
-            state
-                .ctx
-                .gas_meter
-                .command_output_set_return_value(return_value);
+            gas_meter.command_output_set_return_value(amt_staked_bytes);
         }
         TxnVersion::V2 => {
-            state
-                .ctx
-                .gas_meter
-                .command_output_set_amount_staked(stake_power_to_increase);
+            gas_meter.command_output_set_amount_staked(stake_power_to_increase);
         }
     }
 
+    // technically redundant but still leaving for consistency
     abort_if_gas_exhausted(state)
 }
 
@@ -406,26 +445,27 @@ where
     S: DB + Send + Sync + Clone,
     V: VersionProvider + Send + Sync + Clone,
 {
+    let gas_meter = &mut state.ctx.gas_meter;
     // 1. Check if there is a Deposit to unstake.
-    if !NetworkAccount::deposits(&mut state.ctx.gas_meter, operator, owner).exists() {
+    if !NetworkAccount::deposits(gas_meter, operator, owner).exists() {
         abort!(state, TransitionError::DepositsNotExists)
     }
 
     // 2. If there is no Pool, then there is no Stake to unstake.
-    let mut pool = NetworkAccount::pools(&mut state.ctx.gas_meter, operator);
+    let mut pool = NetworkAccount::pools(gas_meter, operator);
     if !pool.exists() {
         abort!(state, TransitionError::PoolNotExists)
     }
     let prev_pool_power = pool.power().unwrap();
 
-    let stake_power = match stake_of_pool(&mut state.ctx.gas_meter, operator, owner) {
+    let stake_power = match stake_of_pool(gas_meter, operator, owner) {
         Some(stake_power) => stake_power,
         None => abort!(state, TransitionError::PoolHasNoStakes),
     };
 
     // 3. Reduce the Stake's power.
     let amount_unstaked = reduce_stake_power(
-        &mut state.ctx.gas_meter,
+        gas_meter,
         operator,
         prev_pool_power,
         owner,
@@ -433,23 +473,43 @@ where
         max_amount,
     );
 
+    let amt_unstaked_bytes = amount_unstaked.to_le_bytes().to_vec();
+    let amt_unstaked_bytes_cost = match state.txn_meta.version {
+        TxnVersion::V1 => {
+            CostChange::deduct(blockchain_storage_cost(amt_unstaked_bytes.len()))
+                .net_cost()
+                .0
+        }
+        TxnVersion::V2 => {
+            CostChange::deduct(blockchain_storage_cost(std::mem::size_of::<u64>()))
+                .net_cost()
+                .0
+        }
+    };
+
+    // check gas before return value, to preserve behaviour of v0.4
+    // in future versions, to refactor it such that the gas meter operation itself checks for gas exhaustion and aborts
+    if gas_meter
+        .total_gas_used()
+        .saturating_add(amt_unstaked_bytes_cost)
+        > state.txn_meta.gas_limit
+    {
+        // manually deduct to full exhuastion
+        gas_meter.manually_charge_gas(amt_unstaked_bytes_cost);
+        return abort_if_gas_exhausted(state);
+    }
+
     // 4. set the unstaked amount to return_value
     match state.txn_meta.version {
         TxnVersion::V1 => {
-            let return_value = amount_unstaked.to_le_bytes().to_vec();
-            state
-                .ctx
-                .gas_meter
-                .command_output_set_return_value(return_value);
+            gas_meter.command_output_set_return_value(amt_unstaked_bytes);
         }
         TxnVersion::V2 => {
-            state
-                .ctx
-                .gas_meter
-                .command_output_set_amount_unstaked(amount_unstaked);
+            gas_meter.command_output_set_amount_unstaked(amount_unstaked);
         }
     }
 
+    // technically redundant but still leaving for consistency
     abort_if_gas_exhausted(state)
 }
 

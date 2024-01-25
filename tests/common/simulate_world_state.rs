@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use pchain_types::cryptography::PublicAddress;
-use pchain_world_state::{VersionProvider, WorldState, DB};
+use pchain_world_state::{NetworkAccountStorage, VersionProvider, WorldState, DB, NETWORK_ADDRESS};
 
 #[derive(Clone)]
 pub struct SimulateWorldState<'a, V: VersionProvider + Send + Sync + Clone> {
@@ -10,6 +10,9 @@ pub struct SimulateWorldState<'a, V: VersionProvider + Send + Sync + Clone> {
 
 pub type SimulateKey = Vec<u8>;
 
+//
+// Mock storage
+//
 #[derive(Clone, Default)]
 pub struct SimulateWorldStateStorage {
     inner: HashMap<SimulateKey, Vec<u8>>,
@@ -21,6 +24,10 @@ impl DB for SimulateWorldStateStorage {
     }
 }
 
+//
+// Mock World State
+//
+
 impl<'a, V> SimulateWorldState<'a, V>
 where
     V: VersionProvider + Send + Sync + Clone,
@@ -29,6 +36,14 @@ where
         Self {
             world_state: WorldState::<SimulateWorldStateStorage, V>::new(storage),
         }
+    }
+
+    pub fn contains(&mut self, address: PublicAddress, key: Vec<u8>) -> bool {
+        self.world_state
+            .storage_trie(&address)
+            .unwrap()
+            .contains(&key)
+            .unwrap()
     }
 
     pub fn get_storage_data(&mut self, address: PublicAddress, key: Vec<u8>) -> Option<Vec<u8>> {
@@ -81,6 +96,27 @@ where
 
     pub fn get_contract_code(&self, address: PublicAddress) -> Option<Vec<u8>> {
         self.world_state.account_trie().code(&address).unwrap()
+    }
+}
+
+impl<'a, V> NetworkAccountStorage for SimulateWorldState<'a, V>
+where
+    V: VersionProvider + Send + Sync + Clone,
+{
+    fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
+        self.get_storage_data(NETWORK_ADDRESS, key.to_vec())
+    }
+
+    fn contains(&mut self, key: &[u8]) -> bool {
+        self.contains(NETWORK_ADDRESS, key.to_vec())
+    }
+
+    fn set(&mut self, key: &[u8], value: Vec<u8>) {
+        self.set_storage_data(NETWORK_ADDRESS, key.to_vec(), value);
+    }
+
+    fn delete(&mut self, key: &[u8]) {
+        self.set_storage_data(NETWORK_ADDRESS, key.to_vec(), Vec::new());
     }
 }
 

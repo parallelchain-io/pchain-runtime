@@ -182,7 +182,7 @@ fn test_success_ctoe() {
     assert_eq!(contract_balance, 0_u64);
 }
 
-/// Simulate test to call smart contract with sufficient balance in from account.q
+/// Simulate test to call smart contract with sufficient balance in from account
 /// Verify the transaction status code is FailureBalanceInsufficientInContract
 /// 1. transfer initial balance to contract at etoc call
 /// 2. make ctoe call to transfer value > contract's balance to contract itself

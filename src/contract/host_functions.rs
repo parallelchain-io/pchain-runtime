@@ -22,7 +22,7 @@ use pchain_world_state::{VersionProvider, DB, NETWORK_ADDRESS};
 
 use crate::{
     contract::{CBIHostFunctions, FuncError},
-    gas::HostFuncGasMeter,
+    gas::{blockchain_log_cost, blockchain_storage_cost, CostChange, HostFuncGasMeter},
     types::{CallTx, DeferredCommand, TxnMetadata},
 };
 
@@ -206,6 +206,18 @@ where
 
         let serialized_log = fn_gas_meter.read_bytes(log_ptr, log_len)?;
         let log = Log::deserialize(&serialized_log).map_err(|e| FuncError::Runtime(e.into()))?;
+
+        // check gas before appending log, to preserve behaviour of v0.4
+        // in future versions, to refactor it such that the gas meter operation itself checks for gas exhaustion and aborts
+        let log_cost = CostChange::deduct(blockchain_log_cost(log.topic.len(), log.value.len()))
+            .net_cost()
+            .0;
+        if log_cost > fn_gas_meter.remaining_gas() {
+            // manually deduct to full exhuastion
+            fn_gas_meter.deduct_gas(log_cost);
+            return Err(FuncError::GasExhaustionError);
+        }
+
         fn_gas_meter.command_output_append_log(log);
         Ok(())
     }
@@ -217,6 +229,18 @@ where
             HostFuncGasMeter::new(&mut ctx.gas_meter, &mut wasmer_gas_global, env);
 
         let value = fn_gas_meter.read_bytes(value_ptr, value_len)?;
+
+        // charge gas before appending return value, to preserve behaviour of v0.4
+        // in future versions, to refactor it such that the gas meter operation itself checks for gas exhaustion and aborts
+        let ret_val_cost = CostChange::deduct(blockchain_storage_cost(value.len()))
+            .net_cost()
+            .0;
+        if ret_val_cost > fn_gas_meter.remaining_gas() {
+            // manually deduct to full exhuastion
+            fn_gas_meter.deduct_gas(ret_val_cost);
+            return Err(FuncError::GasExhaustionError);
+        }
+
         fn_gas_meter.command_output_set_return_value(value);
         Ok(())
     }
