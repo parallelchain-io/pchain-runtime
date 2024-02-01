@@ -531,8 +531,8 @@ fn test_short_circuit_insufficient_gas_stake_deposit_ret_val_v2() {
     let sws_second_run: SimulateWorldState<'_, V2> = sws_first_run.clone();
 
     // expected gas costs
-    let stake_deposit_cmd_cost = 342_370;
-    let total_gas_cost = 476_170;
+    let stake_deposit_cmd_cost = 342_740;
+    let total_gas_cost = 476_540;
 
     //
     // 1. issue a StakeDeposit command with sufficient gas to stake
@@ -644,7 +644,7 @@ fn test_short_circuit_insufficient_gas_unstake_deposit_ret_val_v2() {
 
     // expected gas costs
     let tx_inclusion_cost_v2 = 133_800;
-    let cmd_cost = 275_464;
+    let cmd_cost = 275_480;
 
     //
     // 1. issue an UnstakeDeposit command with sufficient gas to stake
@@ -751,7 +751,7 @@ fn test_short_circuit_insufficient_gas_for_withdraw_dep_ret_val_v2() {
 
     // expected gas costs
     let tx_inclusion_cost_v2 = 133_800;
-    let cmd_cost = 317_680;
+    let cmd_cost = 320_860;
 
     //
     // 1. issue a WithdrawDeposit command with sufficient gas

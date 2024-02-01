@@ -79,7 +79,7 @@ impl TestFixture {
 pub(crate) fn create_state_v1(
     init_ws: Option<WorldState<SimpleStore, V1>>,
 ) -> ExecutionStateV1<SimpleStore> {
-    let tx = create_tx(ACCOUNT_A);
+    let tx = create_tx_v1(ACCOUNT_A);
     let ctx = TransitionContext::new(TxnVersion::V1, init_ws.unwrap(), tx.gas_limit);
     let txn_meta = TxnMetadata::from(&tx);
 
@@ -95,30 +95,17 @@ pub(crate) fn create_state_v2(
     ExecutionState::new(txn_meta, create_bd(), ctx)
 }
 
-pub(crate) fn set_tx(
+pub(crate) fn set_tx_v1(
     state: &mut ExecutionStateV1<SimpleStore>,
     signer: PublicAddress,
     nonce: u64,
     commands: &Vec<Command>,
 ) -> u64 {
-    let mut tx = create_tx(signer);
+    let mut tx = create_tx_v1(signer);
     tx.nonce = nonce;
     tx.commands = commands.clone();
     state.txn_meta = TxnMetadata::from(&tx);
     tx_inclusion_cost_v1(state.txn_meta.size, &state.txn_meta.command_kinds)
-}
-
-pub(crate) fn create_tx(signer: PublicAddress) -> TransactionV1 {
-    TransactionV1 {
-        signer,
-        gas_limit: 10_000_000,
-        priority_fee_per_gas: 0,
-        max_base_fee_per_gas: MIN_BASE_FEE,
-        nonce: 0,
-        hash: [0u8; 32],
-        signature: [0u8; 64],
-        commands: Vec::new(),
-    }
 }
 
 pub(crate) fn set_tx_v2(
@@ -132,6 +119,19 @@ pub(crate) fn set_tx_v2(
     tx.commands = commands.clone();
     state.txn_meta = TxnMetadata::from(&tx);
     tx_inclusion_cost_v2(state.txn_meta.size, &state.txn_meta.command_kinds)
+}
+
+pub(crate) fn create_tx_v1(signer: PublicAddress) -> TransactionV1 {
+    TransactionV1 {
+        signer,
+        gas_limit: 10_000_000,
+        priority_fee_per_gas: 0,
+        max_base_fee_per_gas: MIN_BASE_FEE,
+        nonce: 0,
+        hash: [0u8; 32],
+        signature: [0u8; 64],
+        commands: Vec::new(),
+    }
 }
 
 pub(crate) fn create_tx_v2(signer: PublicAddress) -> TransactionV2 {
@@ -505,3 +505,11 @@ pub(crate) fn verify_receipt_content_v2(
         && receipt.exit_code == receipt_exit_code
         && count == non_executed_count
 }
+
+macro_rules! try_i64 {
+    ($e:expr) => {
+        i64::try_from($e).unwrap()
+    };
+}
+
+pub(crate) use try_i64;

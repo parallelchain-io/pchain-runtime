@@ -27,10 +27,11 @@ fn test_view() {
     let mut sws: SimulateWorldState<'_, V1> = SimulateWorldState::new(&storage);
     sws.add_contract(contract_address, wasm_bytes, pchain_runtime::cbi_version());
 
+    let test_cache_folder = format!("{}/{}", CONTRACT_CACHE_FOLDER, "test_view_v1");
     // 1. call contract from world state
     let (receipt, error) = pchain_runtime::Runtime::new()
         .set_smart_contract_cache(pchain_runtime::Cache::new(std::path::Path::new(
-            CONTRACT_CACHE_FOLDER,
+            &test_cache_folder,
         )))
         .view_v1(
             sws.world_state.clone(),
@@ -59,7 +60,7 @@ fn test_view() {
     // 2. retry with use of smart contract
     let (receipt, error) = pchain_runtime::Runtime::new()
         .set_smart_contract_cache(pchain_runtime::Cache::new(std::path::Path::new(
-            CONTRACT_CACHE_FOLDER,
+            &test_cache_folder,
         )))
         .view_v1(
             sws.world_state.clone(),
@@ -74,7 +75,7 @@ fn test_view() {
     // 3. call a non-exist contract
     let (receipt, error) = pchain_runtime::Runtime::new()
         .set_smart_contract_cache(pchain_runtime::Cache::new(std::path::Path::new(
-            CONTRACT_CACHE_FOLDER,
+            &test_cache_folder,
         )))
         .view_v1(
             sws.world_state,
@@ -87,99 +88,8 @@ fn test_view() {
     assert_eq!(error, Some(TransitionError::InvalidCBI));
 
     // Clear sc cache folders.
-    if std::path::Path::new(CONTRACT_CACHE_FOLDER).exists() {
-        std::fs::remove_dir_all(CONTRACT_CACHE_FOLDER).unwrap();
-    }
-
-    /* Version 2 */
-    let wasm_bytes = TestData::get_test_contract_code("basic_contract");
-    let method_args = "arg".to_string();
-    let contract_address = contract_address_v1(&[123u8; 32], 0);
-
-    // initialize world state
-    let storage = SimulateWorldStateStorage::default();
-    let mut sws: SimulateWorldState<'_, V2> = SimulateWorldState::new(&storage);
-    sws.add_contract(contract_address, wasm_bytes, pchain_runtime::cbi_version());
-
-    // 1. call contract from world state
-    let (command_receipt, error) = pchain_runtime::Runtime::new()
-        .set_smart_contract_cache(pchain_runtime::Cache::new(std::path::Path::new(
-            CONTRACT_CACHE_FOLDER,
-        )))
-        .view_v2(
-            sws.world_state.clone(),
-            u64::MAX,
-            contract_address,
-            "emit_event_with_return".to_string(),
-            ArgsBuilder::new().add(method_args.clone()).args,
-        );
-
-    assert!(error.is_none());
-    if let CommandReceiptV2::Call(cr) = &command_receipt {
-        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
-        let ret = CallResult::parse::<u32>(cr.return_value.clone()).unwrap();
-        assert_eq!(ret, method_args.len() as u32);
-        assert!(cr
-            .logs
-            .iter()
-            .find(|e| {
-                String::from_utf8(e.topic.clone()).unwrap() == "topic: Hello From".to_string()
-                    && String::from_utf8(e.value.clone()).unwrap()
-                        == format!("Hello, Contract. From: {}", method_args).to_string()
-            })
-            .is_some());
-    } else {
-        panic!("Call command receipt expected");
-    }
-
-    let expected_gas_used = match &command_receipt {
-        CommandReceiptV2::Call(cr) => cr.gas_used,
-        _ => panic!("Call command receipt expected"),
-    };
-
-    // 2. retry with use of smart contract
-    let (commmand_receipt, error) = pchain_runtime::Runtime::new()
-        .set_smart_contract_cache(pchain_runtime::Cache::new(std::path::Path::new(
-            CONTRACT_CACHE_FOLDER,
-        )))
-        .view_v2(
-            sws.world_state.clone(),
-            u64::MAX,
-            contract_address,
-            "emit_event_with_return".to_string(),
-            ArgsBuilder::new().add(method_args.clone()).args,
-        );
-    assert!(error.is_none());
-    if let CommandReceiptV2::Call(cr) = commmand_receipt {
-        assert_eq!(cr.gas_used, expected_gas_used);
-        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
-    } else {
-        panic!("Call command receipt expected");
-    }
-
-    // 3. call a non-exist contract
-    let (command_receipt, error) = pchain_runtime::Runtime::new()
-        .set_smart_contract_cache(pchain_runtime::Cache::new(std::path::Path::new(
-            CONTRACT_CACHE_FOLDER,
-        )))
-        .view_v2(
-            sws.world_state,
-            u64::MAX,
-            [123u8; 32],
-            "emit_event_with_return".to_string(),
-            ArgsBuilder::new().add(method_args.clone()).args,
-        );
-
-    assert_eq!(error, Some(TransitionError::InvalidCBI));
-    if let CommandReceiptV2::Call(cr) = command_receipt {
-        assert_eq!(cr.exit_code, ExitCodeV2::Error);
-    } else {
-        panic!("Call command receipt expected");
-    }
-
-    // Clear sc cache folders.
-    if std::path::Path::new(CONTRACT_CACHE_FOLDER).exists() {
-        std::fs::remove_dir_all(CONTRACT_CACHE_FOLDER).unwrap();
+    if std::path::Path::new(&test_cache_folder).exists() {
+        std::fs::remove_dir_all(&test_cache_folder).unwrap();
     }
 }
 
@@ -230,8 +140,126 @@ fn test_view_failure() {
     );
     assert_eq!(receipt.exit_code, ExitCodeV1::Failed);
     assert_eq!(error, Some(TransitionError::RuntimeError));
+}
 
-    /* Version 2 */
+//
+//
+//
+//
+//
+// ↓↓↓ Version 2 ↓↓↓ //
+//
+//
+//
+//
+//
+
+/// Test calling view from runtime, cases:
+/// 1. success case: call contract from world state
+/// 2. success case: call contract from cache
+/// 3. fail case: call non-exist contract
+#[test]
+fn test_view_v2() {
+    let wasm_bytes = TestData::get_test_contract_code("basic_contract");
+    let method_args = "arg".to_string();
+    let contract_address = contract_address_v1(&[123u8; 32], 0);
+
+    // initialize world state
+    let storage = SimulateWorldStateStorage::default();
+    let mut sws: SimulateWorldState<'_, V2> = SimulateWorldState::new(&storage);
+    sws.add_contract(contract_address, wasm_bytes, pchain_runtime::cbi_version());
+
+    // use version specific test folder to avoid conflicts with v1 tests
+    let test_cache_folder = format!("{}/{}", CONTRACT_CACHE_FOLDER, "test_view_v2");
+
+    // 1. call contract from world state
+    let (command_receipt, error) = pchain_runtime::Runtime::new()
+        .set_smart_contract_cache(pchain_runtime::Cache::new(std::path::Path::new(
+            &test_cache_folder,
+        )))
+        .view_v2(
+            sws.world_state.clone(),
+            u64::MAX,
+            contract_address,
+            "emit_event_with_return".to_string(),
+            ArgsBuilder::new().add(method_args.clone()).args,
+        );
+
+    assert!(error.is_none());
+    if let CommandReceiptV2::Call(cr) = &command_receipt {
+        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
+        let ret = CallResult::parse::<u32>(cr.return_value.clone()).unwrap();
+        assert_eq!(ret, method_args.len() as u32);
+        assert!(cr
+            .logs
+            .iter()
+            .find(|e| {
+                String::from_utf8(e.topic.clone()).unwrap() == "topic: Hello From".to_string()
+                    && String::from_utf8(e.value.clone()).unwrap()
+                        == format!("Hello, Contract. From: {}", method_args).to_string()
+            })
+            .is_some());
+    } else {
+        panic!("Call command receipt expected");
+    }
+
+    let expected_gas_used = match &command_receipt {
+        CommandReceiptV2::Call(cr) => cr.gas_used,
+        _ => panic!("Call command receipt expected"),
+    };
+
+    // 2. retry with use of smart contract
+    let (commmand_receipt, error) = pchain_runtime::Runtime::new()
+        .set_smart_contract_cache(pchain_runtime::Cache::new(std::path::Path::new(
+            &test_cache_folder,
+        )))
+        .view_v2(
+            sws.world_state.clone(),
+            u64::MAX,
+            contract_address,
+            "emit_event_with_return".to_string(),
+            ArgsBuilder::new().add(method_args.clone()).args,
+        );
+    assert!(error.is_none());
+    if let CommandReceiptV2::Call(cr) = commmand_receipt {
+        assert_eq!(cr.gas_used, expected_gas_used);
+        assert_eq!(cr.exit_code, ExitCodeV2::Ok);
+    } else {
+        panic!("Call command receipt expected");
+    }
+
+    // 3. call a non-exist contract
+    let (command_receipt, error) = pchain_runtime::Runtime::new()
+        .set_smart_contract_cache(pchain_runtime::Cache::new(std::path::Path::new(
+            &test_cache_folder,
+        )))
+        .view_v2(
+            sws.world_state,
+            u64::MAX,
+            [123u8; 32],
+            "emit_event_with_return".to_string(),
+            ArgsBuilder::new().add(method_args.clone()).args,
+        );
+
+    assert_eq!(error, Some(TransitionError::InvalidCBI));
+    if let CommandReceiptV2::Call(cr) = command_receipt {
+        assert_eq!(cr.exit_code, ExitCodeV2::Error);
+    } else {
+        panic!("Call command receipt expected");
+    }
+
+    // Clear sc cache folders.
+    if std::path::Path::new(&test_cache_folder).exists() {
+        std::fs::remove_dir_all(&test_cache_folder).unwrap();
+    }
+}
+
+/// Test calling view from runtime, cases:
+/// 1. fail case: wasm runtime failule
+/// 2. fail case: gas exhausted
+/// 3. panic case: invoke non-callable view method
+#[test]
+fn test_view_failure_v2() {
     let wasm_bytes = TestData::get_test_contract_code("basic_contract");
     let target = [2u8; 32];
 

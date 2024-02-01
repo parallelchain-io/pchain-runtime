@@ -103,7 +103,6 @@ where
         + CostChange::deduct(set_cost_rehash(key_len));
 
     ws_cache.set_balance(address, balance);
-
     ((), get_cost + set_cost)
 }
 
@@ -183,10 +182,8 @@ where
     let traversed_key_len = storage_trie_traversed_key_len(txn_version, &address, key);
     let get_cost = CostChange::deduct(
         // step 1
-        storage_trie_key_hash_cost(txn_version, key)
+        get_cost_traverse(traversed_key_len)
             // step 2
-            .saturating_add(get_cost_traverse(traversed_key_len))
-            // step 3
             .saturating_add(get_cost_read(value.as_ref().map_or(0, CacheValue::len))),
     );
 
@@ -307,10 +304,7 @@ where
     let ret = ws_cache.contains_storage_data(address, key);
     let traversed_key_len = storage_trie_traversed_key_len(txn_version, &address, key);
     let cost_change = CostChange::deduct(
-        // step 1
-        storage_trie_key_hash_cost(txn_version, key)
-            // step 2
-            .saturating_add(get_cost_traverse(traversed_key_len)),
+        get_cost_traverse(traversed_key_len),
     );
     (ret, cost_change)
 }
@@ -465,28 +459,7 @@ pub (crate) fn storage_trie_traversed_key_len(
     match version {
         // protocol v0.4.0 (using TransactionV1) included extra address length on top of Account Trie key length
         TxnVersion::V1 => ACCOUNT_TRIE_KEY_LENGTH + address.len() + key.len(),
-        // protocol v0.5.0 (using TransactionV2) removes extra address length,
-        // and specifies that hashing is peformed on Storage Trie keys if longer than or equal to 32 bytes
-        // due to updates in the World State implementation
-        TxnVersion::V2 => {
-            ACCOUNT_TRIE_KEY_LENGTH + 
-            if key.len() < 32 {
-                key.len()
-            } else {
-                KECCAK256_LENGTH as usize
-            }
-        }
-    }
-}
-
-/// Helper function to calculate the cost of hashing storage trie keys if needed.
-pub (crate) fn storage_trie_key_hash_cost(txn_version: TxnVersion, key: &[u8]) -> u64 {
-    // protocol v0.4.0 (using TransactionV1) did not hash the key
-    // protocol v0.5.0 (using TransactionV2) hashes the key if longer than or equal to 32 bytes
-    match txn_version {
-        TxnVersion::V1 => 0,
-        TxnVersion::V2 => {
-            storage_trie_key_hashing_cost(key.len())
-        }
+        // protocol v0.5.0 (using TransactionV2) removes extra address length
+        TxnVersion::V2 => ACCOUNT_TRIE_KEY_LENGTH + key.len()
     }
 }
