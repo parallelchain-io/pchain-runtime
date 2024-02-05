@@ -370,15 +370,6 @@ pub fn discount_code_read(code_read_cost: u64) -> u64 {
         .saturating_div(100)
 }
 
-/// cost of hashing Storage Trie costs
-pub const fn storage_trie_key_hashing_cost(key_len: usize) -> u64 {
-    if key_len < 32 {
-        0
-    } else {
-        CRYPTO_KECCAK256_PER_BYTE * key_len as u64
-    }
-}
-
 /// Set Cost (2): Cost for deleting the old value for a refund
 /// Note, Set Cost (1) is calculated under Get costs
 #[allow(clippy::double_comparisons)]

@@ -63,16 +63,16 @@ where
 
     let traversed_key_len = storage_trie_traversed_key_len(txn_version, &address, key);
     let cost = 
-        // steps 1 and 2, note the hashing cost is included in get cost
+        // step 1
         get_cost
-        // step 3   
+        // step 2
         + CostChange::reward(set_cost_delete_old_value(
             traversed_key_len,
             old_val_len,
             new_val_len))
-        // step 4 
+        // step 3 
         + CostChange::deduct(set_cost_write_new_value(new_val_len))
-        // step 5    
+        // step 4    
         + CostChange::deduct(set_cost_rehash(traversed_key_len));
 
     ((), cost)
