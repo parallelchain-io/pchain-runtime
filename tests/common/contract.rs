@@ -67,10 +67,3 @@ impl ArgsBuilder {
         })
     }
 }
-
-/// Calculate contract address based on the from_address, nonce
-pub(crate) fn compute_contract_address(from_address: PublicAddress, nonce: u64) -> PublicAddress {
-    pchain_types::cryptography::contract_address(&from_address, nonce)
-        .try_into()
-        .unwrap()
-}

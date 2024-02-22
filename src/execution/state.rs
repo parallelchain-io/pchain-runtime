@@ -3,85 +3,209 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines a struct as Execution State which is being updated during execution.
+//! Abstraction over the entire state of transaction execution.
 //!
-//! This state is not as same as the concept of state in World State. Execution encapsulates the changing information
-//! during execution life-cycle. It is the state of execution model, but not referring to blockchain storage.
+//! The [ExecutionState] acts as the central data structure in the transaction execution lifecycle,
+//! and encapsulates all relevant inputs and outputs necessary for processing a transaction,
+//! except for the actual [Commands](pchain_types::blockchain::Command).
+//!
+//! This design is influenced by Rust's ownership model, particularly the concept of 'taking' and consuming data.
+//! Commands are implemented separately as consumable entities.
+//! When passed to [execution functions](crate::execution::execute) along with the ExecutionState,
+//! they are effectively 'taken', or consumed, in the process.
+//! This ensures that each Command is executed only once and prevents accidental reuse.
 
-use std::ops::{Deref, DerefMut};
+use pchain_types::blockchain::{
+    CommandReceiptV1, CommandReceiptV2, ExitCodeV1, ExitCodeV2, ReceiptV1, ReceiptV2,
+};
+use pchain_world_state::{VersionProvider, WorldState, DB};
+use receipt_buffer::ProcessReceipts;
 
-use pchain_world_state::{
-    keys::AppKey,
-    network::{constants::NETWORK_ADDRESS, network_account::NetworkAccountStorage},
-    storage::WorldStateStorage,
+use crate::{
+    context::TransitionContext,
+    types::{self, CommandKind, DeferredCommand, TxnMetadata},
+    BlockchainParams, TransitionError,
 };
 
-use crate::{transition::TransitionContext, types::BaseTx, BlockchainParams};
+use super::cache::{receipt_buffer, CommandReceiptBuffer};
 
-/// ExecutionState is a collection of all useful information required to transit an state through Phases.
-/// Methods defined in ExecutionState do not directly update data to world state, but associate with the
-/// [crate::read_write_set::ReadWriteSet] in [TransitionContext] which serves as a data cache in between runtime and world state.
-pub(crate) struct ExecutionState<S>
+/// A unified repository of the transaction's current state.
+///
+/// It includes submitted transaction data (excluding Commands), blockchain parameters,
+/// and World State (via TransitionContext).
+///
+/// It lives for the entire life of a transaction's execution.
+pub(crate) struct ExecutionState<'a, S, E, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    /*** Transaction ***/
     /// Base Transaction as a transition input
-    pub tx: BaseTx,
-    /// size of serialized Transaction
-    pub tx_size: usize,
-    /// length of commands in the transaction
-    pub commands_len: usize,
+    pub txn_meta: TxnMetadata,
 
-    /*** Blockchain ***/
-    /// Blockchain data as a transition input
+    /// Blockchain data as a transition input, which includes the block specific context
     pub bd: BlockchainParams,
 
-    /*** World State ***/
-    /// Transition Context which also contains world state as input
-    pub ctx: TransitionContext<S>,
+    /// Transition Context which also contains World State as input
+    pub ctx: TransitionContext<'a, S, V>,
+
+    /// Output cache for Command Receipts, which store the results and metadata of executed commands.
+    pub receipt: CommandReceiptBuffer<E>,
 }
 
-impl<S> Deref for ExecutionState<S>
+impl<'a, S, E, V> ExecutionState<'a, S, E, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    type Target = TransitionContext<S>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.ctx
+    pub fn new(
+        txn_meta: TxnMetadata,
+        bd: BlockchainParams,
+        ctx: TransitionContext<'a, S, V>,
+    ) -> Self {
+        Self {
+            txn_meta,
+            bd,
+            ctx,
+            receipt: CommandReceiptBuffer::<E>::new(),
+        }
     }
 }
 
-impl<S> DerefMut for ExecutionState<S>
+impl<'a, S, V> FinalizeState<'a, S, ReceiptV1, V> for ExecutionState<'a, S, CommandReceiptV1, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.ctx
+    fn finalize_receipt(self) -> (WorldState<'a, S, V>, ReceiptV1) {
+        let gas_used = self.ctx.gas_meter.total_gas_used_for_executed_commands();
+        (
+            self.ctx.into_ws_cache().commit_to_world_state(),
+            self.receipt
+                .into_receipt(gas_used, &self.txn_meta.command_kinds),
+        )
+    }
+    fn finalize_cmd_receipt_collect_deferred<Q>(
+        &mut self,
+        _command_kind: CommandKind,
+        execution_result: &Result<Q, TransitionError>,
+    ) -> Option<Vec<DeferredCommand>> {
+        let exit_code = match &execution_result {
+            Ok(_) => ExitCodeV1::Success,
+            Err(error) => ExitCodeV1::from(error),
+        };
+
+        // extract receipt from current execution result
+        let (gas_used, command_output, deferred_commands_from_call) =
+            self.ctx.complete_cmd_execution();
+        self.receipt.push_command_receipt(CommandReceiptV1 {
+            exit_code,
+            gas_used,
+            logs: command_output.logs,
+            return_values: command_output.return_value,
+        });
+
+        deferred_commands_from_call
+    }
+    fn finalize_deferred_cmd_receipt<Q>(
+        &mut self,
+        _command_kind: CommandKind,
+        execution_result: &Result<Q, TransitionError>,
+    ) {
+        let exit_code = match &execution_result {
+            Ok(_) => ExitCodeV1::Success,
+            Err(error) => ExitCodeV1::from(error),
+        };
+
+        // extract receipt from current execution result
+        let (gas_used, command_output, _) = self.ctx.complete_cmd_execution();
+        self.receipt
+            .push_deferred_command_receipt(CommandReceiptV1 {
+                exit_code,
+                gas_used,
+                return_values: command_output.return_value,
+                logs: command_output.logs,
+            });
+    }
+}
+impl<'a, S, V> FinalizeState<'a, S, ReceiptV2, V> for ExecutionState<'a, S, CommandReceiptV2, V>
+where
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
+{
+    fn finalize_receipt(self) -> (WorldState<'a, S, V>, ReceiptV2) {
+        let gas_used = self.ctx.gas_meter.total_gas_used_for_executed_commands();
+        (
+            self.ctx.into_ws_cache().commit_to_world_state(),
+            self.receipt
+                .into_receipt(gas_used, &self.txn_meta.command_kinds),
+        )
+    }
+    fn finalize_cmd_receipt_collect_deferred<Q>(
+        &mut self,
+        command_kind: CommandKind,
+        execution_result: &Result<Q, TransitionError>,
+    ) -> Option<Vec<DeferredCommand>> {
+        let exit_code = match &execution_result {
+            Ok(_) => ExitCodeV2::Ok,
+            Err(error) => ExitCodeV2::from(error),
+        };
+
+        // extract receipt from current execution result
+        let (gas_used, command_output, deferred_commands_from_call) =
+            self.ctx.complete_cmd_execution();
+        self.receipt
+            .push_command_receipt(types::create_executed_cmd_rcp_v2(
+                &command_kind,
+                exit_code,
+                gas_used,
+                command_output,
+            ));
+
+        deferred_commands_from_call
+    }
+    fn finalize_deferred_cmd_receipt<Q>(
+        &mut self,
+        command_kind: CommandKind,
+        execution_result: &Result<Q, TransitionError>,
+    ) {
+        let exit_code = match &execution_result {
+            Ok(_) => ExitCodeV2::Ok,
+            Err(error) => ExitCodeV2::from(error),
+        };
+
+        // extract receipt from current execution result
+        let (gas_used, command_output, _) = self.ctx.complete_cmd_execution();
+        self.receipt
+            .push_deferred_command_receipt(types::create_executed_cmd_rcp_v2(
+                &command_kind,
+                exit_code,
+                gas_used,
+                command_output,
+            ));
     }
 }
 
-/// ExecutionState implements NetworkAccountStorage with Read Write operations that:
-/// - Gas is charged in every Get/Contains/Set
-/// - Account Storage State (for app data) is opened in every Set to contract storage
-impl<S> NetworkAccountStorage for ExecutionState<S>
+/// Methods for finalizing various lifecycle checkpoints during a state transition.
+pub(crate) trait FinalizeState<'a, S, R, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec())).0
-    }
+    /// Finalize the eectuion of a single deferred command.
+    fn finalize_deferred_cmd_receipt<Q>(
+        &mut self,
+        command_kind: CommandKind,
+        execution_result: &Result<Q, TransitionError>,
+    );
 
-    fn contains(&self, key: &[u8]) -> bool {
-        self.contains_app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()))
-    }
+    /// Finalize the the execution of a single command and return any deferred commands.
+    fn finalize_cmd_receipt_collect_deferred<Q>(
+        &mut self,
+        command_kind: CommandKind,
+        execution_result: &Result<Q, TransitionError>,
+    ) -> Option<Vec<DeferredCommand>>;
 
-    fn set(&mut self, key: &[u8], value: Vec<u8>) {
-        self.set_app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()), value);
-    }
-
-    fn delete(&mut self, key: &[u8]) {
-        self.set_app_data(NETWORK_ADDRESS, AppKey::new(key.to_vec()), Vec::new());
-    }
+    /// Finalize the state transition and return the final world state and receipt.
+    fn finalize_receipt(self) -> (WorldState<'a, S, V>, R);
 }

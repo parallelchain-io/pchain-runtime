@@ -3,18 +3,23 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Defines [TransitionError] which is set of error definitions in state transitions.
+//! Defines a set of descriptive error definitions arising from state transitions.
 //!
-//! Transition Error is not failure code specified in [ExitStatus], which is not included
-//! in the block for transaction failure. The error types are for the purpose of diagnosis.
+//! Transition Errors are returned by failure paths caused by invalid input in [transition functions](crate::transition),
+//! for processes hosting the runtime to differentiate between failure modes.
+//!
+//! They are more granular than [ExitCodeV1]/[ExitCodeV2] which are included in the block transaction receipts.
 
-use pchain_types::blockchain::ExitStatus;
+use pchain_types::blockchain::{ExitCodeV1, ExitCodeV2};
 
-use crate::contract::{FuncError, MethodCallError};
+use crate::contract::{wasmer::instance::MethodCallError, FuncError};
 
 /// Descriptive error definitions of a Transition
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TransitionError {
+    /// Failed to upgrade World State
+    FailedWorldStateUpgrade,
+
     /// Nonce is not current nonce.
     WrongNonce,
 
@@ -30,7 +35,7 @@ pub enum TransitionError {
     /// The contract bytecode contains disallowed opcodes.
     DisallowedOpcode,
 
-    /// Contract cannot be compiled into machine code (it is probably invalid WASM).
+    /// Contract cannot be compiled into machine code (it is probably invalid Wasm).
     CannotCompile,
 
     /// Contract does not export the METHOD_CONTRACT method.
@@ -117,12 +122,22 @@ impl From<MethodCallError> for TransitionError {
     }
 }
 
-impl<'a> From<&'a TransitionError> for ExitStatus {
+impl<'a> From<&'a TransitionError> for ExitCodeV1 {
     fn from(value: &'a TransitionError) -> Self {
         match value {
             TransitionError::ExecutionProperGasExhausted
-            | TransitionError::InternalExecutionProperGasExhaustion => ExitStatus::GasExhausted,
-            _ => ExitStatus::Failed,
+            | TransitionError::InternalExecutionProperGasExhaustion => ExitCodeV1::GasExhausted,
+            _ => ExitCodeV1::Failed,
+        }
+    }
+}
+
+impl<'a> From<&'a TransitionError> for ExitCodeV2 {
+    fn from(value: &'a TransitionError) -> Self {
+        match value {
+            TransitionError::ExecutionProperGasExhausted
+            | TransitionError::InternalExecutionProperGasExhaustion => ExitCodeV2::GasExhausted,
+            _ => ExitCodeV2::Error,
         }
     }
 }

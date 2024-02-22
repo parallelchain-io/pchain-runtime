@@ -3,129 +3,156 @@
     Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 */
 
-//! Implementation of state transition function.
+//! Defines the [Runtime] struct, the entrypoint of this library and the type on which the different versions of the transition
+//! function are implemented on as methods.
 //!
-//! The struct [Runtime] is an entry point to trigger state transition. It provides method to
-//! intake a [Transaction] with [blockchain parameters](BlockchainParams) and then executes over
-//! the [World State](WorldState). As a result, it commits a deterministic change of state to the
-//! World State which can be inputted to the next state transition.
+//! ## Transition result
 //!
-//! The result of state transition includes
-//! - State changes to [world state](pchain_world_state)
-//! - [Receipt]
-//! - [Transition Error](TransitionError)
-//! - [ValidatorChanges] (for [NextEpoch](pchain_types::blockchain::Command::NextEpoch) command)
-//!
-//! [Runtime] also provides method to execute a [view call](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
+//! The output of the transition function is wrapped inside a versioned "transition result" struct ([TransitionV1Result] and
+//! [TransitionV2Result]). The contents of a transition result include:
+//! - State modifications in the [world state](pchain_world_state)
+//! - [ReceiptV1] or [ReceiptV2]
+//! - [TransitionError]
+//! - [ValidatorChanges] (Only `Some` if the transaction included a [NextEpoch](pchain_types::blockchain::Command::NextEpoch) 
+//!   command)
+//! 
+//! ## View functions
+//! 
+//! Besides the different versions of the transition function, Runtime also offers the methods [view_v1](Runtime::view_v1)
+//! [view_v2](Runtime::view_v2). These execute [view calls](https://github.com/parallelchain-io/parallelchain-protocol/blob/master/Contracts.md#view-calls).
 
-use pchain_types::serialization::Serializable;
 use pchain_types::{
-    blockchain::{Command, CommandReceipt, ExitStatus, Log, Receipt, Transaction},
+    blockchain::{
+        Command, CommandReceiptV1, CommandReceiptV2, ReceiptV1, ReceiptV2, TransactionV1,
+        TransactionV2,
+    },
     cryptography::PublicAddress,
 };
-use pchain_world_state::{states::WorldState, storage::WorldStateStorage};
-use std::ops::{Deref, DerefMut};
+use pchain_world_state::{VersionProvider, WorldState, DB, V1, V2};
 
 use crate::{
+    context::TransitionContext,
     contract::SmartContractContext,
-    cost::CostChange,
-    execution::{execute, state::ExecutionState},
-    read_write_set::ReadWriteSet,
-    types::{BaseTx, DeferredCommand},
-    wasmer::cache::Cache,
-    BlockchainParams, TransitionError,
+    execution::{
+        execute_commands::{execute_commands_v1, execute_commands_v2},
+        // execute_commands::{execute_commands_v1, execute_commands_v2},
+        execute_next_epoch::{execute_next_epoch_v1, execute_next_epoch_v2},
+        execute_view::{execute_view_v1, execute_view_v2},
+        state::ExecutionState,
+    },
+    types::{TxnMetadata, TxnVersion},
+    BlockchainParams, Cache, TransitionError,
 };
 
-/// Version of Contract Binary Interface
-#[inline]
-pub const fn cbi_version() -> u32 {
-    crate::contract::CBI_VERSION
-}
-
-/// A Runtime for state transition. Instants of runtime share the same execution logic, but
-/// differ in configurations such as data cache for smart contract and memory limit to WASM execution.
+/// A Runtime for state transition.
+/// Instances share the same execution logic,
+/// but offer tunable configurations such as data cache for smart contract
+/// and memory limit allowed for Wasm contract code execution.
+#[derive(Default)]
 pub struct Runtime {
-    /// Smart Contract Cache
-    sc_cache: Option<Cache>,
-    /// Memory limit to wasm linear memory in contract execution
-    sc_memory_limit: Option<usize>,
+    sc_context: SmartContractContext,
 }
 
 impl Runtime {
     pub fn new() -> Self {
-        Self {
-            sc_cache: None,
-            sc_memory_limit: None,
-        }
+        Default::default()
     }
 
-    /// specify smart contract cache to improve performance for contract code compilation.
+    /// Specify a cache for contracts already compiled down to machine code. When asked to execute a contract, the Runtime will
+    /// first look at its smart contract cache for the contract's machine code. If it is not there yet, it will get the contract's
+    /// Wasm bytecode from the world state, compile it down to machine code, and then put it into the smart contract cache. The
+    /// next time the Runtime is asked to execute the same contract, it will get its machine code from the cache and skip the
+    /// compilation step.
     pub fn set_smart_contract_cache(mut self, sc_cache: Cache) -> Self {
-        self.sc_cache = Some(sc_cache);
+        self.sc_context.cache = Some(sc_cache);
         self
     }
 
-    /// specify the limit to wasm linear memory in contract execution.
-    /// It is a tunable maximum guest memory limit that is made available to the VM
+    /// Specify how big Wasm linear memory is allowed to grow in a single contract execution.
     pub fn set_smart_contract_memory_limit(mut self, memory_limit: usize) -> Self {
-        self.sc_memory_limit = Some(memory_limit);
+        self.sc_context.memory_limit = Some(memory_limit);
         self
     }
 
     /// state transition of world state (WS) from transaction (tx) and blockchain data (bd) as inputs.
-    pub fn transition<S: WorldStateStorage + Send + Sync + Clone + 'static>(
+    pub fn transition_v1<'a, S, V>(
         &self,
-        ws: WorldState<S>,
-        tx: Transaction,
+        ws: WorldState<'a, S, V>,
+        tx: TransactionV1,
         bd: BlockchainParams,
-    ) -> TransitionResult<S> {
-        // create transition context from world state
-        let mut ctx = TransitionContext::new(ws);
-        if let Some(cache) = &self.sc_cache {
-            ctx.sc_context.cache = Some(cache.clone());
-        }
-        ctx.sc_context.memory_limit = self.sc_memory_limit;
-
+    ) -> TransitionV1Result<'a, S, V>
+    where
+        S: DB + Send + Sync + Clone + 'static,
+        V: VersionProvider + Send + Sync + Clone + 'static,
+    {
         // transaction inputs
-        let tx_size = tx.serialize().len();
-        let base_tx = BaseTx::from(&tx);
+        let txn_meta = TxnMetadata::from(&tx);
         let commands = tx.commands;
 
+        // create transition context from world state
+        let mut ctx = TransitionContext::new(txn_meta.version, ws, tx.gas_limit);
+        ctx.sc_context = self.sc_context.clone();
+
         // initial state for transition
-        let state = ExecutionState {
-            tx: base_tx,
-            tx_size,
-            commands_len: commands.len(),
-            ctx,
-            bd,
-        };
+        let state = ExecutionState::new(txn_meta, bd, ctx);
 
         // initiate command execution
         if commands.iter().any(|c| matches!(c, Command::NextEpoch)) {
-            execute::execute_next_epoch_command(state, commands)
+            execute_next_epoch_v1(state, commands)
         } else {
-            execute::execute_commands(state, commands)
+            execute_commands_v1(state, commands)
+        }
+    }
+
+    /// state transition of world state (WS) from transaction (tx) and blockchain data (bd) as inputs.
+    pub fn transition_v2<'a, S, V>(
+        &self,
+        ws: WorldState<'a, S, V>,
+        tx: TransactionV2,
+        bd: BlockchainParams,
+    ) -> TransitionV2Result<'a, S, V>
+    where
+        S: DB + Send + Sync + Clone + 'static,
+        V: VersionProvider + Send + Sync + Clone + 'static,
+    {
+        // transaction inputs
+        let txn_meta = TxnMetadata::from(&tx);
+        let commands = tx.commands;
+
+        // create transition context from world state
+        let mut ctx = TransitionContext::new(txn_meta.version, ws, tx.gas_limit);
+        ctx.sc_context = self.sc_context.clone();
+
+        // initial state for transition
+        let state = ExecutionState::new(txn_meta, bd, ctx);
+
+        // initiate command execution
+        if commands.iter().any(|c| matches!(c, Command::NextEpoch)) {
+            execute_next_epoch_v2(state, commands)
+        } else {
+            execute_commands_v2(state, commands)
         }
     }
 
     /// view performs view call to a target contract
-    pub fn view<S: WorldStateStorage + Send + Sync + Clone + 'static>(
+    pub fn view_v1<'a, S, V>(
         &self,
-        ws: WorldState<S>,
+        ws: WorldState<'a, S, V>,
         gas_limit: u64,
         target: PublicAddress,
         method: String,
         arguments: Option<Vec<Vec<u8>>>,
-    ) -> (CommandReceipt, Option<TransitionError>) {
+    ) -> (CommandReceiptV1, Option<TransitionError>)
+    where
+        S: DB + Send + Sync + Clone + 'static,
+        V: VersionProvider + Send + Sync + Clone + 'static,
+    {
         // create transition context from world state
-        let mut ctx = TransitionContext::new(ws);
-        if let Some(cache) = &self.sc_cache {
-            ctx.sc_context.cache = Some(cache.clone());
-        }
-        ctx.sc_context.memory_limit = self.sc_memory_limit;
+        let mut ctx = TransitionContext::new(TxnVersion::V1, ws, gas_limit);
+        ctx.sc_context = self.sc_context.clone();
 
         // create a dummy transaction
-        let dummy_tx = BaseTx {
+        let dummy_txn_meta = TxnMetadata {
             gas_limit,
             ..Default::default()
         };
@@ -133,213 +160,157 @@ impl Runtime {
         let dummy_bd = BlockchainParams::default();
 
         // initialize state for executing view call
-        let state = ExecutionState {
-            tx: dummy_tx,
-            bd: dummy_bd,
-            ctx,
-            // the below fields are not cared in view call
-            tx_size: 0,
-            commands_len: 0,
-        };
+        let state = ExecutionState::new(dummy_txn_meta, dummy_bd, ctx);
 
         // execute view
-        execute::execute_view(state, target, method, arguments)
+        execute_view_v1(state, target, method, arguments)
+    }
+
+    /// view performs view call to a target contract
+    pub fn view_v2<'a, S, V>(
+        &self,
+        ws: WorldState<'a, S, V>,
+        gas_limit: u64,
+        target: PublicAddress,
+        method: String,
+        arguments: Option<Vec<Vec<u8>>>,
+    ) -> (CommandReceiptV2, Option<TransitionError>)
+    where
+        S: DB + Send + Sync + Clone + 'static,
+        V: VersionProvider + Send + Sync + Clone + 'static,
+    {
+        // create transition context from world state
+        let mut ctx = TransitionContext::new(TxnVersion::V1, ws, gas_limit);
+        ctx.sc_context = self.sc_context.clone();
+
+        // create a dummy transaction
+        let dummy_txn_meta = TxnMetadata {
+            gas_limit,
+            ..Default::default()
+        };
+
+        let dummy_bd = BlockchainParams::default();
+
+        // initialize state for executing view call
+        let state = ExecutionState::new(dummy_txn_meta, dummy_bd, ctx);
+
+        // execute view
+        execute_view_v2(state, target, method, arguments)
+    }
+
+    /// upgrades world state from v1 to v2, expects a valid next epoch command
+    pub fn transition_v1_to_v2<'a, S: DB + Send + Sync + Clone + 'static>(
+        &self,
+        ws: WorldState<'a, S, V1>,
+        tx: TransactionV1,
+        bd: BlockchainParams,
+    ) -> TransitionV1ToV2Result<'a, S> {
+        let txn_meta = TxnMetadata::from(&tx);
+        let commands = tx.commands;
+
+        let mut ctx = TransitionContext::new(txn_meta.version, ws, tx.gas_limit);
+        ctx.sc_context = self.sc_context.clone();
+        let state = ExecutionState::new(txn_meta, bd, ctx);
+
+        // first execute next epoch
+        let TransitionV1Result {
+            new_state,
+            error,
+            receipt,
+            validator_changes,
+        } = execute_next_epoch_v1(state, commands);
+
+        // rollback if the command is invalid
+        if error.is_some() {
+            return TransitionV1ToV2Result {
+                new_state: None,
+                receipt: None,
+                error,
+                validator_changes: None,
+            };
+        }
+
+        // on success, transform and return a World State V2
+        match WorldState::<S, V1>::upgrade(new_state) {
+            Ok(ws) => TransitionV1ToV2Result {
+                new_state: Some(ws),
+                receipt,
+                error: None,
+                validator_changes,
+            },
+            Err(_) => TransitionV1ToV2Result {
+                new_state: None,
+                receipt: None,
+                error: Some(TransitionError::FailedWorldStateUpgrade),
+                validator_changes: None,
+            },
+        }
     }
 }
 
-/// Result of state transition. It is the return type of `pchain_runtime::Runtime::transition`.
+/// Result of a world state upgrade from V1 to V2.
+/// Return type of `pchain_runtime::Runtime::upgrade_ws_v1_to_v2`.
 #[derive(Clone)]
-pub struct TransitionResult<S>
+pub struct TransitionV1ToV2Result<'a, S>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
 {
-    /// New world state (ws') after state transition
-    pub new_state: WorldState<S>,
-    /// Transaction receipt. None if the transition receipt is not includable in the block
-    pub receipt: Option<Receipt>,
+    /// Next world state (ws') after upgrading to V2
+    pub new_state: Option<WorldState<'a, S, V2>>,
+    /// Transaction receipt, always None.
+    pub receipt: Option<ReceiptV1>,
     /// Transition error. None if no error.
     pub error: Option<TransitionError>,
-    /// Changes in validate set.
-    /// It is specific to [Next Epoch](pchain_types::blockchain::Command::NextEpoch) Command. None for other commands.
+    /// Changes in validator set, always None.
     pub validator_changes: Option<ValidatorChanges>,
 }
 
-pub(crate) struct StateChangesResult<S>
+/// Return type of `pchain_runtime::Runtime::transition_v1`.
+#[derive(Clone)]
+pub struct TransitionV1Result<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    /// resulting state in transit
-    pub state: ExecutionState<S>,
-    /// transition error
+    /// Next world state (ws') after state transition
+    pub new_state: WorldState<'a, S, V>,
+    /// Transaction receipt. None if no commands were executed,
+    /// e.g. due to failing checks in the pre-charge phase
+    pub receipt: Option<ReceiptV1>,
+    /// Transition error. None if no error.
     pub error: Option<TransitionError>,
+    /// Changes in validator set.
+    /// Only from executing the [Next Epoch](pchain_types::blockchain::Command::NextEpoch) Command. None for other commands.
+    pub validator_changes: Option<ValidatorChanges>,
 }
 
-impl<S> StateChangesResult<S>
+/// Return type of `pchain_runtime::Runtime::transition_v2`.
+///
+/// [V1](TransitionV1Result) -> V2: contains ReceiptV2 instead of ReceiptV1
+#[derive(Clone)]
+pub struct TransitionV2Result<'a, S, V>
 where
-    S: WorldStateStorage + Send + Sync + Clone + 'static,
+    S: DB + Send + Sync + Clone + 'static,
+    V: VersionProvider + Send + Sync + Clone,
 {
-    pub(crate) fn new(
-        state: ExecutionState<S>,
-        transition_error: Option<TransitionError>,
-    ) -> StateChangesResult<S> {
-        Self {
-            state,
-            error: transition_error,
-        }
-    }
-
-    /// finalize generates TransitionResult
-    pub(crate) fn finalize(self, command_receipts: Vec<CommandReceipt>) -> TransitionResult<S> {
-        let error = self.error;
-        let rw_set = self.state.ctx.rw_set;
-
-        let new_state = rw_set.commit_to_world_state();
-
-        TransitionResult {
-            new_state,
-            receipt: Some(command_receipts),
-            error,
-            validator_changes: None,
-        }
-    }
+    /// Next world state (ws') after state transition
+    pub new_state: WorldState<'a, S, V>,
+    /// Transaction receipt. None if no commands were executed,
+    /// e.g. due to failing checks in the pre-charge phase
+    pub receipt: Option<ReceiptV2>,
+    /// Transition error. None if no error.
+    pub error: Option<TransitionError>,
+    /// Changes in validator set.
+    /// Only from executing the [Next Epoch](pchain_types::blockchain::Command::NextEpoch) Command. None for other commands.
+    pub validator_changes: Option<ValidatorChanges>,
 }
 
 /// Defines changes to validator set. It is the transition result from
 /// executing Command [NextEpoch](pchain_types::blockchain::Command::NextEpoch).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidatorChanges {
-    /// the new validator set in list of tuple of operator address and power
+    /// the next validator set in list of tuple of operator address and power
     pub new_validator_set: Vec<(PublicAddress, u64)>,
     /// the list of address of operator who is removed from state
     pub remove_validator_set: Vec<PublicAddress>,
-}
-
-/// TransitionContext defines transiting data required for state transition.
-#[derive(Clone)]
-pub(crate) struct TransitionContext<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone,
-{
-    /// Running data cache for Read-Write operations during state transition.
-    pub rw_set: ReadWriteSet<S>,
-
-    /// Smart contract context for execution
-    pub sc_context: SmartContractContext,
-
-    /// Commands that deferred from a Call Comamnd via host function specified in CBI.
-    pub commands: Vec<DeferredCommand>,
-
-    /// Gas consumed in transaction, no matter whether the transaction succeeds or fails.
-    gas_used: u64,
-
-    /// the gas charged for adding logs and setting return value in receipt.
-    pub receipt_write_gas: CostChange,
-
-    /// logs stores the list of events emitted by an execution ordered in the order of emission.
-    pub logs: Vec<Log>,
-
-    /// return_value is the value returned by a call transaction using the `return_value` SDK function. It is None if the
-    /// execution has not/did not return anything.
-    pub return_value: Option<Vec<u8>>,
-}
-
-impl<S> TransitionContext<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone,
-{
-    pub fn new(ws: WorldState<S>) -> Self {
-        Self {
-            rw_set: ReadWriteSet::new(ws),
-            sc_context: SmartContractContext {
-                cache: None,
-                memory_limit: None,
-            },
-            receipt_write_gas: CostChange::default(),
-            logs: Vec::new(),
-            gas_used: 0,
-            return_value: None,
-            commands: Vec::new(),
-        }
-    }
-
-    pub fn gas_consumed(&self) -> u64 {
-        self.gas_used
-    }
-
-    pub fn set_gas_consumed(&mut self, gas_used: u64) {
-        self.gas_used = gas_used
-    }
-
-    /// It is equivalent to gas_consumed + chareable_gas. The chareable_gas consists of
-    /// - write cost to storage
-    /// - read cost to storage
-    /// - write cost to receipt (blockchain data)
-    pub fn total_gas_to_be_consumed(&self) -> u64 {
-        // Gas incurred to be charged
-        let chargeable_gas =
-            (self.rw_set.write_gas + self.receipt_write_gas + *self.rw_set.read_gas.borrow())
-                .values()
-                .0;
-        self.gas_consumed().saturating_add(chargeable_gas)
-    }
-
-    /// Discard the changes to world state
-    pub fn revert_changes(&mut self) {
-        self.rw_set.reads.borrow_mut().clear();
-        self.rw_set.writes.clear();
-    }
-
-    /// Output the CommandReceipt and clear the intermediate context for next command execution.
-    /// `prev_gas_used` will be needed for getting the intermediate gas consumption.
-    pub fn extract(&mut self, prev_gas_used: u64, exit_status: ExitStatus) -> CommandReceipt {
-        // 1. Create Command Receipt
-        let ret = CommandReceipt {
-            exit_status,
-            gas_used: self.gas_used.saturating_sub(prev_gas_used),
-            // Intentionally retain return_values and logs even if exit_status is failed
-            return_values: self
-                .return_value
-                .clone()
-                .map_or(Vec::new(), std::convert::identity),
-            logs: self.logs.clone(),
-        };
-        // 2. Clear data for next command execution
-        *self.rw_set.read_gas.borrow_mut() = CostChange::default();
-        self.rw_set.write_gas = CostChange::default();
-        self.receipt_write_gas = CostChange::default();
-        self.logs.clear();
-        self.return_value = None;
-        self.commands.clear();
-        ret
-    }
-
-    /// Pop commands from context. None if there is nothing to pop
-    pub fn pop_commands(&mut self) -> Option<Vec<DeferredCommand>> {
-        if self.commands.is_empty() {
-            return None;
-        }
-        let mut ret = Vec::new();
-        ret.append(&mut self.commands);
-        Some(ret)
-    }
-}
-
-impl<S> Deref for TransitionContext<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone,
-{
-    type Target = ReadWriteSet<S>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.rw_set
-    }
-}
-
-impl<S> DerefMut for TransitionContext<S>
-where
-    S: WorldStateStorage + Send + Sync + Clone,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.rw_set
-    }
 }
